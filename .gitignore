@@ -3,3 +3,6 @@ out/
 dist/
 *.xlsx
 screenshots/
+
+# design handoffs (inputs, not source)
+*.zip
