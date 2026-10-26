@@ -1,6 +1,9 @@
 // Types shared by main, preload and renderer. The engine result shapes mirror
 // sleeperStandings' BBResult / PWOPRResult; only the fields the UI reads are listed.
 
+import type { LineupWrite } from './sleeperLineup'
+import type { TradeProposal } from './sleeperTrade'
+
 export type Theme = 'light' | 'dark' | 'system'
 
 /** A player the user has marked out, overriding Sleeper tags and ESPN's return estimate. */
@@ -17,8 +20,30 @@ export type ManualInjury = {
 
 export type PlayerHit = { id: string; name: string; pos: string; team: string; injury: string }
 
+/** One game from Sleeper's per-player weekly stats (stat keys as Sleeper names them). */
+export type GameLog = { week: number; opp: string; stats: Record<string, number> }
+
+/** A player's Sleeper record and this season's games, for the player page. */
+export type PlayerInfo = {
+  id: string
+  name: string
+  pos: string
+  team: string
+  age: number | null
+  /** inches */
+  height: number | null
+  /** pounds */
+  weight: number | null
+  college: string | null
+  yearsExp: number | null
+  /** Sleeper injury tag, '' when healthy */
+  injury: string
+  season: string
+  games: GameLog[]
+}
+
 export type Settings = {
-  /** light is the designed default; system follows the OS */
+  /** dark when unset; system follows the OS */
   theme?: Theme
   username?: string
   userId?: string
@@ -44,8 +69,8 @@ export type Settings = {
   ranksPickedAt?: string
   /** phone app: the picked workbook's own file name (the stored copy has a fixed name) */
   ranksName?: string
-  /** phone app: Sleeper connected for sending trade offers (the token itself is in secure
-   *  storage, never here) */
+  /** Sleeper connected for sending trade offers (the token itself is in secure storage — the
+   *  phone's Keychain/Keystore, the desktop's OS-encrypted file — never here) */
   sleeperLink?: { name: string; expiresAt: number | null; connectedAt: string }
 }
 
@@ -265,6 +290,9 @@ export type SSMove = { player: SSPlayer; from: string; to: string }
 
 export type StartSitData = {
   week: number
+  rosterId: number
+  /** Sleeper's starters as read, slot order ("0" = empty), including slots Monte doesn't rank */
+  starters: string[]
   /** week number in Tyler's tab names */
   boardWeek: number | null
   sheet: { name: string; modifiedAt: string }
@@ -432,10 +460,19 @@ export type MonteApi = {
   /** Tyler's superflex boards, matched to this league's rosters */
   ranks(leagueId: string, userId: string): Promise<Result<RanksData>>
   searchPlayers(query: string): Promise<Result<PlayerHit[]>>
+  /** Sleeper bio and this season's weekly games, for the player page */
+  playerInfo(id: string): Promise<Result<PlayerInfo>>
   /** the return weeks / season-enders hard-coded in sleeperStandings' config, resolved to players */
   bundledInjuries(): Promise<Result<ManualInjury[]>>
   chooseRanksFile(): Promise<Result<RanksFileInfo | null>>
   ranksFileInfo(): Promise<Result<RanksFileInfo | null>>
+  /** Connect Sleeper for trade offers: the session token must work and be this user's. */
+  connectSleeper(token: string): Promise<Result<Settings>>
+  disconnectSleeper(): Promise<Settings>
+  /** Send a trade offer in Sleeper. `needsConnect` means connect (again) and retry. */
+  proposeTrade(p: TradeProposal): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>
+  /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */
+  setLineup(w: LineupWrite): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
   /** fires when the watched rankings file changes on disk */
   onRanksFileChanged(cb: (info: RanksFileInfo | null) => void): () => void
 }

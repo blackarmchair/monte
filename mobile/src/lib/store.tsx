@@ -1,20 +1,20 @@
 // App-wide state, ported from the desktop App.tsx: settings, leagues, the selected league's
 // context, cached engine runs, the trade being built, the filters other tabs can set (Players,
-// Picks, the trade list), and the click-throughs between tabs.
+// Picks), Pick odds' what-if results, and the click-throughs between tabs and pages.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { router } from 'expo-router'
-import type { BBResult, LeagueContext, LeagueSummary, PickOddsOpts, PlayerHit, PWOPRResult, Run, Settings } from '@monte/core/types'
+import type { BBResult, LeagueContext, LeagueSummary, PickOddsOpts, PWOPRResult, Run, Settings } from '@monte/core/types'
 import { anonBB, anonContext, leagueLabel } from '@monte/core/names'
 import { monte, type SheetInfo } from './monte'
 
 export type TradeState = { give: string[]; get: string[]; partner: number | null }
-/** Trade tab: which list sits under the give/get boxes. */
-export type TradeUi = { list: 'mine' | 'theirs' }
 export const EMPTY_TRADE: TradeState = { give: [], get: [], partner: null }
 /** Players tab filters, settable from other tabs ("Find RB targets"). */
-export type PlayersUi = { mode: 'value' | 'usage'; pos: string; own: 'Everyone' | 'Mine' | 'Others' | 'FA'; q: string }
-export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', own: 'Everyone', q: '' }
+export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string }
+export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', q: '' }
 export type PicksSeg = 'odds' | 'draft'
+/** Pick odds what-if: NFL week -> roster ids the user picked to win that week. */
+export type Forced = Record<number, number[]>
 
 type Runs<T> = Record<string, Run<T>>
 
@@ -39,15 +39,13 @@ type App = {
   runPW: () => void
   trade: TradeState
   setTrade: (f: (t: TradeState) => TradeState) => void
-  tradeUi: TradeUi
-  setTradeUi: (f: (u: TradeUi) => TradeUi) => void
   playersUi: PlayersUi
   setPlayersUi: (f: (u: PlayersUi) => PlayersUi) => void
   picksSeg: PicksSeg
   setPicksSeg: (s: PicksSeg) => void
-  /** a player the Overrides screen should open with (from a player sheet) */
-  overridePrefill: PlayerHit | null
-  setOverridePrefill: (p: PlayerHit | null) => void
+  /** the what-if results Pick odds and its sheet are running with */
+  forced: Forced
+  setForced: (f: Forced) => void
   sheet: SheetInfo | null
   sheetError: string | null
   /** a picked workbook is being read and checked */
@@ -60,11 +58,14 @@ type App = {
   addToTrade: (assetId: string, owner: number) => void
   /** Players tab, Values, filtered to a position */
   findTargets: (pos: string) => void
-  /** Trade tab with this team as partner and their roster showing */
+  /** Trade tab with this team as partner */
   tradeWith: (owner: number) => void
-  openTrade: (list?: TradeUi['list']) => void
+  openTrade: () => void
   openPicks: (seg: PicksSeg) => void
-  openOverrides: (prefill?: PlayerHit) => void
+  /** push the Team page */
+  openTeam: (rid: number) => void
+  /** push the Player page (name shows in the header while he loads) */
+  openPlayer: (id: string, name: string) => void
   switchUser: () => Promise<void>
   /** connect Sleeper for sending trade offers; resolves to an error message, or null */
   connectSleeper: (token: string) => Promise<string | null>
@@ -89,10 +90,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [bbRuns, setBB] = useState<Runs<BBResult>>({})
   const [pwRuns, setPW] = useState<Runs<PWOPRResult>>({})
   const [trade, setTradeState] = useState<TradeState>(EMPTY_TRADE)
-  const [tradeUi, setTradeUiState] = useState<TradeUi>({ list: 'mine' })
   const [playersUi, setPlayersUiState] = useState<PlayersUi>(PLAYERS_UI)
   const [picksSeg, setPicksSeg] = useState<PicksSeg>('odds')
-  const [overridePrefill, setOverridePrefill] = useState<PlayerHit | null>(null)
+  const [forced, setForced] = useState<Forced>({})
   const [sheet, setSheet] = useState<SheetInfo | null>(null)
   const [sheetError, setSheetError] = useState<string | null>(null)
   const [sheetBusy, setSheetBusy] = useState(false)
@@ -124,7 +124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setContext(null)
     setContextError(null)
     setTradeState(EMPTY_TRADE)
-    setTradeUiState({ list: 'mine' })
+    setForced({})
     void monte.leagueContext(selected, settings.userId).then(r => (r.ok ? setContext(r.value) : setContextError(r.error)))
   }, [selected, settings?.userId])
   useEffect(() => {
@@ -188,14 +188,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     runPW: () => id && void runPWFor(id),
     trade,
     setTrade: f => setTradeState(f),
-    tradeUi,
-    setTradeUi: f => setTradeUiState(f),
     playersUi,
     setPlayersUi: f => setPlayersUiState(f),
     picksSeg,
     setPicksSeg,
-    overridePrefill,
-    setOverridePrefill,
+    forced,
+    setForced,
     sheet,
     sheetError,
     sheetBusy,
@@ -224,20 +222,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     tradeWith(owner) {
       setTradeState(t => ({ ...t, partner: owner, get: t.partner === owner ? t.get : [] }))
-      setTradeUiState({ list: 'theirs' })
       router.navigate('/trade')
     },
-    openTrade(list) {
-      if (list) setTradeUiState({ list })
+    openTrade() {
       router.navigate('/trade')
     },
     openPicks(seg) {
       setPicksSeg(seg)
       router.navigate('/picks')
     },
-    openOverrides(prefill) {
-      setOverridePrefill(prefill ?? null)
-      router.navigate('/overrides')
+    openTeam(rid) {
+      router.navigate({ pathname: '/team', params: { rid: String(rid) } })
+    },
+    openPlayer(id, name) {
+      router.navigate({ pathname: '/player', params: { id, name } })
     },
     async connectSleeper(token) {
       const r = await monte.connectSleeper(token)

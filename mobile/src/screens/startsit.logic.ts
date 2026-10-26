@@ -26,11 +26,11 @@ export function normCdf(z: number): number {
 }
 
 /** Short tag for a player's availability: neg when he can't play, warn when he's listed. */
-export function tagOf(p: SSPlayer): { label: string; tone: 'neg' | 'warn' | 'chip' } | null {
-  if (p.locked) return { label: 'Locked', tone: 'chip' }
+export function tagOf(p: SSPlayer): { label: string; tone: 'bad' | 'warn' | 'mid' } | null {
+  if (p.locked) return { label: 'Locked', tone: 'mid' }
   if (!p.flag) return null
   const short = p.flag.split(' — ')[0].replace(/^Questionable$/i, 'Q').replace(/^Doubtful$/i, 'D')
-  return { label: short, tone: p.startable ? 'warn' : p.flag === 'Taxi' ? 'chip' : 'neg' }
+  return { label: short, tone: p.startable ? 'warn' : p.flag === 'Taxi' ? 'mid' : 'bad' }
 }
 
 /** Taxi and IR players can't be started in Sleeper, so they never move into the lineup. */

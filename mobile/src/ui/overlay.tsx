@@ -3,10 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Animated, Easing, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { font, FLOAT_RADIUS, SHEET_RADIUS, useTheme } from './theme'
+import { font, R, useTheme } from './theme'
 
 /** The tab bar's height above the bottom inset; floating bars and the toast sit above it. */
-export const TAB_H = 58
+export const TAB_H = 60
 const TOAST_MS = 2800
 
 type Toast = { msg: string; action?: { label: string; onPress: () => void } }
@@ -48,7 +48,7 @@ export function useOverlay(): Overlay {
   return o
 }
 
-/** The bottom sheet: scrim (tap to close), grabber, up to 88% of the screen, scrolls inside. */
+/** The bottom sheet: scrim (tap to close), grabber, up to 86% of the screen, scrolls inside. */
 export function SheetHost() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
@@ -85,17 +85,15 @@ export function SheetHost() {
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={closeSheet}>
       {/* The sheet rides up with the keyboard, so a field in it (Connect Sleeper) stays visible. */}
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(12,10,8,0.5)', opacity: fade }}>
+        <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', opacity: fade }}>
           <Pressable style={{ flex: 1 }} onPress={closeSheet} accessibilityLabel="Close" />
         </Animated.View>
         <Animated.View
           style={{
-            maxHeight: height * 0.88,
+            maxHeight: height * 0.86,
             backgroundColor: t.bg,
-            borderTopWidth: 1,
-            borderColor: t.line,
-            borderTopLeftRadius: SHEET_RADIUS,
-            borderTopRightRadius: SHEET_RADIUS,
+            borderTopLeftRadius: R.sheet,
+            borderTopRightRadius: R.sheet,
             transform: [{ translateY: y }],
             shadowColor: '#000',
             shadowOpacity: 0.2,
@@ -104,8 +102,8 @@ export function SheetHost() {
             elevation: 16,
           }}
         >
-          <Pressable onPress={closeSheet} hitSlop={8} style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 14 }} accessibilityLabel="Close">
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: t.line }} />
+          <Pressable onPress={closeSheet} hitSlop={8} style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 16 }} accessibilityLabel="Close">
+            <View style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: t.surf2 }} />
           </Pressable>
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 + insets.bottom }} keyboardShouldPersistTaps="handled">
             {shown}
@@ -116,7 +114,7 @@ export function SheetHost() {
   )
 }
 
-/** The toast: above the tab bar, 2.8s, with an optional action. */
+/** The toast: an ink pill above the tab bar, 2.8s, with an optional accent action. */
 export function ToastHost() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
@@ -129,17 +127,17 @@ export function ToastHost() {
         position: 'absolute',
         left: 16,
         right: 16,
-        bottom: TAB_H + insets.bottom + 16,
+        bottom: TAB_H + insets.bottom + 18,
         zIndex: 60,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
-        minHeight: 48,
+        minHeight: 50,
         paddingVertical: 8,
-        paddingLeft: 14,
+        paddingLeft: 16,
         paddingRight: 8,
         backgroundColor: t.ink,
-        borderRadius: FLOAT_RADIUS,
+        borderRadius: 25,
         shadowColor: '#000',
         shadowOpacity: 0.25,
         shadowRadius: 24,
@@ -147,7 +145,7 @@ export function ToastHost() {
         elevation: 12,
       }}
     >
-      <Text style={{ flex: 1, fontFamily: font.sans, fontSize: 14, color: t.bg }}>{toast.msg}</Text>
+      <Text style={{ flex: 1, fontFamily: font.sansSemi, fontSize: 14, color: t.bg }}>{toast.msg}</Text>
       {toast.action && (
         <Pressable
           onPress={() => {
@@ -156,9 +154,9 @@ export function ToastHost() {
             a.onPress()
           }}
           hitSlop={8}
-          style={{ minHeight: 36, paddingHorizontal: 12, justifyContent: 'center' }}
+          style={{ minHeight: 36, paddingHorizontal: 14, borderRadius: 18, justifyContent: 'center', backgroundColor: t.acc }}
         >
-          <Text style={{ fontFamily: font.sansSemi, fontSize: 14, color: t.accSoft }}>{toast.action.label}</Text>
+          <Text style={{ fontFamily: font.sansBold, fontSize: 14, color: t.accInk }}>{toast.action.label}</Text>
         </Pressable>
       )}
     </View>

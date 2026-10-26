@@ -7,7 +7,7 @@ import type { Result, TradeData } from '@monte/core/types'
 import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, type Asset, type Package, type Verdict } from '@monte/core/tradeMath'
 import { anonTrades } from '@monte/core/names'
 import { monte } from './monte'
-import { EMPTY_TRADE, useApp, type TradeUi } from './store'
+import { EMPTY_TRADE, useApp } from './store'
 import { useOverlay } from '@/ui/overlay'
 import { ORD } from '@/ui/kit'
 
@@ -231,16 +231,14 @@ export function TradeProvider({ children }: { children: ReactNode }) {
 
 /**
  * Add a player or pick to the trade from anywhere, then say so: "X added to trade" with an Open
- * action that jumps to the Trade tab on the right list.
+ * action that jumps to the Trade tab.
  */
 export function useAddToTrade() {
-  const { addToTrade, openTrade, context } = useApp()
+  const { addToTrade, openTrade } = useApp()
   const { showToast, closeSheet } = useOverlay()
-  const me = context?.myRosterId ?? null
   return (assetId: string, owner: number, name: string) => {
     addToTrade(assetId, owner)
     closeSheet()
-    const list: TradeUi['list'] = owner === me ? 'mine' : 'theirs'
-    showToast(`${name} added to trade`, { label: 'Open', onPress: () => openTrade(list) })
+    showToast(`${name} added to trade`, { label: 'Open', onPress: openTrade })
   }
 }

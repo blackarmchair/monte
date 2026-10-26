@@ -1,36 +1,37 @@
-// The one-line header. On a tab: league square, league name (serif) and a meta line; tapping it
-// opens the Leagues sheet, the gear pushes Settings. On a pushed screen: back arrow and title.
+// The 56px header. On a tab: the league name with a chevron (opens the Leagues sheet) and the gear
+// (Settings). On a pushed page (Team, Player, Settings): a round back button and the page title.
 import { Pressable, View } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useApp } from '@/lib/store'
 import LeaguesSheet from '@/screens/LeaguesSheet'
 import { Icon } from './icons'
-import { LeagueSquare, T } from './kit'
-import { formatLabel, leagueAbbr } from './league'
+import { T } from './kit'
 import { useOverlay } from './overlay'
 import { useTheme } from './theme'
+
+export const goBack = () => (router.canGoBack() ? router.back() : router.navigate('/'))
 
 export default function AppHeader({ title }: { title?: string }) {
   const t = useTheme()
   const insets = useSafeAreaInsets()
-  const { leagues, selected, context } = useApp()
+  const { leagues, selected } = useApp()
   const { openSheet } = useOverlay()
-  const bar = { paddingTop: insets.top, backgroundColor: t.bg, borderBottomWidth: 1, borderColor: t.line }
+  const bar = { paddingTop: insets.top, backgroundColor: t.bg }
 
-  if (title)
+  if (title != null)
     return (
       <View style={bar}>
-        <View style={{ minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6 }}>
+        <View style={{ minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 16 }}>
           <Pressable
-            onPress={() => (router.canGoBack() ? router.back() : router.navigate('/'))}
+            onPress={goBack}
             hitSlop={6}
-            style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+            style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surf, opacity: pressed ? 0.7 : 1 })}
             accessibilityLabel="Back"
           >
-            <Icon name="back" color={t.ink} stroke={1.8} />
+            <Icon name="back" size={20} color={t.ink} stroke={2} />
           </Pressable>
-          <T v="semi" size={18}>
+          <T v="bold" size={16} lines={1} style={{ flex: 1, paddingLeft: 8 }}>
             {title}
           </T>
         </View>
@@ -38,35 +39,21 @@ export default function AppHeader({ title }: { title?: string }) {
     )
 
   const league = leagues.find(l => l.league_id === selected)
-  const me = context?.rosters.find(r => r.roster_id === context.myRosterId)
-  const meta = league
-    ? [formatLabel(league), context && context.week > 0 ? `wk ${context.week}` : null, me ? `you're ${me.wins}-${me.losses}` : null].filter(Boolean).join(' · ')
-    : ''
   return (
     <View style={bar}>
-      <View style={{ minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 16, paddingRight: 6 }}>
+      <View style={{ minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 16, paddingRight: 6 }}>
         <Pressable
           onPress={() => openSheet(<LeaguesSheet />)}
-          style={{ flex: 1, minWidth: 0, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          style={{ flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6 }}
           accessibilityLabel="Switch league"
         >
-          <LeagueSquare label={league ? leagueAbbr(league.name) : 'M'} src={league?.avatar} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <T v="serif" size={20} lines={1} style={{ flexShrink: 1 }}>
-                {league?.name ?? 'Choose a league'}
-              </T>
-              <Icon name="chevronDown" size={14} color={t.mute} stroke={2} />
-            </View>
-            {!!meta && (
-              <T v="small" c="mute" lines={1}>
-                {meta}
-              </T>
-            )}
-          </View>
+          <T v="bold" size={17} lines={1} style={{ flexShrink: 1 }}>
+            {league?.name ?? 'Choose a league'}
+          </T>
+          <Icon name="chevronDown" size={14} color={t.mute} stroke={2.4} />
         </Pressable>
         <Pressable onPress={() => router.navigate('/settings')} hitSlop={4} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Settings">
-          <Icon name="gear" color={t.ink2} />
+          <Icon name="gear" color={t.ink2} stroke={1.7} />
         </Pressable>
       </View>
     </View>

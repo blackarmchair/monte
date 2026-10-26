@@ -1,5 +1,5 @@
 // League maths, ported from the desktop OverviewView: per-team value, positional and starter
-// ranks, pick values, tiers and the verdict lines. Shared by the League tab and its team sheet,
+// ranks, pick values, tiers and the verdict lines. Shared by the League tab and the Team page,
 // plus useOverview(), which loads the data and starts the sim the starter ranks need.
 import { useEffect, useMemo, useState } from 'react'
 import type { BBResult, OverviewData, OvPlayer, OvTeam, Result } from '@monte/core/types'
@@ -145,13 +145,13 @@ export function buildRows(data: OverviewData, bb: BBResult | undefined): TeamRow
     .sort((a, b) => a.ranks.overall - b.ranks.overall)
 }
 
-export function statusTag(p: OvPlayer): { label: string; tone: 'neg' | 'warn' | 'chip' } | null {
-  if (p.ir || p.injury === 'IR') return { label: 'IR', tone: 'neg' }
+export function statusTag(p: OvPlayer): { label: string; tone: 'bad' | 'warn' | 'mid' } | null {
+  if (p.ir || p.injury === 'IR') return { label: 'IR', tone: 'warn' }
   const s = p.injury
-  if (s === 'Out' || s === 'Sus' || s === 'PUP' || s === 'NFI') return { label: s, tone: 'neg' }
+  if (s === 'Out' || s === 'Sus' || s === 'PUP' || s === 'NFI') return { label: s, tone: 'bad' }
   if (s === 'Questionable') return { label: 'Q', tone: 'warn' }
   if (s === 'Doubtful') return { label: 'D', tone: 'warn' }
-  if (p.taxi) return { label: 'Taxi', tone: 'chip' }
+  if (p.taxi) return { label: 'Taxi', tone: 'mid' }
   return null
 }
 
@@ -181,18 +181,26 @@ export function verdict(r: TeamRow): string {
   return `${s1} ${s2.charAt(0).toUpperCase()}${s2.slice(1)}`
 }
 
+// The last overview loaded, so the Team page opens on League's data instead of fetching again.
+let last: { key: string; res: Result<OverviewData> } | null = null
+
 /** Overview data for the selected league, ranked against the pick-odds sim (started if needed). */
 export function useOverview() {
   const { context, bbBase, runBB, hide, dataVersion, sheet } = useApp()
   const [tick, setTick] = useState(0)
-  const [res, setRes] = useState<Result<OverviewData> | null>(null)
   const leagueId = context?.league.league_id
+  const key = `${leagueId}|${dataVersion}`
+  const [res, setRes] = useState<Result<OverviewData> | null>(() => (last?.key === key ? last.res : null))
 
   useEffect(() => {
     if (!leagueId || !sheet) return
+    if (!tick && last?.key === key && last.res.ok) return setRes(last.res)
     let live = true
     setRes(null)
-    void monte.leagueOverview(leagueId).then(r => live && setRes(r))
+    void monte.leagueOverview(leagueId).then(r => {
+      last = { key, res: r }
+      if (live) setRes(r)
+    })
     return () => {
       live = false
     }

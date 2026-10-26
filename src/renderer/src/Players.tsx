@@ -1,0 +1,185 @@
+// Players: Tyler's superflex board (Value: a value-rank heat chip and the market read) and the usage
+// board (Usage: PWOPR, heat on the gap between usage and projection) as one card grid. The top
+// bar's search filters it live. Click a card for his page; its button adds him to the trade (or
+// claims a free agent in Sleeper).
+import { useEffect, useMemo, useState } from 'react'
+import type { RanksData, Result } from '@shared/types'
+import { teamLabel } from './names'
+import { value as rankValue } from '@shared/tradeMath'
+import { useApp } from './store'
+import { marketTag, mineOf, useAddToTrade, useTrade } from './tradeModel'
+import { ErrorBox, GradCard, Headshot, HeatChip, kfmt, Loading, NeedsSheet, nflColor, Pills, Seg, Stack2, useHeat } from './ui'
+
+/** usage gap (PPG) at which a player reads as Buy or Sell; the desktop's default */
+const SIGNAL = 3
+
+type Line = {
+  key: string
+  id: string
+  name: string
+  team: string
+  owner: number | null
+  meta: string
+  v: string
+  /** heat position, 0 … 1 */
+  h: number
+  tag: string
+  tagColor: string
+  /** trade asset id, when he can be traded */
+  assetId: string | null
+}
+
+export default function Players() {
+  const { context, settings, sheet, hide, dataVersion, playersUi: ui, setPlayersUi, pw, runPW, openPlayer, showToast } = useApp()
+  const { byId, me } = useTrade()
+  const { heat } = useHeat()
+  const add = useAddToTrade()
+  const [res, setRes] = useState<Result<RanksData> | null>(null)
+  const leagueId = context?.league.league_id
+  const set = (patch: Partial<typeof ui>) => setPlayersUi(u => ({ ...u, ...patch }))
+
+  useEffect(() => {
+    if (!leagueId || !settings.userId || !sheet) return
+    let live = true
+    setRes(null)
+    void window.monte.ranks(leagueId, settings.userId).then(r => live && setRes(r))
+    return () => {
+      live = false
+    }
+  }, [leagueId, settings.userId, dataVersion, !!sheet]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (ui.mode === 'usage' && context && !pw.result && !pw.busy && !pw.error) runPW()
+  }, [ui.mode, leagueId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ranks = res?.ok ? res.value : null
+  const ownerOf = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of context?.rosters ?? []) for (const p of r.players) m.set(p, r.roster_id)
+    return m
+  }, [context])
+  const teamNames = useMemo(() => new Map(ranks?.teams.map(x => [x.roster_id, x.name])), [ranks])
+  const ownerName = (rid: number | null | undefined) => (rid == null ? 'FA' : rid === me ? 'You' : hide ? teamLabel(rid) : teamNames.get(rid) ?? teamLabel(rid))
+
+  const lines = useMemo((): Line[] => {
+    const q = ui.q.trim().toLowerCase()
+    if (ui.mode === 'value') {
+      if (!ranks) return []
+      // The board that matches the league: TE-premium leagues get the TE-prem block.
+      const board = ranks.boards[Math.max(0, ranks.boards.findIndex(b => b.tep === ranks.tePremium > 0))]
+      const teAdj = 1 + 0.25 * (ranks.tePremium - 0.75)
+      const rows = (board?.rows ?? []).filter(r => r.id)
+      const last = Math.max(2, rows[rows.length - 1]?.rank ?? 2)
+      return rows
+        .filter(r => (ui.pos === 'All' || r.pos === ui.pos) && (!q || r.name.toLowerCase().includes(q)))
+        .map(r => {
+          const a = byId.get(r.id!)
+          const tag = a ? marketTag(a) : null
+          // Free agents aren't trade assets: Tyler's rank through the same value curve.
+          const v = a ? mineOf(a) : rankValue(r.rank) * (r.pos === 'TE' ? teAdj : 1)
+          return {
+            key: r.id!,
+            id: r.id!,
+            name: r.name,
+            team: r.team,
+            owner: r.owner,
+            meta: [r.pos, r.team, r.age, ownerName(r.owner)].filter(x => x != null && x !== '').join(' · '),
+            v: kfmt(v),
+            h: 1 - (r.rank - 1) / (last - 1),
+            tag: tag && tag.label !== 'No market' ? tag.label : r.owner == null ? 'Free agent' : '',
+            tagColor: tag?.tone === 'acc' ? 'var(--acc)' : tag?.tone === 'pos' ? 'var(--pos)' : 'var(--mute)',
+            assetId: a ? a.id : null,
+          }
+        })
+    }
+    return (pw.result?.rows ?? [])
+      .filter(r => r.delta != null && (ui.pos === 'All' || r.pos === ui.pos) && (!q || r.name.toLowerCase().includes(q)))
+      .sort((a, b) => b.delta! - a.delta!)
+      .map(r => {
+        const owner = ownerOf.get(r.player_id) ?? null
+        const d = r.delta!
+        const sig = d >= SIGNAL ? 'Buy' : d <= -SIGNAL ? 'Sell' : 'Hold'
+        return {
+          key: r.player_id,
+          id: r.player_id,
+          name: r.name,
+          team: r.team,
+          owner,
+          meta: `${r.pos} · ${r.team} · ${ownerName(owner)} · ${r.usagePPG?.toFixed(1) ?? '—'} → ${r.sleeperPPG?.toFixed(1) ?? '—'} PPG`,
+          v: `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d).toFixed(1)}`,
+          h: 0.5 + d / 16,
+          tag: sig,
+          tagColor: sig === 'Buy' ? 'var(--pos)' : sig === 'Sell' ? 'var(--acc)' : 'var(--mute)',
+          assetId: byId.has(r.player_id) ? r.player_id : null,
+        }
+      })
+  }, [ui, ranks, pw.result, byId, ownerOf, me, hide, teamNames]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!sheet)
+    return (
+      <div className="page">
+        <NeedsSheet />
+      </div>
+    )
+
+  const act = (l: Line) => {
+    if (l.owner == null) {
+      if (context) window.open(`https://sleeper.com/leagues/${context.league.league_id}/players`, '_blank')
+      return
+    }
+    if (!l.assetId) return showToast(`${l.name} isn't in the trade pool.`)
+    add(l.assetId, l.owner, l.name)
+  }
+  const usage = ui.mode === 'usage'
+  const count = usage
+    ? pw.result
+      ? `${lines.length} players · usage weeks ${pw.result.usageWeeks[0]}–${pw.result.usageWeeks[pw.result.usageWeeks.length - 1]}`
+      : ''
+    : ranks
+    ? `${lines.length} players · ${ranks.sheet.name}`
+    : ''
+
+  return (
+    <div className="page stack" style={{ gap: 16 }}>
+      <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+        <Seg
+          lg
+          value={ui.mode}
+          onChange={mode => set({ mode, pos: mode === 'usage' && !['All', 'WR', 'TE'].includes(ui.pos) ? 'All' : ui.pos })}
+          options={[
+            { value: 'value', label: 'Value' },
+            { value: 'usage', label: 'Usage' },
+          ]}
+        />
+        <Pills value={ui.pos} onChange={pos => set({ pos })} options={(usage ? ['All', 'WR', 'TE'] : ['All', 'QB', 'RB', 'WR', 'TE']).map(v => ({ value: v, label: v }))} />
+        <span style={{ flex: 1 }} />
+        <span className="small mute">{count}</span>
+      </div>
+      {!usage && res && !res.ok && <ErrorBox message={res.error} />}
+      {usage && pw.error && <ErrorBox message={`Usage board failed: ${pw.error}`} onRetry={runPW} />}
+      {((!usage && !res) || (usage && !pw.result && pw.busy)) && <Loading label={usage ? 'Building the usage board…' : 'Reading the board…'} />}
+      {(usage ? pw.result : ranks) && lines.length === 0 && <div className="mute">No players match{ui.q ? ` “${ui.q}”` : ''}.</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 8 }}>
+        {lines.map(l => (
+          <GradCard key={l.key} div color={nflColor(l.team)} minHeight={68} onClick={() => openPlayer(l.id, l.name)} style={{ padding: '10px 10px 10px 14px' }}>
+            <Headshot id={l.id} name={l.name} />
+            <Stack2 title={l.name} sub={l.meta} />
+            <span className="stack" style={{ alignItems: 'flex-end', gap: 3 }}>
+              <HeatChip label={l.v} colors={heat(l.h)} minWidth={54} height={28} size={14} />
+              {!!l.tag && <span style={{ fontSize: 12, fontWeight: 600, color: l.tagColor }}>{l.tag}</span>}
+            </span>
+            <button
+              className="btn sm"
+              style={{ fontWeight: 700, fontSize: 13 }}
+              onClick={e => {
+                e.stopPropagation()
+                act(l)
+              }}
+            >
+              {l.owner == null ? 'Claim' : l.owner === me ? 'Offer' : 'Trade for'}
+            </button>
+          </GradCard>
+        ))}
+      </div>
+    </div>
+  )
+}

@@ -17,9 +17,11 @@ import type {
   LeagueSummary,
   ManualInjury,
   OverviewData,
+  GameLog,
   OwnedPick,
   PickOddsOpts,
   PlayerHit,
+  PlayerInfo,
   PWOPRResult,
   RanksData,
   Result,
@@ -162,6 +164,23 @@ export function createMonteService(host: Host) {
     const stats = await sleeper<SeasonStats>(`/stats/nfl/regular/${season}`)
     await host.cacheWrite(`stats_${season}.json`, JSON.stringify(stats))
     return stats
+  }
+
+  // A player's weeks so far: a game a week, kept an hour since this week's can still change.
+  const logMem = new Map<string, { at: number; games: GameLog[] }>()
+  async function gameLogs(id: string, season: string): Promise<GameLog[]> {
+    const key = `${id}|${season}`
+    const hit = logMem.get(key)
+    if (hit && Date.now() - hit.at < 3600 * 1000) return hit.games
+    const res = await fetch(`https://api.sleeper.com/stats/nfl/player/${id}?season_type=regular&season=${season}&grouping=week`)
+    if (!res.ok) throw new Error(`Sleeper's weekly stats returned ${res.status}`)
+    const byWeek = ((await res.json()) ?? {}) as Record<string, any>
+    const games = Object.values(byWeek)
+      .filter(w => w && w.stats && Number(w.stats.gp) > 0)
+      .map(w => ({ week: Number(w.week), opp: String(w.opponent ?? ''), stats: w.stats as Record<string, number> }))
+      .sort((a, b) => a.week - b.week)
+    logMem.set(key, { at: Date.now(), games })
+    return games
   }
 
   // Game status moves during a slate (pre_game -> in_game -> complete), so this cache is short.
@@ -397,6 +416,30 @@ export function createMonteService(host: Host) {
         .sort((a, b) => a.score - b.score)
         .slice(0, 12)
         .map(({ score: _s, ...h }) => h)
+    },
+
+    /** Bio from the cached player table, and this season's games from Sleeper's per-player weekly
+     *  stats (an undocumented endpoint Sleeper's own player pages use). Games are cached an hour. */
+    async playerInfo(id: string): Promise<PlayerInfo> {
+      const [meta, state] = await Promise.all([playersMeta(), sleeper<any>('/state/nfl')])
+      const p = meta[id]
+      if (!p) throw new Error(`Sleeper has no player ${id}.`)
+      const season = String(state.league_season || state.season)
+      const num = (v: unknown) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v))
+      return {
+        id,
+        name: nameOf(p),
+        pos: p.position ?? '',
+        team: p.team ?? 'FA',
+        age: num(p.age),
+        height: num(p.height),
+        weight: num(p.weight),
+        college: p.college || null,
+        yearsExp: num(p.years_exp),
+        injury: p.injury_status ?? '',
+        season,
+        games: await gameLogs(id, season),
+      }
     },
 
     /** The bundled config list, resolved to Sleeper ids so it can be imported as editable entries. */

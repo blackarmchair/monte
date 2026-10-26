@@ -367,8 +367,9 @@ export function buildStartSit(o: {
     const to = best.findIndex(x => x?.id === p.id)
     moves.push({ player: p, from: LABEL[positions[i]] ?? positions[i], to: LABEL[positions[to]] ?? positions[to] })
   })
-  const starting = new Set(best.filter(Boolean).map(p => p!.id))
-  const bench = [...all.values()].filter(p => !starting.has(p.id)).sort((a, b) => Number(b.startable) - Number(a.startable) || b.proj - a.proj)
+  // Bench is relative to the lineup Sleeper has now, which the screens draw from `current`. Leaving
+  // out the BEST lineup instead dropped every benched player the plan wants to start off both lists.
+  const bench = [...all.values()].filter(p => !curIds.has(p.id)).sort((a, b) => Number(b.startable) - Number(a.startable) || b.proj - a.proj)
 
   // Opponent's projection from the lineup they actually have set, priced the same way.
   let opponent: StartSitData['opponent'] = null
@@ -393,6 +394,8 @@ export function buildStartSit(o: {
 
   return {
     week,
+    rosterId: me.roster_id,
+    starters: positions.map((_, i) => (starterIds[i] ? String(starterIds[i]) : '0')),
     boardWeek,
     sheet: { name: fileName(o.sheetPath), modifiedAt: o.modifiedAt },
     columns,

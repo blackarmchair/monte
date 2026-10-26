@@ -3,8 +3,9 @@ import AppHeader from '@/ui/AppHeader'
 import TabBar from '@/ui/TabBar'
 import { useTheme } from '@/ui/theme'
 
-// Five tabs, plus Settings and Injury overrides as hidden routes: they push over the current tab
-// with a back arrow, the tab bar stays, and tapping any tab leaves them.
+// Five tabs, plus Team, Player and Settings as hidden routes: they push over the current tab with
+// a back button, the tab bar stays, and tapping any tab leaves them. Team and Player draw their
+// own header, since the title is the team or player.
 export default function TabsLayout() {
   const t = useTheme()
   return (
@@ -18,8 +19,9 @@ export default function TabsLayout() {
       <Tabs.Screen name="trade" options={{ title: 'Trade' }} />
       <Tabs.Screen name="players" options={{ title: 'Players' }} />
       <Tabs.Screen name="picks" options={{ title: 'Picks' }} />
+      <Tabs.Screen name="team" options={{ title: 'Team', headerShown: false }} />
+      <Tabs.Screen name="player" options={{ title: 'Player', headerShown: false }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings', header: () => <AppHeader title="Settings" /> }} />
-      <Tabs.Screen name="overrides" options={{ title: 'Injury overrides', header: () => <AppHeader title="Injury overrides" /> }} />
     </Tabs>
   )
 }

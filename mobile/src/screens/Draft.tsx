@@ -1,6 +1,7 @@
-// Draft: how the rookie draft went, round by round, and every team's grade. While a draft is
-// live (or about to be) it also has the clock and a Board of who's left. Grades port draftPunk's
-// sheet-order rule; Sleeper is polled while the draft can still change.
+// Draft: how the rookie draft went, round by round, and every team's grade, as team-coloured pick
+// cards with a grade heat chip. While a draft is live (or about to be) it also has the clock and
+// a Board of who's left. Grades port draftPunk's sheet-order rule; Sleeper is polled while the
+// draft can still change.
 import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import type { DraftData, DraftPickRow, DraftPlayer, DraftPool, DraftPoll, DraftStatus, Result } from '@monte/core/types'
@@ -9,8 +10,8 @@ import { teamLabel } from '@monte/core/names'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { useOverlay } from '@/ui/overlay'
-import { Btn, Chip, Empty, ErrorBox, Field, GradeBadge, Kicker, ListRow, Loading, NeedsSheet, Notice, Pills, PlayerAvatar, Row, Seg, Stack2, T } from '@/ui/kit'
-import { RADIUS, useTheme } from '@/ui/theme'
+import { Btn, Card, Empty, ErrorBox, Field, GradCard, Headshot, HeatChip, Hero, Loading, NeedsSheet, Notice, Pills, Row, Seg, Stack2, T, Tag, TeamAvatar } from '@/ui/kit'
+import { heat, nflColor, teamColor, useTheme } from '@/ui/theme'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
 /** A new tier starts where 12+ players sit between two pool players on Tyler's overall board. */
@@ -20,7 +21,6 @@ const POLL_MS: Record<DraftStatus, number | null> = { drafting: 5000, paused: 15
 const STATUS_LABEL: Record<DraftStatus, string> = { drafting: 'Live', paused: 'Paused', pre_draft: 'Not started', complete: 'Complete' }
 const PAGE = 40
 const LETTERS: GradeLetter[] = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F']
-const gradeColor = (t: ReturnType<typeof useTheme>, g: string | null | undefined) => (!g ? t.mute : g[0] === 'A' ? t.pos : g[0] === 'B' ? t.ink2 : t.warn)
 
 function whyOf(g: PickGrade): string {
   if (!g.graded) return g.reason === 'not-on-sheet' ? 'Not on the sheet, so not graded.' : 'Position not graded.'
@@ -118,7 +118,7 @@ export default function DraftPanel() {
       .sort((a, b) => (b.grade.averageScore ?? -99) - (a.grade.averageScore ?? -99))
   }, [d, picks, grades])
 
-  if (!sheet) return <NeedsSheet />
+  if (!sheet) return <NeedsSheet inset={false} />
   if (!context) return <Loading label="Loading league…" />
 
   const made = new Set(picks.map(p => p.pickNo))
@@ -164,7 +164,7 @@ export default function DraftPanel() {
 
   const openPick = (p: DraftPickRow) => openSheet(<PickDetail p={p} g={grades.get(p.pickNo)} team={teamName(p.rosterId)} />)
   const openTeam = (x: (typeof teamGrades)[number]) =>
-    openSheet(<TeamPicks name={teamName(x.rid)} letter={x.grade.letter} picks={x.picks} grades={grades} onPick={openPick} />)
+    openSheet(<TeamPicks name={teamName(x.rid)} rid={x.rid} letter={x.grade.letter} picks={x.picks} grades={grades} onPick={openPick} />)
 
   const toggleManual = (id: string) =>
     setManual(m => {
@@ -175,46 +175,28 @@ export default function DraftPanel() {
     })
 
   return (
-    <View>
-      <View style={{ padding: 16, gap: 6 }}>
-        <T v="serif">{head || 'Loading the draft…'}</T>
-        {!!sub && (
-          <T c="mute" size={14}>
-            {sub}
-          </T>
-        )}
-        {live && myNext.length > 0 && (
-          <T c="mute" size={14}>
-            Your picks: {myNext.map(s => s.label).join(', ')}
-          </T>
-        )}
-      </View>
+    <>
+      <Hero gap={8}>
+        <T v="head">{head || 'Loading the draft…'}</T>
+        {!!sub && <T c="ink2">{sub}</T>}
+        {live && myNext.length > 0 && <T c="ink2">Your picks: {myNext.map(s => s.label).join(', ')}</T>}
+      </Hero>
 
-      <View style={{ paddingHorizontal: 16, gap: 10 }}>
-        {res && !res.ok && <ErrorBox message={res.error} onRetry={() => load()} />}
-        {!res && busy && <Loading label="Loading the draft…" />}
-        {pollError && <Notice message={`Sleeper didn't answer the last check (${pollError}). Still retrying.`} />}
-        {d && d.order.every(s => s.rosterId == null) && d.draft.status === 'pre_draft' && (
-          <Notice message="Sleeper hasn't set this draft's order yet. It fills in once the commissioner sets it." />
-        )}
-      </View>
+      {res && !res.ok && <ErrorBox message={res.error} onRetry={() => load()} />}
+      {!res && busy && <Loading label="Loading the draft…" />}
+      {pollError && <Notice message={`Sleeper didn't answer the last check (${pollError}). Still retrying.`} />}
+      {d && d.order.every(s => s.rosterId == null) && d.draft.status === 'pre_draft' && (
+        <Notice message="Sleeper hasn't set this draft's order yet. It fills in once the commissioner sets it." />
+      )}
 
       {d && (
         <>
-          <View style={{ paddingHorizontal: 16, paddingBottom: 10, paddingTop: 4 }}>
-            {segs.length <= 5 ? (
-              <Seg fill value={cur} onChange={setSeg} options={segs.map(s => ({ value: s, label: s }))} />
-            ) : (
-              <Pills value={cur} onChange={setSeg} options={segs.map(s => ({ value: s, label: s }))} />
-            )}
-          </View>
+          <Pills value={cur} onChange={setSeg} options={segs.map(s => ({ value: s, label: s.replace(/^Rd /, 'Round ') }))} />
 
           {cur === 'Board' && (
             <>
-              <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-                <Pills value={pos} onChange={v => setPos(v)} options={(['All', ...POSITIONS] as const).map(v => ({ value: v, label: v }))} />
-              </View>
-              {available.length === 0 && <Empty message="The pool is empty." style={{ marginHorizontal: 16 }} />}
+              <Pills value={pos} onChange={v => setPos(v)} options={(['All', ...POSITIONS] as const).map(v => ({ value: v, label: v }))} />
+              {available.length === 0 && <Empty message="The pool is empty." />}
               {(() => {
                 const shown = available.filter(p => pos === 'All' || p.pos === pos)
                 return (
@@ -223,31 +205,28 @@ export default function DraftPanel() {
                       const tier = tierOf.get(p.id)!
                       const header = i === 0 || tierOf.get(shown[i - 1].id) !== tier
                       return (
-                        <View key={p.id}>
+                        <View key={p.id} style={{ gap: 8 }}>
                           {header && (
-                            <View style={{ paddingHorizontal: 16, paddingVertical: 6, backgroundColor: t.card, borderBottomWidth: 1, borderColor: t.line }}>
-                              <Kicker>Tier {tier}</Kicker>
-                            </View>
+                            <T v="label" style={{ paddingTop: i ? 8 : 0 }}>
+                              Tier {tier}
+                            </T>
                           )}
-                          <ListRow>
-                            <T v="mono" size={14} c="mute" style={{ width: 40 }}>
+                          <GradCard color={nflColor(t, p.team)} minHeight={64} style={{ paddingVertical: 8 }}>
+                            <T v="bold" size={14} c="mute" num style={{ width: 34 }}>
                               #{p.rank}
                             </T>
-                            <PlayerAvatar id={p.id} name={p.name} />
+                            <Headshot id={p.id} name={p.name} size={42} />
                             <Stack2
                               title={p.name}
+                              size={15}
                               sub={`${p.pos}${rankIndex.get(p.pos)?.get(p.id) ?? ''} · ${p.team}${p.age != null ? ` · ${p.age.toFixed(0)}` : ''}${p.injury ? ` · ${p.injury}` : ''}`}
                             />
                             <Btn kind="link" label={manual.has(p.id) ? 'Undo' : 'Taken'} onPress={() => toggleManual(p.id)} />
-                          </ListRow>
+                          </GradCard>
                         </View>
                       )
                     })}
-                    {shown.length > limit && (
-                      <View style={{ padding: 16 }}>
-                        <Btn label={`Show more (${shown.length - limit} left)`} onPress={() => setLimit(l => l + PAGE)} />
-                      </View>
-                    )}
+                    {shown.length > limit && <Btn full label={`Show more (${shown.length - limit} left)`} onPress={() => setLimit(l => l + PAGE)} bg={t.surf} />}
                   </>
                 )
               })()}
@@ -260,38 +239,48 @@ export default function DraftPanel() {
               .map(p => {
                 const g = grades.get(p.pickNo)
                 return (
-                  <ListRow key={p.pickNo} onPress={() => openPick(p)} bg={p.rosterId === myRid ? t.accTint : undefined}>
-                    <T v="mono" size={14} c="mute" style={{ width: 40 }}>
+                  <GradCard
+                    key={p.pickNo}
+                    color={p.rosterId != null ? teamColor(p.rosterId) : null}
+                    selected={p.rosterId === myRid}
+                    minHeight={64}
+                    style={{ paddingVertical: 8 }}
+                    onPress={() => openPick(p)}
+                    accessibilityLabel={`${p.label} ${p.name}`}
+                  >
+                    <T v="bold" size={14} c="mute" num style={{ width: 34 }}>
                       {p.label}
                     </T>
-                    <PlayerAvatar id={p.playerId} name={p.name} />
-                    <Stack2 title={p.name} sub={`${p.pos} · ${teamName(p.rosterId)}${g?.graded ? ` · sheet ${g.position}${g.userRank}` : ''}`} />
-                    <GradeBadge g={g?.graded ? g.letter : null} />
-                  </ListRow>
+                    <Headshot id={p.playerId} name={p.name} size={42} />
+                    <Stack2 title={p.name} size={15} sub={`${p.pos} · ${teamName(p.rosterId)}`} />
+                    <GradeChip g={g?.graded ? g.letter : null} />
+                  </GradCard>
                 )
               })}
 
           {cur === 'Teams' &&
             (teamGrades.length === 0 ? (
-              <Empty message="Team grades appear once picks are made." style={{ marginHorizontal: 16 }} />
+              <Empty message="Team grades appear once picks are made." />
             ) : (
               teamGrades.map((x, i) => (
-                <ListRow key={x.rid} onPress={() => openTeam(x)} bg={x.rid === myRid ? t.accTint : undefined}>
-                  <T v="mono" size={14} c="mute" style={{ width: 40 }}>
-                    #{i + 1}
+                <GradCard key={x.rid} color={teamColor(x.rid)} selected={x.rid === myRid} minHeight={64} onPress={() => openTeam(x)}>
+                  <T v="bold" size={14} c="mute" num style={{ width: 24 }}>
+                    {i + 1}
                   </T>
-                  <Stack2 title={teamName(x.rid)} sub={`${x.picks.length} pick${x.picks.length === 1 ? '' : 's'}`} />
-                  <GradeBadge g={x.grade.letter} />
-                </ListRow>
+                  <TeamAvatar rid={x.rid} name={teamName(x.rid)} size={42} />
+                  <Stack2 title={teamName(x.rid)} size={15} sub={`${x.picks.length} pick${x.picks.length === 1 ? '' : 's'}`} />
+                  <GradeChip g={x.grade.letter} />
+                </GradCard>
               ))
             ))}
 
-          <View style={{ padding: 16, gap: 10 }}>
+          <Card gap={12} style={{ marginTop: 8 }}>
             <Row gap={10} wrap>
-              <T c="mute" size={14}>
+              <T size={14} c="ink2" style={{ flex: 1 }}>
                 Grade against
               </T>
               <Seg
+                track={t.surf2}
                 value={pool}
                 onChange={setPool}
                 options={[
@@ -308,9 +297,9 @@ export default function DraftPanel() {
                     <Pressable
                       key={x.draft_id}
                       onPress={() => setDraftId(x.draft_id)}
-                      style={{ minHeight: 36, justifyContent: 'center', borderWidth: 1, borderColor: on ? t.ink : t.line, borderRadius: RADIUS, paddingHorizontal: 10, backgroundColor: on ? t.ink : 'transparent' }}
+                      style={{ minHeight: 36, justifyContent: 'center', borderRadius: 18, paddingHorizontal: 12, backgroundColor: on ? t.ink : t.surf2 }}
                     >
-                      <T size={14} color={on ? t.bg : t.ink2}>
+                      <T v="semi" size={13} color={on ? t.bg : t.ink2}>
                         {x.season}
                         {x.leagueId === leagueId ? '' : ' mock'} · {STATUS_LABEL[x.status].toLowerCase()}
                       </T>
@@ -326,9 +315,10 @@ export default function DraftPanel() {
               placeholder="Other draft ID (mocks)"
               autoCapitalize="none"
               returnKeyType="go"
+              boxStyle={{ backgroundColor: t.surf2 }}
             />
             <Row gap={10}>
-              <Chip label={STATUS_LABEL[status]} tone={status === 'drafting' ? 'pos' : status === 'paused' ? 'warn' : 'chip'} mono />
+              <Tag label={STATUS_LABEL[status]} tone={status === 'drafting' ? 'acc' : status === 'paused' ? 'warn' : 'mid'} />
               <T v="small" c="mute" style={{ flex: 1 }}>
                 {d.sheet.name} · {POLL_MS[status] ? `checking every ${POLL_MS[status]! / 1000}s` : 'not polling'}
               </T>
@@ -337,77 +327,87 @@ export default function DraftPanel() {
             <T v="small" c="mute">
               Grades: how far a player went past (or ahead of) his position rank on the sheet, within the {pool === 'rookies' ? 'rookie' : 'whole-board'} pool.
             </T>
-          </View>
+          </Card>
         </>
       )}
-    </View>
+    </>
+  )
+}
+
+/** Grade points for the heat scale: C and below read as bad, A+ as fully good. */
+const GPA: Record<string, number> = { 'A+': 4.3, A: 4, 'A-': 3.7, 'B+': 3.3, B: 3, 'B-': 2.7, 'C+': 2.3, C: 2, 'C-': 1.7, D: 1, F: 0 }
+function GradeChip({ g, big }: { g: string | null | undefined; big?: boolean }) {
+  const t = useTheme()
+  return (
+    <HeatChip
+      label={g ?? '–'}
+      colors={g ? heat(t, (GPA[g] - 2) / 2.3) : { bg: t.surf2, fg: t.mute }}
+      minWidth={big ? 48 : 38}
+      height={big ? 40 : 32}
+      size={big ? 20 : 15}
+      style={{ paddingHorizontal: 6 }}
+    />
   )
 }
 
 function PickDetail({ p, g, team }: { p: DraftPickRow; g: PickGrade | undefined; team: string }) {
-  const t = useTheme()
-  const letter = g?.graded ? g.letter : null
+  const { openPlayer } = useApp()
+  const { closeSheet } = useOverlay()
   return (
-    <View style={{ gap: 12 }}>
-      <Row style={{ alignItems: 'baseline', justifyContent: 'space-between' }} gap={10}>
-        <T v="title" style={{ flex: 1 }}>
+    <View style={{ gap: 10 }}>
+      <Row style={{ justifyContent: 'space-between' }} gap={10}>
+        <T v="bold" size={24} style={{ flex: 1 }}>
           {p.label} {p.name}
         </T>
-        <T v="serif" size={32} color={gradeColor(t, letter)}>
-          {letter ?? '–'}
-        </T>
+        <GradeChip g={g?.graded ? g.letter : null} big />
       </Row>
-      <T c="mute" size={14}>
+      <T size={14} c="ink2">
         {p.pos} · {team}
         {g?.graded ? ` · went ${g.position}${g.posPick}, sheet ${g.position}${g.userRank}` : ''}
       </T>
-      {g && <T>{whyOf(g)}</T>}
+      {g && (
+        <T v="semi" size={17}>
+          {whyOf(g)}
+        </T>
+      )}
+      <Btn
+        full
+        label="Open player"
+        style={{ marginTop: 6, minHeight: 48 }}
+        onPress={() => {
+          closeSheet()
+          openPlayer(p.playerId, p.name)
+        }}
+      />
     </View>
   )
 }
 
-function TeamPicks(props: { name: string; letter: GradeLetter | null; picks: DraftPickRow[]; grades: Map<number, PickGrade>; onPick: (p: DraftPickRow) => void }) {
-  const t = useTheme()
+function TeamPicks(props: { name: string; rid: number; letter: GradeLetter | null; picks: DraftPickRow[]; grades: Map<number, PickGrade>; onPick: (p: DraftPickRow) => void }) {
   return (
-    <View style={{ gap: 12 }}>
-      <Row style={{ alignItems: 'baseline', justifyContent: 'space-between' }} gap={10}>
-        <T v="title" style={{ flex: 1 }}>
+    <View style={{ gap: 8 }}>
+      <Row style={{ justifyContent: 'space-between' }} gap={10}>
+        <T v="bold" size={24} style={{ flex: 1 }}>
           {props.name}
         </T>
-        <T v="serif" size={32} color={gradeColor(t, props.letter)}>
-          {props.letter ?? '–'}
-        </T>
+        <GradeChip g={props.letter} big />
       </Row>
-      <T c="mute" size={14}>
+      <T size={14} c="ink2" style={{ paddingBottom: 4 }}>
         Rookie draft picks
       </T>
-      <View>
-        {props.picks.map(p => {
-          const g = props.grades.get(p.pickNo)
-          return (
-            <Pressable
-              key={p.pickNo}
-              onPress={() => props.onPick(p)}
-              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, borderBottomWidth: 1, borderColor: t.line, backgroundColor: pressed ? t.card : 'transparent' })}
-            >
-              <T v="mono" size={14} c="mute" style={{ width: 40 }}>
-                {p.label}
-              </T>
-              <T style={{ flex: 1 }} lines={1}>
-                {p.name}{' '}
-                <T v="small" c="mute">
-                  {p.pos}
-                  {g?.graded ? ` · sheet ${g.position}${g.userRank}` : ''}
-                </T>
-              </T>
-              <T v="monoSemi" color={gradeColor(t, g?.graded ? g.letter : null)}>
-                {g?.graded ? g.letter : '–'}
-              </T>
-            </Pressable>
-          )
-        })}
-      </View>
+      {props.picks.map(p => {
+        const g = props.grades.get(p.pickNo)
+        return (
+          <GradCard key={p.pickNo} color={teamColor(props.rid)} minHeight={60} style={{ paddingVertical: 8 }} onPress={() => props.onPick(p)}>
+            <T v="bold" size={14} c="mute" num style={{ width: 34 }}>
+              {p.label}
+            </T>
+            <Headshot id={p.playerId} name={p.name} size={40} />
+            <Stack2 title={p.name} size={15} sub={`${p.pos}${g?.graded ? ` · sheet ${g.position}${g.userRank}` : ''}`} />
+            <GradeChip g={g?.graded ? g.letter : null} />
+          </GradCard>
+        )
+      })}
     </View>
   )
 }
-

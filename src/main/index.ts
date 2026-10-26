@@ -1,12 +1,14 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
 import { join } from 'node:path'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import createEngine from './engine.worker?nodeWorker'
 // Windows wants the multi-size .ico (crisp at 16–256px in the title bar and taskbar).
 import iconIco from '../../resources/icon.ico?asset'
 import iconPng from '../../resources/icon.png?asset'
 import type { EngineJob } from '@monte/core/engine'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
+import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
+import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
 import { readRanksFile, watchRanksFile } from './ranksFile'
 import { loadWorkbook } from './workbook'
 import type { RanksFileInfo, Result, Settings } from '@monte/core/types'
@@ -40,10 +42,69 @@ async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
  * the CSS reads, and it also themes the native title bar so the frame matches the page.
  */
 function applyTheme(theme: Settings['theme']) {
-  nativeTheme.themeSource = theme ?? 'light'
-  const bg = nativeTheme.shouldUseDarkColors ? '#181613' : '#f2eee5'
+  nativeTheme.themeSource = theme ?? 'dark'
+  const bg = nativeTheme.shouldUseDarkColors ? '#141210' : '#F3EFE7'
   for (const w of BrowserWindow.getAllWindows()) w.setBackgroundColor(bg)
 }
+
+// ---- Sleeper session (trade offers, lineups) -------------------------------------------
+// The token can act as the user on Sleeper, so it never goes in settings.json: it is kept
+// encrypted by the OS (DPAPI / Keychain / libsecret) in its own file, and never reaches the
+// renderer: every write to Sleeper is sent from this process.
+const tokenFile = () => join(dataDir(), 'sleeper-token.bin')
+
+async function readSleeperToken(): Promise<string | null> {
+  try {
+    return safeStorage.decryptString(await readFile(tokenFile()))
+  } catch {
+    return null
+  }
+}
+
+async function writeSleeperToken(token: string) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("This computer has no secure storage for the Sleeper token, so Monte can't keep it.")
+  await mkdir(dataDir(), { recursive: true })
+  await writeFile(tokenFile(), safeStorage.encryptString(token))
+}
+
+const clearSleeperToken = () => rm(tokenFile(), { force: true })
+
+async function connectSleeper(token: string): Promise<Settings> {
+  const s = await loadSettings()
+  if (!s.userId) throw new Error('Sign in with your Sleeper username first.')
+  const t = token.trim().replace(/^"|"$/g, '')
+  if (!t) throw new Error('Paste the token first.')
+  const name = await checkToken(t, s.userId)
+  await writeSleeperToken(t)
+  const info = readToken(t)
+  return saveSettings({ sleeperLink: { name: name || s.displayName || '', expiresAt: info?.expiresAt ?? null, connectedAt: new Date().toISOString() } })
+}
+
+async function disconnectSleeper(): Promise<Settings> {
+  await clearSleeperToken()
+  return saveSettings({ sleeperLink: undefined })
+}
+
+/** Run a write with the stored token; a refused token disconnects, and `needsConnect` says so. */
+async function withSleeper<T>(run: (token: string) => Promise<T>): Promise<Result<T> & { needsConnect?: boolean }> {
+  const token = await readSleeperToken()
+  if (!token) return { ok: false, error: 'Connect Sleeper first.', needsConnect: true }
+  try {
+    return { ok: true, value: await run(token) }
+  } catch (e) {
+    const auth = e instanceof SleeperAuthError
+    if (auth) await disconnectSleeper()
+    return { ok: false, error: e instanceof Error ? e.message : String(e), needsConnect: auth }
+  }
+}
+
+const sendTrade = (p: TradeProposal) =>
+  withSleeper(async token => {
+    const r = await proposeTrade(p, token)
+    return { transactionId: r.transactionId, mismatch: r.mismatch }
+  })
+
+const sendLineup = (w: LineupWrite) => withSleeper(token => setStarters(w, token))
 
 // ---- engine ----------------------------------------------------------------------------
 function runWorker(job: EngineJob): Promise<unknown> {
@@ -133,7 +194,7 @@ function createWindow() {
     title: 'Monte',
     icon: process.platform === 'win32' ? iconIco : iconPng,
     // Matches the active theme's paper so there is no flash before the page paints.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#181613' : '#f2eee5',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141210' : '#F3EFE7',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -166,9 +227,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('league:draft', wrap(monte.draft))
   ipcMain.handle('draft:picks', wrap(monte.draftPicks))
   ipcMain.handle('players:search', wrap(monte.searchPlayers))
+  ipcMain.handle('players:info', wrap(monte.playerInfo))
   ipcMain.handle('injuries:bundled', wrap(monte.bundledInjuries))
   ipcMain.handle('ranks:choose', wrap(chooseRanksFile))
   ipcMain.handle('ranks:info', wrap(async () => loadRanksFile((await loadSettings()).ranksFile)))
+  ipcMain.handle('sleeper:connect', wrap(connectSleeper))
+  ipcMain.handle('sleeper:disconnect', () => disconnectSleeper())
+  ipcMain.handle('sleeper:propose', (_e, p: TradeProposal) => sendTrade(p))
+  ipcMain.handle('sleeper:lineup', (_e, w: LineupWrite) => sendLineup(w))
 
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())

@@ -16,20 +16,24 @@ app (built for Android), both on the same shared core. There is no server: every
 
 ## What it does
 
-- **League overview.** Every team ranked by total value, starter strength and position, with
-  contender tiers, a value-vs-starters map and each roster in detail.
-- **Pick odds.** A Monte Carlo of the rest of the season projects the draft order and where each
-  of your picks lands, with what-if toggles for next week's matchups.
-- **Trades.** Your side valued on Tyler's sheet, theirs on the market at an adjustable blend.
-  Verdicts on effective value (one star beats a bundle of the same raw total), a deal finder
-  where both sides win, and roster value by position after the trade. The phone app can send the
-  offer in Sleeper.
-- **Start/Sit.** This week's lineup off Tyler's weekly boards, the best swap, and a win
-  probability against your opponent.
-- **Usage vs projection (PWOPR).** Who is out-earning or under-earning their role: buy, sell,
-  start, fade.
-- **Draft.** A live rookie-draft board, pick grades against the sheet, and team grades.
-- **Ranks.** Tyler's superflex boards, matched to who rosters each player in your league.
+Both apps share one design (the hybrid "2b" handoff: warm palette, dark first) and the same five
+sections: League, Lineup, Trade, Players and Picks, plus a page for every player.
+
+- **League.** Every team ranked by total value, starter strength and record, with contender
+  tiers and each roster in detail (a side panel on desktop, its own page on the phone). The phone
+  also has the value-vs-starters map.
+- **Lineup.** This week's lineup off Tyler's weekly boards, the best swap, a win probability
+  against your opponent, and Set in Sleeper.
+- **Trade.** Your side valued on Tyler's sheet, theirs on the market at an adjustable blend.
+  Verdicts on effective value (one star beats a bundle of the same raw total), deals Monte found
+  where both sides win, roster value by position after the trade, and Send in Sleeper.
+- **Players.** Tyler's superflex board matched to who rosters each player (Value), and usage vs
+  projection, PWOPR (Usage): who is out-earning or under-earning his role.
+- **Player.** Sheet against market, this season's games from Sleeper, trade actions, and his
+  injury override.
+- **Picks.** A Monte Carlo of the rest of the season projects the draft order and where each of
+  your picks lands, with what-if picks for next week's matchups; and the rookie draft: a live
+  board, pick grades against the sheet, and team grades.
 - **Hide names** for sharing screenshots, light and dark themes, and injury overrides that feed
   every model.
 
@@ -68,8 +72,12 @@ cd monte
 npm install
 npm run dev        # run with hot reload
 npm run build      # production build into out/
+npm run dist       # Windows installer: dist/Monte-Setup-<version>.exe
 npm run typecheck
 ```
+
+The installer is unsigned, so Windows SmartScreen asks once (More info → Run anyway). Installing
+a newer version over an old one keeps your settings.
 
 On first launch, enter your Sleeper username and point Monte at the rankings .xlsx. Monte
 watches the file and reloads when you download a newer copy.

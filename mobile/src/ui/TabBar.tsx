@@ -1,6 +1,8 @@
-// Bottom tabs: League · Lineup · Trade · Players · Picks. Active = accent icon and label with a
-// 2px accent bar on top; Trade carries a badge with the number of assets in the draft trade.
-// Settings and Overrides are hidden routes, so the bar stays put on them with nothing active.
+// Bottom tabs on surf: League · Lineup · Trade · Players · Picks. The active tab gets an
+// acc-tint pill behind its icon and a bold ink label; Trade carries a badge with the number of
+// assets in the draft trade. Team, Player and Settings are hidden routes pushed over a tab, so the
+// tab they were opened from stays lit.
+import { useRef } from 'react'
 import { Pressable, Text, View } from 'react-native'
 import type { BottomTabBarProps } from 'expo-router/js-tabs'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -21,12 +23,15 @@ export default function TabBar({ state, navigation }: BottomTabBarProps) {
   const t = useTheme()
   const insets = useSafeAreaInsets()
   const { count } = useTrade()
-  const current = state.routes[state.index]?.name
+  const route = state.routes[state.index]?.name
+  const last = useRef('index')
+  if (TABS.some(x => x.name === route)) last.current = route
+  const current = last.current
   return (
-    <View style={{ flexDirection: 'row', borderTopWidth: 1, borderColor: t.line, backgroundColor: t.card, paddingHorizontal: 4, paddingBottom: insets.bottom }}>
+    <View style={{ flexDirection: 'row', backgroundColor: t.surf, paddingHorizontal: 4, paddingTop: 2, paddingBottom: Math.max(insets.bottom, 8) }}>
       {TABS.map(tab => {
         const on = current === tab.name
-        const color = on ? t.acc : t.mute
+        const color = on ? t.ink : t.mute
         const badge = tab.name === 'trade' ? count : 0
         return (
           <Pressable
@@ -35,22 +40,23 @@ export default function TabBar({ state, navigation }: BottomTabBarProps) {
             accessibilityState={{ selected: on }}
             accessibilityLabel={badge ? `${tab.label}, ${badge} in trade` : tab.label}
             onPress={() => {
-              const route = state.routes.find(r => r.name === tab.name)
-              const ev = route && navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true })
+              const r = state.routes.find(x => x.name === tab.name)
+              const ev = r && navigation.emit({ type: 'tabPress', target: r.key, canPreventDefault: true })
               if (!ev?.defaultPrevented) navigation.navigate(tab.name)
             }}
-            style={{ flex: 1, height: TAB_H, alignItems: 'center', justifyContent: 'center', gap: 3 }}
+            style={{ flex: 1, height: TAB_H - 4, alignItems: 'center', justifyContent: 'center', gap: 3, paddingTop: 4 }}
           >
-            <View style={{ position: 'absolute', top: -1, left: '30%', right: '30%', height: 2, backgroundColor: on ? t.acc : 'transparent' }} />
-            <Icon name={tab.icon} color={color} />
-            <Text style={{ fontFamily: on ? font.sansSemi : font.sans, fontSize: 12, color }}>{tab.label}</Text>
+            <View style={{ width: 52, height: 30, borderRadius: 15, backgroundColor: on ? t.accTint : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name={tab.icon} color={color} stroke={1.8} />
+            </View>
+            <Text style={{ fontFamily: on ? font.sansBold : font.sansMed, fontSize: 12, color }}>{tab.label}</Text>
             {badge > 0 && (
               <View
                 style={{
                   position: 'absolute',
-                  top: 5,
+                  top: 2,
                   left: '50%',
-                  marginLeft: 6,
+                  marginLeft: 10,
                   minWidth: 18,
                   height: 18,
                   paddingHorizontal: 5,
@@ -60,7 +66,7 @@ export default function TabBar({ state, navigation }: BottomTabBarProps) {
                   justifyContent: 'center',
                 }}
               >
-                <Text style={{ fontFamily: font.sansSemi, fontSize: 11, color: '#fff' }}>{badge}</Text>
+                <Text style={{ fontFamily: font.sansBold, fontSize: 11, color: t.accInk }}>{badge}</Text>
               </View>
             )}
           </Pressable>

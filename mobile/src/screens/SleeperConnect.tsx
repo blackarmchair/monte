@@ -1,5 +1,5 @@
 // Connect Sleeper: paste the session token from a signed-in sleeper.com so Monte can send trade
-// offers. Used in Settings and, when needed, right in the trade review sheet.
+// offers and set lineups. Used in Settings and, when needed, right in the trade sheet or Lineup.
 import { useState } from 'react'
 import { View } from 'react-native'
 import { useApp } from '@/lib/store'
@@ -27,12 +27,12 @@ export default function SleeperConnect({ onDone }: { onDone?: () => void }) {
         Paste it here.
       </T>
       <T c="mute" size={13}>
-        The token can act as you on Sleeper. Monte keeps it in this phone's secure storage and uses it only to send offers you confirm. Disconnect any time in
+        The token can act as you on Sleeper. Monte keeps it in this phone's secure storage and uses it only for the trade offers and lineups you send from Monte. Disconnect any time in
         Settings; signing out of sleeper.com also ends it.
       </T>
       <Field value={token} onChangeText={setToken} placeholder="Paste the token" autoCapitalize="none" secureTextEntry onSubmitEditing={go} />
       {error && <ErrorBox message={error} />}
-      <Btn big full kind="primary" label={busy ? 'Checking with Sleeper…' : 'Connect Sleeper'} disabled={busy || !token.trim()} onPress={go} />
+      <Btn full size="lg" kind="primary" label={busy ? 'Checking with Sleeper…' : 'Connect Sleeper'} disabled={busy || !token.trim()} onPress={go} />
     </View>
   )
 }

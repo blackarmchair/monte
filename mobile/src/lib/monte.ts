@@ -7,6 +7,7 @@ import type { PickOddsOpts, Result, Settings } from '@monte/core/types'
 import { readWorkbook, type Book } from '@monte/core/xlsx'
 import { fileName } from '@monte/core/paths'
 import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
+import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
 import * as storage from './storage'
 
 /** A phone runs the sim on the UI's JS thread, so it defaults to fewer sims than desktop. */
@@ -77,6 +78,22 @@ export type SheetInfo = { name: string; pickedAt: string | null }
 const sheetInfo = (s: Settings): SheetInfo | null =>
   s.ranksFile ? { name: s.ranksName ?? fileName(s.ranksFile), pickedAt: s.ranksPickedAt ?? null } : null
 
+/** Run a Sleeper write with the stored token; a refused token disconnects, and `needsConnect` says so. */
+async function withSleeper<T>(run: (token: string) => Promise<T>): Promise<Result<T> & { needsConnect?: boolean }> {
+  const token = await storage.readToken()
+  if (!token) return { ok: false, error: 'Connect Sleeper first.', needsConnect: true }
+  try {
+    return { ok: true, value: await run(token) }
+  } catch (e) {
+    const auth = e instanceof SleeperAuthError
+    if (auth) {
+      await storage.clearToken()
+      await saveSettings({ sleeperLink: undefined })
+    }
+    return { ok: false, error: e instanceof Error ? e.message : String(e), needsConnect: auth }
+  }
+}
+
 export const monte = {
   getSettings: loadSettings,
   setSettings: saveSettings,
@@ -92,6 +109,7 @@ export const monte = {
   draft: (leagueId: string, userId: string, draftId?: string) => toResult(() => service.draft(leagueId, userId, draftId)),
   draftPicks: (draftId: string) => toResult(() => service.draftPicks(draftId)),
   searchPlayers: (query: string) => toResult(() => service.searchPlayers(query)),
+  playerInfo: (id: string) => toResult(() => service.playerInfo(id)),
   bundledInjuries: () => toResult(() => service.bundledInjuries()),
 
   /** Connect Sleeper for trade offers: the token must work and be this user's. */
@@ -114,21 +132,14 @@ export const monte = {
   },
 
   /** Send a trade offer in Sleeper. `needsConnect` means connect (again) and retry. */
-  async proposeTrade(p: TradeProposal): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }> {
-    const token = await storage.readToken()
-    if (!token) return { ok: false, error: 'Connect Sleeper first.', needsConnect: true }
-    try {
+  proposeTrade: (p: TradeProposal) =>
+    withSleeper(async token => {
       const r = await proposeTrade(p, token)
-      return { ok: true, value: { transactionId: r.transactionId, mismatch: r.mismatch } }
-    } catch (e) {
-      const auth = e instanceof SleeperAuthError
-      if (auth) {
-        await storage.clearToken()
-        await saveSettings({ sleeperLink: undefined })
-      }
-      return { ok: false, error: e instanceof Error ? e.message : String(e), needsConnect: auth }
-    }
-  },
+      return { transactionId: r.transactionId, mismatch: r.mismatch }
+    }),
+
+  /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */
+  setLineup: (w: LineupWrite) => withSleeper(token => setStarters(w, token)),
 
   async sheetInfo(): Promise<SheetInfo | null> {
     return sheetInfo(await loadSettings())

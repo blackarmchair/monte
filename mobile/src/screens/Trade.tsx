@@ -1,21 +1,28 @@
-// Trade: two clear steps — pick a partner, add players to each side — with a verdict bar that
-// floats above the tab bar while the trade has anything in it. "Review" opens the full read.
+// Trade: who you're trading with (tap to change), deal ideas while the trade is empty, then
+// You give and You get as asset cards, each with an "Add from …" picker. A verdict bar floats
+// above the tab bar while the trade has anything in it; Review opens the full read and the send.
 import { useMemo, useState } from 'react'
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import type { Asset } from '@monte/core/tradeMath'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { assetMeta, marketTag, mineOf, useTrade, verdictText, type VerdictTone } from '@/lib/trade'
+import { Btn, Card, Check, ErrorBox, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, Notice, Row, Section, Slider, StatTile, Stack2, T, TeamAvatar, num, signed, useTopOnFocus } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
-import { DivBar, ErrorBox, Kicker, Loading, NeedsSheet, PlayerAvatar, Row, Seg, Slider, T, TeamSquare, num, signed, useTopOnFocus, Btn, Notice } from '@/ui/kit'
-import { FLOAT_RADIUS, font, RADIUS, useTheme, type Palette } from '@/ui/theme'
+import { font, heat, nflColor, R, teamColor, useTheme, type Palette } from '@/ui/theme'
 import SleeperConnect from './SleeperConnect'
 
-const toneColor = (t: Palette, tone: VerdictTone) => (tone === 'mute' ? t.mute : t[tone])
+const toneColor = (t: Palette, tone: VerdictTone) => t[tone]
+/** Position change in the review that reads as fully good or bad. */
+const POS_SCALE = 8000
+
+/** Players carry their NFL colour; picks their original team's. */
+const assetColor = (t: Palette, a: Asset) => (a.kind === 'pick' ? teamColor(a.originalOwner ?? 1) : nflColor(t, a.team))
+const assetName = (a: Asset) => (a.kind === 'pick' && a.slot ? `${a.name.split(' · ')[0]} (${a.slot})` : a.name)
 
 export default function Trade() {
   const t = useTheme()
-  const { sheet, tradeUi, setTradeUi, trade } = useApp()
+  const { sheet, openPlayer } = useApp()
   const { openSheet } = useOverlay()
   const x = useTrade()
   const scroll = useTopOnFocus<ScrollView>()
@@ -26,149 +33,98 @@ export default function Trade() {
 
   if (!sheet) return <NeedsSheet />
 
-  const list = tradeUi.list
-  const rows: Asset[] = list === 'theirs' ? (partner == null ? [] : x.assets.filter(a => a.owner === partner).sort((a, b) => mineOf(b) - mineOf(a))) : x.mine
-  const inTrade = (id: string) => trade.give.includes(id) || trade.get.includes(id)
   const partnerName = partner == null ? null : x.teamName(partner)
+  const sides = [
+    { title: 'You give', items: give, add: 'Add from your roster', ok: true, open: () => openSheet(<PickerSheet side="give" />) },
+    {
+      title: 'You get',
+      items: get,
+      add: partnerName ? `Add from ${partnerName}` : 'Choose a team first',
+      ok: partner != null,
+      open: () => openSheet(partner != null ? <PickerSheet side="get" /> : <PartnerSheet />),
+    },
+  ]
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <ScrollView ref={scroll} contentContainerStyle={{ paddingBottom: count ? 108 : 32 }}>
-        {res && !res.ok && (
-          <View style={{ padding: 16 }}>
-            <ErrorBox message={res.error} onRetry={x.load} />
-          </View>
-        )}
+      <ScrollView ref={scroll} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: count ? 110 : 28, gap: 20 }}>
+        {res && !res.ok && <ErrorBox message={res.error} onRetry={x.load} />}
         {!res && <Loading label="Pricing every roster…" />}
 
         {d && (
           <>
-            <Step n={1} label="Pick a trade partner" />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12 }}>
-              {d.teams
-                .filter(tm => tm.roster_id !== x.me)
-                .map(tm => {
-                  const on = tm.roster_id === partner
-                  return (
-                    <Pressable
-                      key={tm.roster_id}
-                      onPress={() => {
-                        x.setPartner(tm.roster_id)
-                        setTradeUi(() => ({ list: 'theirs' }))
-                      }}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 8,
-                        minHeight: 44,
-                        maxWidth: 180,
-                        paddingLeft: 6,
-                        paddingRight: 12,
-                        borderWidth: 1,
-                        borderColor: on ? t.ink : t.line,
-                        borderRadius: RADIUS,
-                        backgroundColor: on ? t.card : 'transparent',
-                      }}
-                    >
-                      <TeamSquare rid={tm.roster_id} name={tm.name} size={30} />
-                      <T size={14} lines={1} style={{ flexShrink: 1 }}>
-                        {tm.name}
-                      </T>
-                    </Pressable>
-                  )
-                })}
-            </ScrollView>
+            <GradCard color={partner != null ? teamColor(partner) : null} minHeight={72} onPress={() => openSheet(<PartnerSheet />)} style={{ borderRadius: 18, paddingHorizontal: 16 }}>
+              {partner != null && <TeamAvatar rid={partner} name={partnerName ?? ''} />}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <T v="small" c="ink2">
+                  Trading with
+                </T>
+                <T v="bold" size={18} lines={1}>
+                  {partnerName ?? 'Choose a team'}
+                </T>
+              </View>
+              <T v="semi" size={14} c="acc">
+                Change
+              </T>
+            </GradCard>
 
             {count === 0 && ideas.length > 0 && (
-              <View style={{ paddingHorizontal: 16, paddingBottom: 14, gap: 8 }}>
-                <T c="mute" size={14}>
-                  Or start from a deal Monte found:
-                </T>
+              <View style={{ gap: 8 }}>
+                <Section title="Deals Monte found" />
                 {ideas.map((deal, i) => {
                   const v = verdictText(deal.verdict)
                   return (
-                    <Pressable
-                      key={i}
-                      onPress={() => {
-                        x.loadDeal(deal)
-                        setTradeUi(() => ({ list: 'theirs' }))
-                      }}
-                      style={({ pressed }) => ({
-                        gap: 4,
-                        paddingHorizontal: 14,
-                        paddingVertical: 12,
-                        borderWidth: 1,
-                        borderColor: t.line,
-                        borderRadius: RADIUS,
-                        backgroundColor: pressed ? t.card : t.card2,
-                      })}
-                    >
+                    <Card key={i} gap={6} onPress={() => x.loadDeal(deal)}>
                       <Row style={{ justifyContent: 'space-between' }}>
                         <T v="small" c="mute" lines={1} style={{ flexShrink: 1 }}>
                           with {x.teamName(deal.partner)}
                         </T>
-                        <T v="smallSemi" color={toneColor(t, v.tone)}>
+                        <T v="bold" size={13} color={toneColor(t, v.tone)}>
                           {v.label}
                         </T>
                       </Row>
-                      <T>
-                        <T c="mute">Give</T> {deal.give.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(', ')} <T c="mute">· Get</T>{' '}
-                        {deal.get.map(a => a.name).join(' + ')}
+                      <T v="semi" size={16}>
+                        Give {deal.give.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(', ')}. Get {deal.get.map(a => a.name).join(' + ')}.
                       </T>
-                    </Pressable>
+                    </Card>
                   )
                 })}
               </View>
             )}
 
-            <View style={{ borderTopWidth: 1, borderColor: t.line, paddingTop: 8 }}>
-              <Step n={2} label="Add players to each side" />
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 }}>
-              <Side
-                title="You give"
-                items={give}
-                empty="Tap + on your assets"
-                onRemove={x.remove}
-              />
-              <Side
-                title="You get"
-                items={get}
-                empty={partnerName ? `Tap + on ${partnerName}'s roster` : 'Pick a partner first'}
-                onRemove={x.remove}
-              />
-            </View>
-            <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-              <Seg
-                fill
-                value={list}
-                onChange={v => setTradeUi(() => ({ list: v }))}
-                options={[
-                  { value: 'mine', label: 'Your assets' },
-                  { value: 'theirs', label: partnerName ?? 'Their roster' },
-                ]}
-              />
-            </View>
-            {rows.length === 0 && (
-              <T c="mute" size={14} style={{ padding: 16 }}>
-                {list === 'theirs' && partner == null ? 'Pick a trade partner above to see their roster.' : 'Nothing tradeable here.'}
-              </T>
-            )}
-            {rows.map(a => (
-              <AssetLine key={a.id} a={a} on={inTrade(a.id)} onPress={() => x.toggle(a.id)} />
+            {sides.map(s => (
+              <View key={s.title} style={{ gap: 8 }}>
+                <Section
+                  title={s.title}
+                  right={
+                    <T size={14} c="mute" num>
+                      {s.items.length ? num(s.items.reduce((sum, a) => sum + mineOf(a), 0)) : ''}
+                    </T>
+                  }
+                />
+                {s.items.map(a => (
+                  <AssetCard key={a.id} a={a} onOpen={a.kind === 'player' ? () => openPlayer(a.id, a.name) : undefined} onRemove={() => x.remove(a.id)} />
+                ))}
+                <Pressable
+                  onPress={s.open}
+                  style={({ pressed }) => ({ minHeight: 52, borderRadius: R.card, backgroundColor: t.surf, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pressed ? 0.8 : 1 })}
+                >
+                  <Text style={{ fontFamily: font.sans, fontSize: 20, lineHeight: 22, color: s.ok ? t.ink : t.mute }}>+</Text>
+                  <Text style={{ fontFamily: font.sansSemi, fontSize: 15, color: s.ok ? t.ink : t.mute }}>{s.add}</Text>
+                </Pressable>
+              </View>
             ))}
-            <T v="small" c="mute" style={{ padding: 16 }}>
-              Your side is Tyler's sheet; theirs is the market, blended by Market influence (in Review). Verdicts use effective value: one star beats a bundle
-              of the same raw total.
+            <T v="small" c="mute">
+              Your side is Tyler's sheet; theirs is the market, blended by Market influence (in Review). Verdicts use effective value: one star beats a bundle of the
+              same raw total.
             </T>
           </>
         )}
       </ScrollView>
 
       {count > 0 && (
-        <Pressable
-          onPress={() => openSheet(<TradeSheet />)}
-          style={({ pressed }) => ({
+        <View
+          style={{
             position: 'absolute',
             left: 12,
             right: 12,
@@ -176,135 +132,132 @@ export default function Trade() {
             flexDirection: 'row',
             alignItems: 'center',
             gap: 12,
-            minHeight: 64,
-            paddingHorizontal: 14,
+            minHeight: 68,
             paddingVertical: 10,
-            borderWidth: 1,
-            borderColor: t.line,
-            borderRadius: FLOAT_RADIUS,
-            backgroundColor: pressed ? t.chip : t.card,
+            paddingLeft: 18,
+            paddingRight: 10,
+            borderRadius: 22,
+            backgroundColor: t.surf2,
             shadowColor: '#000',
-            shadowOpacity: 0.18,
-            shadowRadius: 24,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 10,
-          })}
-          accessibilityLabel="Review trade"
+            shadowOpacity: 0.4,
+            shadowRadius: 30,
+            shadowOffset: { width: 0, height: 10 },
+            elevation: 12,
+          }}
         >
           <View style={{ flex: 1, minWidth: 0 }}>
-            <T v="serif" size={21} color={toneColor(t, x.tone)} lines={1}>
+            <T v="bold" size={18} color={toneColor(t, x.tone)} lines={1}>
               {x.label}
             </T>
-            <T v="small" c="mute">
-              You{' '}
-              <Text style={{ fontFamily: font.mono, color: t.ink }}>{x.verdict ? signed(x.verdict.em) : '—'}</Text> · Them{' '}
-              <Text style={{ fontFamily: font.mono, color: t.ink }}>{x.verdict ? signed(x.verdict.et) : '—'}</Text>
+            <T v="small" c="ink2" num>
+              You {x.verdict ? signed(x.verdict.em) : '—'} · Them {x.verdict ? signed(x.verdict.et) : '—'}
             </T>
           </View>
-          <T v="smallSemi" size={14} c="acc">
-            Review ›
-          </T>
-        </Pressable>
+          <Btn kind="primary" label="Review" onPress={() => openSheet(<TradeSheet />)} style={{ minHeight: 46 }} />
+        </View>
       )}
     </View>
   )
 }
 
-function Step({ n, label }: { n: number; label: string }) {
+function AssetFace({ a, size = 42 }: { a: Asset; size?: number }) {
+  const t = useTheme()
+  if (a.kind === 'player') return <Headshot id={a.id} name={a.name} size={size} />
   return (
-    <Row gap={8} align="baseline" style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}>
-      <T v="monoSemi" size={12} c="acc">
-        {n}
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: t.surf2, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontFamily: font.sansBold, fontSize: 12, color: t.ink2 }}>R{a.round}</Text>
+    </View>
+  )
+}
+
+function AssetCard({ a, onOpen, onRemove }: { a: Asset; onOpen?: () => void; onRemove: () => void }) {
+  const t = useTheme()
+  return (
+    <GradCard color={assetColor(t, a)} minHeight={64} style={{ paddingVertical: 8, paddingLeft: 12, paddingRight: 6 }}>
+      <AssetFace a={a} />
+      <Pressable onPress={onOpen} disabled={!onOpen} style={{ flex: 1, minWidth: 0 }} accessibilityLabel={onOpen ? `Open ${a.name}` : undefined}>
+        <Stack2 title={assetName(a)} sub={assetMeta(a)} />
+      </Pressable>
+      <T v="bold" num>
+        {num(mineOf(a))}
       </T>
-      <T v="semi">{label}</T>
-    </Row>
+      <Pressable onPress={onRemove} hitSlop={4} accessibilityLabel={`Remove ${a.name}`} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontFamily: font.sans, fontSize: 20, color: t.mute }}>×</Text>
+      </Pressable>
+    </GradCard>
   )
 }
 
-function Side({ title, items, empty, onRemove }: { title: string; items: Asset[]; empty: string; onRemove: (id: string) => void }) {
-  const t = useTheme()
+/** Trade with: every other team; the current partner is checked. */
+function PartnerSheet() {
+  const x = useTrade()
+  const { closeSheet } = useOverlay()
   return (
-    <View style={{ flex: 1, minWidth: 0, minHeight: 84, gap: 6, padding: 10, borderWidth: 1, borderColor: t.line, borderRadius: RADIUS, backgroundColor: t.card2 }}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Kicker>{title}</Kicker>
-        <T v="mono" size={12} c="mute">
-          {items.length ? num(items.reduce((s, a) => s + mineOf(a), 0)) : ''}
-        </T>
-      </Row>
-      {items.length === 0 && (
-        <T v="small" c="mute">
-          {empty}
-        </T>
-      )}
-      {items.map(a => (
-        <Pressable
-          key={a.id}
-          onPress={() => onRemove(a.id)}
-          accessibilityLabel={`Remove ${a.name}`}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: t.line, borderRadius: RADIUS, backgroundColor: t.card }}
-        >
-          <T v="smallSemi" size={14} lines={1} style={{ flex: 1, minWidth: 0 }}>
-            {a.kind === 'pick' && a.slot ? `${a.name.split(' · ')[0]} (${a.slot})` : a.name}
-          </T>
-          <T c="mute">×</T>
-        </Pressable>
-      ))}
+    <View style={{ gap: 8 }}>
+      <T v="bold" size={20} style={{ paddingBottom: 4 }}>
+        Trade with
+      </T>
+      {(x.d?.teams ?? [])
+        .filter(tm => tm.roster_id !== x.me)
+        .map(tm => (
+          <GradCard
+            key={tm.roster_id}
+            color={teamColor(tm.roster_id)}
+            minHeight={62}
+            onPress={() => {
+              x.setPartner(tm.roster_id)
+              closeSheet()
+            }}
+          >
+            <TeamAvatar rid={tm.roster_id} name={tm.name} size={42} />
+            <Stack2 title={tm.name} sub={`${tm.wins}-${tm.losses}${tm.full ? ' · roster full' : ''}`} />
+            <Check on={tm.roster_id === x.partner} />
+          </GradCard>
+        ))}
     </View>
   )
 }
 
-function AssetLine({ a, on, onPress }: { a: Asset; on: boolean; onPress: () => void }) {
+/** Add from a roster: check assets in and out of the trade, then Done. */
+function PickerSheet({ side }: { side: 'give' | 'get' }) {
   const t = useTheme()
-  const tag = marketTag(a)
-  const tagColor = tag.tone === 'acc' ? t.acc : tag.tone === 'pos' ? t.pos : t.mute
+  const x = useTrade()
+  const { trade } = useApp()
+  const { closeSheet } = useOverlay()
+  const rows = side === 'give' ? x.mine : x.assets.filter(a => a.owner === x.partner).sort((a, b) => mineOf(b) - mineOf(a))
+  const on = (id: string) => trade.give.includes(id) || trade.get.includes(id)
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        minHeight: 60,
-        paddingHorizontal: 16,
-        paddingVertical: 6,
-        borderBottomWidth: 1,
-        borderColor: t.line,
-        backgroundColor: on || pressed ? t.card : 'transparent',
+    <View style={{ gap: 8 }}>
+      <T v="bold" size={20} style={{ paddingBottom: 4 }}>
+        {side === 'give' ? 'Your roster' : x.teamName(x.partner)}
+      </T>
+      {rows.length === 0 && (
+        <T c="mute" size={14}>
+          Nothing tradeable here.
+        </T>
+      )}
+      {rows.map(a => {
+        const tag = marketTag(a)
+        return (
+          <GradCard key={a.id} color={assetColor(t, a)} minHeight={62} onPress={() => x.toggle(a.id)} accessibilityLabel={`${on(a.id) ? 'Remove' : 'Add'} ${a.name}`}>
+            <AssetFace a={a} />
+            <Stack2 title={assetName(a)} sub={`${assetMeta(a)}${tag.label !== 'No market' ? ` · ${tag.label}` : ''}`} />
+            <T v="bold" size={14} num>
+              {kfmt(mineOf(a))}
+            </T>
+            <Check on={on(a.id)} off={t.surf2} />
+          </GradCard>
+        )
       })}
-      accessibilityLabel={`${on ? 'Remove' : 'Add'} ${a.name}`}
-    >
-      {a.kind === 'player' ? <PlayerAvatar id={a.id} name={a.name} /> : <View style={{ width: 32 }} />}
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <T v="semi" size={16} lines={1}>
-          {a.name}
-        </T>
-        <T v="small" c="mute" lines={1}>
-          {assetMeta(a)} · <T v="small" color={tagColor}>{tag.label}</T>
-        </T>
-      </View>
-      <T v="mono">{num(mineOf(a))}</T>
-      <View
-        style={{
-          width: 36,
-          height: 36,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderWidth: 1,
-          borderColor: on ? t.ink : t.line,
-          borderRadius: RADIUS,
-          backgroundColor: on ? t.ink : 'transparent',
-        }}
-      >
-        <Text style={{ fontFamily: font.sans, fontSize: 18, color: on ? t.bg : t.ink }}>{on ? '✓' : '+'}</Text>
-      </View>
-    </Pressable>
+      <Btn full size="lg" kind="primary" label="Done" onPress={closeSheet} style={{ marginTop: 8 }} />
+    </View>
   )
 }
 
 type Step = 'review' | 'connect' | 'confirm' | 'sending' | 'sent'
 
-/** Trade review: verdict, both sides' value, roster-full and fit warnings, roster value after by
- *  position, Market influence; then send it in Sleeper (connect if needed, confirm, sent). */
+/** Trade review: verdict, both sides' value, roster-full and fit warnings, your roster by
+ *  position after, Market influence; then send it in Sleeper (connect if needed, confirm, sent). */
 function TradeSheet() {
   const t = useTheme()
   const { context, settings } = useApp()
@@ -314,8 +267,6 @@ function TradeSheet() {
   const [error, setError] = useState<string | null>(null)
   const [mismatch, setMismatch] = useState<string | null>(null)
   const v = x.verdict
-  const scale = Math.max(1500, Math.abs(v?.em ?? 0), Math.abs(v?.et ?? 0))
-  const maxPos = Math.max(1, ...x.groups.flatMap(g => [g.before, g.after]))
   const partnerName = x.teamName(x.partner)
   const canSend = !!v && x.partner != null && x.me != null && !!context
 
@@ -354,26 +305,28 @@ function TradeSheet() {
   if (step === 'confirm' || step === 'sending')
     return (
       <View style={{ gap: 14 }}>
-        <T v="title">Send this offer to {partnerName}?</T>
+        <T v="head">Send this offer to {partnerName}?</T>
         {(
           [
             ['You give', x.give],
             ['You get', x.get],
           ] as const
         ).map(([k, as]) => (
-          <View key={k} style={{ gap: 4 }}>
-            <Kicker>{k}</Kicker>
+          <Card key={k} gap={4}>
+            <T v="small" c="mute">
+              {k}
+            </T>
             {as.map(a => (
               <T key={a.id} v="semi">
-                {a.kind === 'pick' && a.slot ? `${a.name} (${a.slot})` : a.name}
+                {assetName(a)}
               </T>
             ))}
-          </View>
+          </Card>
         ))}
         <Notice message={`This goes to ${partnerName}'s manager as soon as you tap Send. If your league has no trade review period, their accepting it completes the trade.`} />
         {error && <ErrorBox message={error} />}
-        <Btn big full kind="primary" label={step === 'sending' ? 'Sending…' : 'Send offer'} disabled={step === 'sending'} onPress={send} />
-        <Btn big full kind="quiet" label="Back" disabled={step === 'sending'} onPress={() => setStep('review')} />
+        <Btn full size="lg" kind="primary" label={step === 'sending' ? 'Sending…' : 'Send offer'} disabled={step === 'sending'} onPress={send} />
+        <Btn full size="lg" label="Back" disabled={step === 'sending'} onPress={() => setStep('review')} />
         {!!settings?.sleeperLink && (
           <T v="small" c="mute">
             Sending as {settings.sleeperLink.name || 'you'} on Sleeper.
@@ -385,15 +338,15 @@ function TradeSheet() {
   if (step === 'sent')
     return (
       <View style={{ gap: 14 }}>
-        <T v="title" color={t.pos}>
+        <T v="head" color={t.pos}>
           Offer sent to {partnerName}.
         </T>
         <T c="ink2">It's waiting in Sleeper for their answer. You can withdraw it there.</T>
         {mismatch && <Notice message={mismatch} />}
-        {context && <Btn big full label="Open in Sleeper ↗" onPress={() => void Linking.openURL(`https://sleeper.com/leagues/${context.league.league_id}/trades`)} />}
+        {context && <Btn full size="lg" label="Open in Sleeper ↗" onPress={() => void Linking.openURL(`https://sleeper.com/leagues/${context.league.league_id}/trades`)} />}
         <Btn
-          big
           full
+          size="lg"
           kind="primary"
           label="Done"
           onPress={() => {
@@ -406,61 +359,42 @@ function TradeSheet() {
     )
 
   return (
-    <View style={{ gap: 14 }}>
-      <T v="title" size={28} color={toneColor(t, x.tone)}>
+    <View style={{ gap: 16 }}>
+      <T v="bold" size={28} color={toneColor(t, x.tone)} style={{ lineHeight: 31 }}>
         {x.label}
       </T>
-      <View style={{ gap: 10 }}>
-        {(
-          [
-            ['You', v?.em ?? 0],
-            ['Them', v?.et ?? 0],
-          ] as const
-        ).map(([k, val]) => (
-          <Row key={k} gap={8}>
-            <T c="mute" size={14} style={{ width: 48 }}>
-              {k}
-            </T>
-            <DivBar v={val} scale={scale} />
-            <T v="mono" size={14} style={{ width: 72, textAlign: 'right' }}>
-              {v ? signed(val) : '—'}
-            </T>
-          </Row>
-        ))}
-      </View>
+      <Row gap={8}>
+        <StatTile k="You" v={v ? signed(v.em) : '—'} color={v ? (v.em >= 0 ? t.pos : t.neg) : undefined} />
+        <StatTile k="Them" v={v ? signed(v.et) : '—'} color={v ? (v.et >= 0 ? t.pos : t.neg) : undefined} />
+      </Row>
       {x.extra > 0 && x.d && (
-        <Notice message={`Adds ${x.extra} bod${x.extra === 1 ? 'y' : 'ies'} to a full roster: someone gets cut (−${num(x.d.spotCost)} each).`} />
+        <Notice message={`You take on ${x.extra} extra player${x.extra === 1 ? '' : 's'} on a full roster, so someone gets cut (−${num(x.d.spotCost)} each).`} />
       )}
       {x.fitWarnings.map(w => (
         <Notice key={w} message={w} />
       ))}
 
-      <Kicker>Your roster value after</Kicker>
-      {x.groups.map(g => {
-        const delta = Math.round(g.after - g.before)
-        const color = delta > 0 ? t.pos : delta < 0 ? t.neg : t.mute
-        return (
-          <Row key={g.g} gap={8}>
-            <T size={14} style={{ width: 44 }}>
-              {g.g}
-            </T>
-            <View style={{ flex: 1, height: 10, backgroundColor: t.chip }}>
-              <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(g.before / maxPos) * 100}%`, backgroundColor: t.mute, opacity: 0.45 }} />
-              <View style={{ position: 'absolute', left: 0, top: 3, bottom: 3, width: `${(Math.max(0, g.after) / maxPos) * 100}%`, backgroundColor: delta ? color : t.ink2 }} />
-            </View>
-            <T v="mono" size={14} color={color} style={{ width: 64, textAlign: 'right' }}>
-              {delta ? signed(delta) : '–'}
-            </T>
-          </Row>
-        )
-      })}
+      <T v="bold" size={16}>
+        Your roster after
+      </T>
+      <HeatTiles
+        size={14}
+        items={x.groups.map(g => {
+          const delta = Math.round(g.after - g.before)
+          return {
+            k: g.g,
+            v: delta ? `${delta > 0 ? '+' : '−'}${kfmt(Math.abs(delta))}` : '–',
+            colors: delta ? heat(t, 0.5 + Math.max(-0.5, Math.min(0.5, delta / POS_SCALE))) : { bg: t.surf, fg: t.mute },
+          }
+        })}
+      />
 
-      <Row gap={10} style={{ paddingTop: 4 }}>
-        <T c="mute" size={14}>
+      <Row gap={10}>
+        <T size={14} c="ink2">
           Market influence
         </T>
         <Slider value={Math.round(x.beta * 100)} min={0} max={100} step={5} onChange={val => x.setBeta(val / 100)} onDone={val => x.commitBeta(val / 100)} />
-        <T v="mono" size={14} style={{ width: 48, textAlign: 'right' }}>
+        <T v="bold" size={14} num style={{ width: 44, textAlign: 'right' }}>
           {Math.round(x.beta * 100)}%
         </T>
       </Row>
@@ -469,7 +403,7 @@ function TradeSheet() {
       </T>
       <Row gap={8}>
         <Btn
-          big
+          size="lg"
           kind="primary"
           label="Send in Sleeper"
           disabled={!canSend}
@@ -480,8 +414,7 @@ function TradeSheet() {
           }}
         />
         <Btn
-          big
-          kind="quiet"
+          size="lg"
           label="Clear"
           onPress={() => {
             x.clear()

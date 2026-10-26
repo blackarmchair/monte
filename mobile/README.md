@@ -66,18 +66,21 @@ Pick it again whenever Tyler updates it. Monte keeps a copy, so the original can
 
 ## Layout
 
-The UX follows the mobile design handoff (direction 1a, five tabs).
+The UX follows the hybrid design handoff (direction 2b, warm skin, dark first): five tabs,
+rounded cards tinted by team or NFL colour, Sleeper headshots, heat-coloured cells, no dividers.
 
-- `src/app/`: routes. Tabs are League, Lineup, Trade, Players and Picks; Settings and Injury
-  overrides are hidden tab routes (pushed from the header gear, tab bar stays).
-- `src/screens/`: one component per screen, plus the bottom sheets (team, player, leagues, pick,
-  draft pick). Players merges the superflex board (Values) with PWOPR (Usage vs projection);
-  Picks holds Pick odds and Draft.
+- `src/app/`: routes. Tabs are League, Lineup, Trade, Players and Picks; Team, Player and
+  Settings are hidden tab routes pushed over a tab (back button in the header, tab bar stays).
+- `src/screens/`: one component per screen, plus the bottom sheets (leagues, trade partner and
+  picker, trade review, what-if, pick, draft pick). Players merges the superflex board (Value)
+  with PWOPR (Usage); Picks holds Pick odds and Draft. Injury overrides are set on a player's
+  Injury tab and listed in Settings. The Player page's Stats tab reads Sleeper's per-player
+  weekly stats.
 - `src/lib/monte.ts`: the phone's host for `@monte/core`, mirroring the desktop's `window.monte`.
 - `src/lib/store.tsx`: app state, ported from the desktop's `App.tsx`.
 - `src/lib/trade.tsx`: the trade being built and its valuation, shared by the Trade tab, its
   sticky verdict bar, the tab badge, and "add to trade" everywhere else.
-- `src/ui/`: theme (the Evolve palette), the kit, the header and tab bar, and the overlay hosts
+- `src/ui/`: theme (warm tokens, oklab mixing, gradient cards, heat scale, NFL colours), the kit, the header and tab bar, and the overlay hosts
   (one bottom sheet, one toast).
 - `metro.config.js`, `babel.config.js`, `shims/`: let Metro bundle the shared core and the
   Node-built engine (aliases, `fs`/`path`/`url`/`readline` stand-ins, `import.meta` rewrite).
@@ -87,7 +90,8 @@ The UX follows the mobile design handoff (direction 1a, five tabs).
 - Lineup: tap a player, then a highlighted slot or player to swap; tap him again to cancel.
   "Sim out" (in the hint line) zeroes the selected starter.
 - Players: swipe a row left for Trade for / Offer / Claim; long-press to add him to the trade.
-- Everything with more detail opens in the bottom sheet; tap the scrim to close.
+- Teams and players open as full pages; pickers, the trade review and pick details open in the
+  bottom sheet (tap the scrim to close).
 
 ## Sending trades
 

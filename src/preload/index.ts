@@ -16,9 +16,14 @@ const api: MonteApi = {
   draftPicks: draftId => ipcRenderer.invoke('draft:picks', draftId),
   ranks: (leagueId, userId) => ipcRenderer.invoke('league:ranks', leagueId, userId),
   searchPlayers: query => ipcRenderer.invoke('players:search', query),
+  playerInfo: id => ipcRenderer.invoke('players:info', id),
   bundledInjuries: () => ipcRenderer.invoke('injuries:bundled'),
   chooseRanksFile: () => ipcRenderer.invoke('ranks:choose'),
   ranksFileInfo: () => ipcRenderer.invoke('ranks:info'),
+  connectSleeper: token => ipcRenderer.invoke('sleeper:connect', token),
+  disconnectSleeper: () => ipcRenderer.invoke('sleeper:disconnect'),
+  proposeTrade: p => ipcRenderer.invoke('sleeper:propose', p),
+  setLineup: w => ipcRenderer.invoke('sleeper:lineup', w),
   onRanksFileChanged: cb => {
     const h = (_e: unknown, info: Parameters<typeof cb>[0]) => cb(info)
     ipcRenderer.on('ranks:changed', h)

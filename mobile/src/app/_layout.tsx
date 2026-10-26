@@ -3,9 +3,7 @@ import { View } from 'react-native'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
-import { IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_600SemiBold } from '@expo-google-fonts/ibm-plex-sans'
-import { IBMPlexMono_400Regular, IBMPlexMono_500Medium, IBMPlexMono_600SemiBold } from '@expo-google-fonts/ibm-plex-mono'
-import { SourceSerif4_400Regular, SourceSerif4_400Regular_Italic } from '@expo-google-fonts/source-serif-4'
+import { IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_600SemiBold, IBMPlexSans_700Bold } from '@expo-google-fonts/ibm-plex-sans'
 import { AppProvider, useApp } from '@/lib/store'
 import { TradeProvider } from '@/lib/trade'
 import { OverlayProvider, SheetHost, ToastHost } from '@/ui/overlay'
@@ -17,11 +15,7 @@ export default function RootLayout() {
     IBMPlexSans_400Regular,
     IBMPlexSans_500Medium,
     IBMPlexSans_600SemiBold,
-    IBMPlexMono_400Regular,
-    IBMPlexMono_500Medium,
-    IBMPlexMono_600SemiBold,
-    SourceSerif4_400Regular,
-    SourceSerif4_400Regular_Italic,
+    IBMPlexSans_700Bold,
   })
   if (!loaded) return null
   return (

@@ -1,13 +1,17 @@
-// Lineup: this week's lineup off Tyler's weekly boards. Tap a player to select him, then tap a
-// highlighted slot or player to swap; tap him again to cancel.
+// Lineup: this week's lineup off Tyler's weekly boards. A hero with the projection and win odds,
+// the best swap, then starter cards (NFL colour) and bench cards (surf). Tap a player to select
+// him, then tap a highlighted slot or player to swap; tap him again to cancel. Set in Sleeper
+// sends the lineup.
 import { useEffect, useMemo, useState } from 'react'
-import { Linking, Pressable, ScrollView, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 import type { Result, SSPlayer, StartSitData } from '@monte/core/types'
 import { anonStartSit } from '@monte/core/names'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
-import { Band, Bar, Btn, Chip, ErrorBox, Kicker, Loading, NeedsSheet, Notice, PlayerAvatar, Row, T, num, useTopOnFocus } from '@/ui/kit'
-import { useTheme } from '@/ui/theme'
+import { useOverlay } from '@/ui/overlay'
+import SleeperConnect from './SleeperConnect'
+import { Btn, ErrorBox, GradCard, Headshot, Hero, Loading, NeedsSheet, Notice, Row, Section, T, Tag, num, useTopOnFocus } from '@/ui/kit'
+import { font, nflColor, useTheme } from '@/ui/theme'
 import { benchOnly, ELIG, eligible, normCdf, tagOf, WIN_SD, type Swap } from './startsit.logic'
 
 /** Seeded so the same lineup gives the same count when re-run. */
@@ -34,6 +38,10 @@ export default function Lineup() {
   const [sel, setSel] = useState<string | null>(null)
   const [sim, setSim] = useState<{ busy: boolean; text: string | null }>({ busy: false, text: null })
   const scroll = useTopOnFocus<ScrollView>()
+  const { openSheet, closeSheet, showToast } = useOverlay()
+  /** what was last set in Sleeper from here: the baseline until the next load (REST is cached) */
+  const [sent, setSent] = useState<{ lineup: Array<string | null>; starters: string[] } | null>(null)
+  const [push, setPush] = useState<{ busy: boolean; error: string | null; note: string | null }>({ busy: false, error: null, note: null })
 
   const load = () => {
     if (!leagueId || !settings?.userId || !sheet) return
@@ -45,6 +53,8 @@ export default function Lineup() {
       if (r.ok) {
         setLineup(r.value.slots.map(s => s.current?.id ?? null))
         setSimOut({})
+        setSent(null)
+        setPush({ busy: false, error: null, note: null })
       }
     })
   }
@@ -57,7 +67,8 @@ export default function Lineup() {
     for (const p of d?.bench ?? []) m.set(p.id, p)
     return m
   }, [d])
-  const sleeperLineup = useMemo(() => d?.slots.map(s => s.current?.id ?? null) ?? [], [d])
+  const readLineup = useMemo(() => d?.slots.map(s => s.current?.id ?? null) ?? [], [d])
+  const sleeperLineup = sent?.lineup ?? readLineup
 
   const proj = (p: SSPlayer | null | undefined) => (!p || simOut[p.id] || !p.startable ? 0 : p.proj)
   const at = (i: number) => (lineup[i] ? players.get(lineup[i]!) ?? null : null)
@@ -70,7 +81,8 @@ export default function Lineup() {
   const total = lineup.reduce((sum, _, i) => sum + proj(at(i)), 0)
   const opp = d?.opponent ?? null
   const winP = opp ? normCdf((total - opp.total) / WIN_SD) : null
-  const changed = lineup.some((id, i) => id !== sleeperLineup[i]) || Object.values(simOut).some(Boolean)
+  const differs = lineup.some((id, i) => id !== sleeperLineup[i])
+  const changed = differs || Object.values(simOut).some(Boolean)
   useEffect(() => setSim({ busy: false, text: null }), [total])
 
   // Best single swap: a bench player into slot i, directly or by moving slot j's starter to i.
@@ -147,6 +159,34 @@ export default function Lineup() {
     if (!p.locked && !benchOnly(p)) setSel(p.id)
   }
 
+  // Push the lineup on screen. Slots left as Sleeper had them keep Sleeper's own id, so a K / DEF /
+  // IDP starter Monte can't name is never blanked.
+  const sendLineup = async () => {
+    if (!d || push.busy) return
+    const expected = sent?.starters ?? d.starters
+    const starters = lineup.map((id, i) => (id === sleeperLineup[i] ? expected[i] ?? '0' : id ?? '0'))
+    setPush({ busy: true, error: null, note: null })
+    const r = await monte.setLineup({ leagueId: leagueId!, rosterId: d.rosterId, week: d.week, expected, starters })
+    if (r.ok) {
+      setSent({ lineup: [...lineup], starters })
+      setPush({ busy: false, error: null, note: r.value.mismatch })
+      return showToast('Lineup set in Sleeper')
+    }
+    setPush({ busy: false, error: r.error, note: null })
+    if (r.needsConnect)
+      openSheet(
+        <View style={{ gap: 14 }}>
+          <T v="title">Connect Sleeper</T>
+          <SleeperConnect
+            onDone={() => {
+              closeSheet()
+              void sendLineup()
+            }}
+          />
+        </View>,
+      )
+  }
+
   const runSim = () => {
     if (!opp || sim.busy) return
     setSim({ busy: true, text: null })
@@ -157,72 +197,51 @@ export default function Lineup() {
   if (!sheet) return <NeedsSheet />
 
   const name = (id: string | null) => (id ? players.get(id)?.name ?? '' : 'an empty slot')
-  const barMax = Math.max(total, opp?.total ?? 0, 1) * 1.15
   const wpColor = winP == null ? t.ink : winP > 0.6 ? t.pos : winP < 0.4 ? t.neg : t.warn
   const selIsStarter = selFrom >= 0
   const hint = !sel
-    ? 'Tap any player, then where they should go.'
+    ? 'Tap a player, then tap where they should go.'
     : selIsStarter
     ? movable(selFrom)
       ? `Swapping ${name(sel)}. Tap a highlighted player.`
       : `${name(sel)} is locked for this week.`
     : `Moving ${name(sel)}. Tap a highlighted slot.`
+  const setLabel = push.busy ? 'Setting…' : 'Set in Sleeper'
 
   return (
-    <ScrollView ref={scroll} style={{ flex: 1, backgroundColor: t.bg }} contentContainerStyle={{ paddingBottom: 32 }}>
-      {res && !res.ok && (
-        <View style={{ padding: 16 }}>
-          <ErrorBox message={res.error} onRetry={load} />
-        </View>
-      )}
+    <ScrollView ref={scroll} style={{ flex: 1, backgroundColor: t.bg }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 28, gap: 12 }}>
+      {res && !res.ok && <ErrorBox message={res.error} onRetry={load} />}
       {!res && <Loading label="Reading this week's boards…" />}
 
       {d && (
         <>
-          <Band>
-            <Kicker>
+          <Hero gap={6}>
+            <T v="small" c="mute">
               Week {d.week}
               {opp ? ` · vs ${opp.name}` : ''}
-            </Kicker>
-            <Row style={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <T v="serif" size={52} style={{ lineHeight: 56 }}>
-                {total.toFixed(1)}
-              </T>
-              {winP != null && (
-                <T v="serif" size={30} color={wpColor}>
-                  {Math.round(winP * 100)}%
-                </T>
-              )}
-            </Row>
-            <View style={{ gap: 8 }}>
-              <Row gap={8}>
-                <T v="small" c="mute" style={{ width: 40 }}>
-                  You
-                </T>
-                <Bar frac={total / barMax} color={t.acc} />
-                <T v="mono" size={13} style={{ width: 52, textAlign: 'right' }}>
+            </T>
+            <Row style={{ alignItems: 'flex-end', justifyContent: 'space-between' }} gap={12}>
+              <View>
+                <T v="bold" size={44} num style={{ lineHeight: 46, letterSpacing: -0.88 }}>
                   {total.toFixed(1)}
                 </T>
-              </Row>
-              {opp && (
-                <Row gap={8}>
-                  <T v="small" c="mute" style={{ width: 40 }}>
-                    Opp
-                  </T>
-                  <Bar frac={opp.total / barMax} color={t.mute} />
-                  <T v="mono" size={13} style={{ width: 52, textAlign: 'right' }}>
-                    {opp.total.toFixed(1)}
-                  </T>
-                </Row>
-              )}
-            </View>
-            <Row wrap gap={8}>
-              {opp && <Btn kind="quiet" label={sim.busy ? 'Simulating…' : `Run ${num(settings?.sims ?? 1000)} sims`} onPress={runSim} />}
-              {!!sim.text && (
-                <T c="mute" size={14}>
-                  {sim.text}
+                <T v="small" c="ink2">
+                  projected{opp ? ` · opp ${opp.total.toFixed(1)}` : ''}
                 </T>
+              </View>
+              {winP != null && (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <T v="bold" size={32} num color={wpColor} style={{ lineHeight: 34 }}>
+                    {Math.round(winP * 100)}%
+                  </T>
+                  <T v="small" c="ink2">
+                    to win
+                  </T>
+                </View>
               )}
+            </Row>
+            <Row gap={8} style={{ marginTop: 6 }}>
+              {opp && <Btn size="sm" label={sim.busy ? 'Simulating…' : sim.text ?? `Run ${num(settings?.sims ?? 1000)} sims`} onPress={runSim} />}
               <View style={{ flex: 1 }} />
               {changed && (
                 <Btn
@@ -236,30 +255,30 @@ export default function Lineup() {
                 />
               )}
             </Row>
-          </Band>
+          </Hero>
 
-          <Row gap={10} style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: best ? t.accTint : t.posTint, borderBottomWidth: 1, borderColor: t.line }}>
-            <T size={14} style={{ flex: 1 }}>
-              {best
-                ? `Start ${name(best.inId)} over ${name(best.outId)}: +${best.gain.toFixed(1)} pts.`
-                : `Lineup is optimal for this week.${opp && total < opp.total ? " You're the underdog on paper." : ''}`}
-            </T>
-            {best && <Btn kind="primary" label="Apply" onPress={() => applySwap(best)} />}
-            {!best && changed && <Btn label="Set in Sleeper ↗" onPress={() => void Linking.openURL(d.leagueUrl)} />}
-          </Row>
-          {best && changed && (
-            <Row style={{ paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderColor: t.line }}>
+          {best ? (
+            <Strip text={`Start ${name(best.inId)} over ${name(best.outId)} for +${best.gain.toFixed(1)}`} action="Apply" onPress={() => applySwap(best)} />
+          ) : differs ? (
+            <Strip text="Your changes aren't in Sleeper yet." action={setLabel} disabled={push.busy} onPress={sendLineup} />
+          ) : (
+            <Notice tone="pos" message={`Lineup is optimal for this week.${opp && total < opp.total ? " You're the underdog on paper." : ''}`} />
+          )}
+          {best && differs && (
+            <Row style={{ paddingHorizontal: 4 }}>
               <T v="small" c="mute" style={{ flex: 1 }}>
-                Changes here don't reach Sleeper on their own.
+                Your changes aren't in Sleeper yet.
               </T>
-              <Btn kind="link" label="Set in Sleeper ↗" onPress={() => void Linking.openURL(d.leagueUrl)} />
+              <Btn kind="link" label={setLabel} disabled={push.busy} onPress={sendLineup} />
             </Row>
           )}
+          {push.error && <ErrorBox message={push.error} onRetry={sendLineup} />}
+          {push.note && <Notice message={push.note} />}
           {d.warnings.map(w => (
-            <Notice key={w} message={w} style={{ borderBottomWidth: 1, borderColor: t.line }} />
+            <Notice key={w} message={w} />
           ))}
 
-          <Row gap={10} style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, minHeight: 44 }}>
+          <Row gap={10} style={{ paddingTop: 4, paddingHorizontal: 2, minHeight: 36 }}>
             <T size={14} color={sel ? t.acc : t.mute} style={{ flex: 1 }}>
               {hint}
             </T>
@@ -273,9 +292,8 @@ export default function Lineup() {
             const p = at(i)
             const on = !!p && p.id === sel
             const cand = !on && starterOk(i)
-            const dim = !!sel && !on && !cand
             return (
-              <PlayerLine
+              <PlayerCard
                 key={`s${i}`}
                 badge={s.label}
                 starter
@@ -283,46 +301,55 @@ export default function Lineup() {
                 proj={p ? proj(p).toFixed(1) : '—'}
                 out={!!p && !!simOut[p.id]}
                 cue={cand ? (selIsStarter ? 'Swap in' : 'Put here') : ''}
-                state={on ? 'on' : cand ? 'cand' : dim ? 'dim' : 'idle'}
+                state={on ? 'on' : cand ? 'cand' : sel ? 'dim' : 'idle'}
                 onPress={() => tapStarter(i)}
               />
             )
           })}
-          <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6 }}>
-            <Kicker>Bench</Kicker>
-          </View>
+          <Section title="Bench" style={{ paddingTop: 12 }} />
           {bench.map(p => {
             const on = p.id === sel
             const cand = !!sel && benchOk(p)
-            const dim = !!sel && !on && !cand
             return (
-              <PlayerLine
+              <PlayerCard
                 key={p.id}
                 badge={p.flag === 'Taxi' ? 'TX' : p.flag === 'IR' ? 'IR' : p.pos}
                 p={p}
                 proj={p.startable ? p.proj.toFixed(1) : '—'}
                 out={false}
                 cue={cand ? 'Swap in' : ''}
-                state={on ? 'on' : cand ? 'cand' : dim ? 'dim' : 'idle'}
+                state={on ? 'on' : cand ? 'cand' : sel ? 'dim' : 'idle'}
                 onPress={() => tapBench(p)}
               />
             )
           })}
 
-          <T v="small" c="mute" style={{ padding: 16 }}>
+          <T v="small" c="mute" style={{ paddingTop: 8 }}>
             Ranks from {d.sheet.name} › Week {d.boardWeek ?? '?'}. Proj is Tyler's rank mapped to the points per game that rank scored last season in this league's
             scoring. The order is the signal; totals are approximate.
           </T>
-          <View style={{ paddingHorizontal: 16 }}>
-            <Btn label={busy ? 'Refreshing…' : 'Refresh'} disabled={busy} onPress={load} />
-          </View>
+          <Btn label={busy ? 'Refreshing…' : 'Refresh'} disabled={busy} onPress={load} bg={t.surf} />
         </>
       )}
     </ScrollView>
   )
 }
 
-function PlayerLine(props: {
+/** The suggestion strip: an acc-tint card with one line and one action. */
+function Strip({ text, action, onPress, disabled }: { text: string; action: string; onPress: () => void; disabled?: boolean }) {
+  const t = useTheme()
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingLeft: 18, paddingRight: 14, borderRadius: 18, backgroundColor: t.accTint }}>
+      <T v="semi" style={{ flex: 1 }}>
+        {text}
+      </T>
+      <Btn kind="primary" size="sm" label={action} onPress={onPress} disabled={disabled} style={{ minHeight: 40 }} />
+    </View>
+  )
+}
+
+/** A starter (NFL-colour card) or bench player (surf card), with the tap-to-swap states. */
+function PlayerCard(props: {
   badge: string
   starter?: boolean
   p: SSPlayer | null
@@ -336,42 +363,32 @@ function PlayerLine(props: {
   const { p, state } = props
   const tag = p && tagOf(p)
   const on = state === 'on'
-  const badgeBg = props.starter ? (on ? t.acc : t.ink) : t.chip
-  const badgeFg = props.starter ? (on ? '#fff' : t.bg) : t.mute
   return (
-    <Pressable
+    <GradCard
+      color={props.starter && p ? nflColor(t, p.team) : null}
+      selected={on}
+      candidate={state === 'cand'}
+      dim={state === 'dim'}
+      minHeight={props.starter ? 64 : 60}
       onPress={props.onPress}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        minHeight: props.starter ? 60 : 56,
-        paddingVertical: 6,
-        paddingHorizontal: 16,
-        borderBottomWidth: 1,
-        borderColor: t.line,
-        backgroundColor: on ? t.accTint : state === 'cand' || pressed ? t.card : 'transparent',
-        opacity: state === 'dim' ? (props.starter ? 0.4 : 0.35) : 1,
-      })}
+      style={{ paddingVertical: 8, paddingLeft: 10 }}
+      accessibilityLabel={p ? p.name : `Empty ${props.badge}`}
     >
-      {on && <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: t.acc }} />}
-      <View style={{ width: 46, height: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: badgeBg }}>
-        <T v="monoSemi" size={12} color={badgeFg}>
-          {props.badge.replace('SUPER_FLEX', 'SF')}
-        </T>
+      <View style={{ width: 44, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.acc : t.surf2 }}>
+        <Text style={{ fontFamily: font.sansBold, fontSize: 12, color: on ? t.accInk : props.starter ? t.ink : t.mute }}>{props.badge.replace('SUPER_FLEX', 'SF')}</Text>
       </View>
-      {p ? <PlayerAvatar id={p.id} name={p.name} size={30} /> : <View style={{ width: 30 }} />}
+      {p ? <Headshot id={p.id} name={p.name} size={40} /> : <View style={{ width: 40 }} />}
       <View style={{ flex: 1, minWidth: 0 }}>
         {p ? (
           <>
             <Row gap={6}>
-              <T v={props.starter ? 'semi' : 'body'} c={props.starter ? 'ink' : 'ink2'} size={16} lines={1} style={{ flexShrink: 1 }}>
+              <T v={props.starter ? 'bold' : 'semi'} c={props.starter ? 'ink' : 'ink2'} lines={1} style={{ flexShrink: 1 }}>
                 {p.name}
               </T>
-              {props.out ? <Chip label="Sim out" tone="neg" /> : tag && <Chip label={tag.label} tone={tag.tone} />}
+              {props.out ? <Tag label="Sim out" tone="bad" /> : tag && <Tag label={tag.label} tone={tag.tone} />}
             </Row>
-            <T v="small" c="mute" lines={1}>
-              {[props.starter ? p.pos : null, [p.team, p.matchup].filter(Boolean).join(' '), p.rankLabel].filter(Boolean).join(' · ')}
+            <T v="small" c={props.starter ? 'ink2' : 'mute'} lines={1}>
+              {[[p.team, p.matchup].filter(Boolean).join(' '), p.rankLabel].filter(Boolean).join(' · ')}
             </T>
           </>
         ) : (
@@ -379,15 +396,15 @@ function PlayerLine(props: {
         )}
       </View>
       <View style={{ alignItems: 'flex-end' }}>
-        <T v={props.starter ? 'monoSemi' : 'mono'} c={props.starter ? 'ink' : 'ink2'} size={props.starter ? 17 : 16}>
+        <T v="bold" size={props.starter ? 16 : 15} c={props.starter ? 'ink' : 'ink2'} num>
           {props.proj}
         </T>
         {!!props.cue && (
-          <T v="smallSemi" size={12} c="acc">
+          <T v="bold" size={12} c="acc">
             {props.cue}
           </T>
         )}
       </View>
-    </Pressable>
+    </GradCard>
   )
 }
