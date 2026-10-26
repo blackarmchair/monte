@@ -20,6 +20,7 @@ export type EngineJob =
       forced: Record<number, number[]>
       /** RNG seed: same inputs + seed = same odds */
       seed: number
+      model: 'A' | 'B'
       /** return what the run knew as `snapshot`, for the desktop's backtest archive */
       archive?: boolean
       playersMeta: unknown
@@ -44,6 +45,7 @@ export async function runEngineJob(job: EngineJob): Promise<unknown> {
     Config.bb.teamStrengthCV = job.strengthCV
     Config.bb.forcedWinners = job.forced
     Config.bb.seed = job.seed
+    Config.bb.model = job.model
     const [users, rosters] = await Promise.all([getUsers(job.leagueId), getRosters(job.leagueId)])
     let snapshot: BBSnapshot | undefined
     const res = await getBBProjections(league, rosters, users, job.playersMeta, job.leagueId, nflState, {
@@ -66,6 +68,7 @@ export async function runEngineJob(job: EngineJob): Promise<unknown> {
       ...res,
       strengthCV: job.strengthCV,
       seed: job.seed,
+      model: job.model,
       forced: job.forced,
       whatIf,
       ranAt: new Date().toISOString(),

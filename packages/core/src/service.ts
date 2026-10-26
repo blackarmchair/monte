@@ -265,6 +265,7 @@ export function createMonteService(host: Host) {
         strengthCV: opts.strengthCV,
         forced: opts.forced ?? {},
         seed: opts.seed ?? settings.seed,
+        model: opts.model ?? settings.model ?? 'A',
         playersMeta: meta,
         overrides: overridesOf(settings),
       })) as BBResult

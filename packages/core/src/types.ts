@@ -30,6 +30,8 @@ export type Settings = {
   strengthCV: number
   /** pick-odds RNG seed: the same inputs and seed give the same odds. Changes only on "New seed". */
   seed: number
+  /** pick-odds model: 'A' everyone projected plays every week; 'B' fitted availability (beta) */
+  model?: 'A' | 'B'
   /** per league: how much its managers trade like the market (0–1); 1 = fully */
   marketBeta?: Record<string, number>
   /** manual injury overrides, applied in Pick Odds, PWOPR and Start/Sit */
@@ -125,6 +127,8 @@ export type BBResult = {
   strengthCV: number
   /** added by Monte: the RNG seed the run used */
   seed: number
+  /** added by Monte: the model the run used */
+  model: 'A' | 'B'
   /** added by Monte: the what-if results the run assumed (week -> forced winners) */
   forced: Record<number, number[]>
   /** added by Monte: the next unfinished week's head-to-head pairs, for what-if toggles */
@@ -133,7 +137,13 @@ export type BBResult = {
 }
 
 /** `seed` defaults to the saved setting; pass it when the setting is being changed in the same step. */
-export type PickOddsOpts = { sims: number; strengthCV: number; forced?: Record<number, number[]>; seed?: number }
+export type PickOddsOpts = {
+  sims: number
+  strengthCV: number
+  forced?: Record<number, number[]>
+  seed?: number
+  model?: 'A' | 'B'
+}
 
 export type Signal = 'Over (Strong)' | 'Over' | 'Neutral' | 'Under' | 'Under (Strong)'
 

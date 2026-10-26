@@ -6,8 +6,8 @@ import type { BBResult } from './types'
 export const newSeed = (): number => 1 + Math.floor(Math.random() * 2147483646)
 
 /**
- * True when two pick-odds runs used the same seed, sim count and projection error, so they
- * differ only by their what-if results and comparing them isolates the toggle.
+ * True when two pick-odds runs used the same seed, sim count, projection error and model, so
+ * they differ only by their what-if results and comparing them isolates the toggle.
  */
 export const sameRunParams = (a: BBResult, b: BBResult): boolean =>
-  a.seed === b.seed && a.simulations === b.simulations && a.strengthCV === b.strengthCV
+  a.seed === b.seed && a.simulations === b.simulations && a.strengthCV === b.strengthCV && a.model === b.model

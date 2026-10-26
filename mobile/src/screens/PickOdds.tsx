@@ -6,7 +6,7 @@ import type { BBResult, BBTeam, LeagueContext } from '@monte/core/types'
 import { newSeed, sameRunParams } from '@monte/core/seed'
 import { useApp } from '@/lib/store'
 import { useOverlay } from '@/ui/overlay'
-import { Btn, Empty, ErrorBox, Kicker, Loading, Row, Slider, T, TeamSquare, num, pad2 } from '@/ui/kit'
+import { Btn, Empty, ErrorBox, Kicker, Loading, Row, Seg, Slider, T, TeamSquare, num, pad2 } from '@/ui/kit'
 import { font, mix, RADIUS, useTheme } from '@/ui/theme'
 
 const DEBOUNCE_MS = 350
@@ -37,14 +37,15 @@ export default function PickOdds() {
   const base = run.base && (!result || sameRunParams(run.base, result)) ? run.base : result
   const [err, setErr] = useState(Math.max(0.02, settings?.strengthCV ?? 0.08))
   const [seed, setSeed] = useState(settings?.seed ?? 1)
+  const [model, setModel] = useState<'A' | 'B'>(settings?.model ?? 'A')
   const [forced, setForced] = useState<Forced>(() => result?.forced ?? {})
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const sims = settings?.sims ?? 1000
 
-  type RunOpts = { err?: number; forced?: Forced; seed?: number }
+  type RunOpts = { err?: number; forced?: Forced; seed?: number; model?: 'A' | 'B' }
   const runNow = (o: RunOpts) => {
     clearTimeout(timer.current)
-    runBB({ sims, strengthCV: o.err ?? err, forced: o.forced ?? forced, seed: o.seed ?? seed })
+    runBB({ sims, strengthCV: o.err ?? err, forced: o.forced ?? forced, seed: o.seed ?? seed, model: o.model ?? model })
   }
   const runSoon = (o: RunOpts) => {
     clearTimeout(timer.current)
@@ -226,9 +227,26 @@ export default function PickOdds() {
           </T>
         </Row>
         <Row gap={10} style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+          <T c="mute" size={14}>
+            Model
+          </T>
+          <Seg
+            value={model}
+            onChange={v => {
+              setModel(v)
+              void setSettings({ model: v })
+              runNow({ model: v })
+            }}
+            options={[
+              { value: 'A', label: 'Classic' },
+              { value: 'B', label: 'Availability β' },
+            ]}
+          />
+        </Row>
+        <Row gap={10} style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
           <T v="small" c="mute" style={{ flex: 1 }}>
             {result
-              ? `${num(result.simulations)} sims · seed ${result.seed} · ${result.inProgressWeek ? `week ${result.inProgressWeek} in progress` : `through week ${result.lastScoredWeek}`}`
+              ? `${num(result.simulations)} sims${result.model === 'B' ? ' · availability' : ''} · seed ${result.seed} · ${result.inProgressWeek ? `week ${result.inProgressWeek} in progress` : `through week ${result.lastScoredWeek}`}`
               : ''}
             {run.busy ? `${result ? ' · ' : ''}simulating…` : ''}
           </T>
