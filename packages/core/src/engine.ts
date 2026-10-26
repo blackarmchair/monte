@@ -3,7 +3,7 @@
 // sleeperStandings keeps a module-level mutable Config, so callers must never run two jobs at
 // once in the same JS context.
 import { Config } from 'sleeper-standings/dist/config.js'
-import { getBBProjections } from 'sleeper-standings/dist/bbProjections.js'
+import { getBBProjections, type BBSnapshot } from 'sleeper-standings/dist/bbProjections.js'
 import { getPWOPRProjections } from 'sleeper-standings/dist/pwoprProjections.js'
 import { getLeague, getRosters, getUsers, getNFLState, getWeekMatchups } from 'sleeper-standings/dist/fetchers.js'
 
@@ -18,6 +18,10 @@ export type EngineJob =
       strengthCV: number
       /** what-if: week -> roster ids forced to win that week */
       forced: Record<number, number[]>
+      /** RNG seed: same inputs + seed = same odds */
+      seed: number
+      /** return what the run knew as `snapshot`, for the desktop's backtest archive */
+      archive?: boolean
       playersMeta: unknown
       overrides: Overrides
     }
@@ -39,9 +43,12 @@ export async function runEngineJob(job: EngineJob): Promise<unknown> {
     Config.bb.simulations = job.sims
     Config.bb.teamStrengthCV = job.strengthCV
     Config.bb.forcedWinners = job.forced
+    Config.bb.seed = job.seed
     const [users, rosters] = await Promise.all([getUsers(job.leagueId), getRosters(job.leagueId)])
+    let snapshot: BBSnapshot | undefined
     const res = await getBBProjections(league, rosters, users, job.playersMeta, job.leagueId, nflState, {
       print: false,
+      onInputs: job.archive ? s => (snapshot = s) : undefined,
     })
     // The what-if week is the next one without a final score: its head-to-head pairs, so the
     // UI can offer "pick the winner" toggles for it.
@@ -55,7 +62,15 @@ export async function runEngineJob(job: EngineJob): Promise<unknown> {
       }
       whatIf = { week, pairs: [...byMatchup.values()].filter(p => p.length === 2).map(p => [p[0], p[1]] as [number, number]) }
     }
-    return { ...res, strengthCV: job.strengthCV, forced: job.forced, whatIf, ranAt: new Date().toISOString() }
+    return {
+      ...res,
+      strengthCV: job.strengthCV,
+      seed: job.seed,
+      forced: job.forced,
+      whatIf,
+      ranAt: new Date().toISOString(),
+      ...(snapshot ? { snapshot } : {}),
+    }
   }
   const res = await getPWOPRProjections(league, nflState, { print: false })
   // fits carry training internals the UI does not use; keep the payload small.

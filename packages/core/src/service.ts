@@ -36,7 +36,7 @@ const SLEEPER = 'https://api.sleeper.app/v1'
 // 46 of 281 injury fields wrong after three days.
 const PLAYERS_TTL_MS = 6 * 3600 * 1000
 
-export const DEFAULT_SETTINGS: Settings = { sims: 3000, strengthCV: 0.08 }
+export const DEFAULT_SETTINGS: Settings = { sims: 3000, strengthCV: 0.08, seed: 1 }
 
 // sleeperStandings' hard-coded injury notes, copied at load: on the phone the engine runs in this
 // same JS context and overwrites Config.bb.returnWeek with the user's overrides on every run.
@@ -264,6 +264,7 @@ export function createMonteService(host: Host) {
         sims: opts.sims,
         strengthCV: opts.strengthCV,
         forced: opts.forced ?? {},
+        seed: opts.seed ?? settings.seed,
         playersMeta: meta,
         overrides: overridesOf(settings),
       })) as BBResult

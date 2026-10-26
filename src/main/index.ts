@@ -46,7 +46,7 @@ function applyTheme(theme: Settings['theme']) {
 }
 
 // ---- engine ----------------------------------------------------------------------------
-function runEngine(job: EngineJob): Promise<unknown> {
+function runWorker(job: EngineJob): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const w = createEngine({ workerData: job })
     w.once('message', (m: Result<unknown>) => {
@@ -55,6 +55,23 @@ function runEngine(job: EngineJob): Promise<unknown> {
     })
     w.once('error', reject)
   })
+}
+
+// Every baseline pick-odds run (no what-ifs) also saves what the engine knew and what it
+// forecast, one file per league per day, so later backtests can score the live model with the
+// injury information that can't be rebuilt from Sleeper's history. Saving never fails a run.
+async function runEngine(job: EngineJob): Promise<unknown> {
+  const baseline = job.kind === 'bb' && !Object.values(job.forced).some(w => w.length)
+  if (!baseline) return runWorker(job)
+  const { snapshot, ...res } = (await runWorker({ ...job, archive: true })) as Record<string, any>
+  if (snapshot) {
+    const dir = join(dataDir(), 'archive', job.leagueId)
+    const file = join(dir, `${res.season}-wk${res.currentWeek}-${String(res.ranAt).slice(0, 10)}.json`)
+    void mkdir(dir, { recursive: true })
+      .then(() => writeFile(file, JSON.stringify({ leagueId: job.leagueId, ...res, snapshot }), 'utf8'))
+      .catch(e => console.warn('archive write failed:', e))
+  }
+  return res
 }
 
 // Sleeper, FantasyCalc and the screen builders live in @monte/core (shared with the phone app);

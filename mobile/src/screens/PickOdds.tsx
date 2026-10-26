@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import type { BBResult, BBTeam, LeagueContext } from '@monte/core/types'
+import { newSeed, sameRunParams } from '@monte/core/seed'
 import { useApp } from '@/lib/store'
 import { useOverlay } from '@/ui/overlay'
 import { Btn, Empty, ErrorBox, Kicker, Loading, Row, Slider, T, TeamSquare, num, pad2 } from '@/ui/kit'
@@ -32,17 +33,20 @@ export default function PickOdds() {
   const { context, settings, setSettings, bb: run, runBB } = useApp()
   const { openSheet } = useOverlay()
   const result = run.result
-  const base = run.base ?? result
+  // The baseline only counts when it differs from the run on screen by its what-ifs alone.
+  const base = run.base && (!result || sameRunParams(run.base, result)) ? run.base : result
   const [err, setErr] = useState(Math.max(0.02, settings?.strengthCV ?? 0.08))
+  const [seed, setSeed] = useState(settings?.seed ?? 1)
   const [forced, setForced] = useState<Forced>(() => result?.forced ?? {})
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const sims = settings?.sims ?? 1000
 
-  const runNow = (o: { err?: number; forced?: Forced }) => {
+  type RunOpts = { err?: number; forced?: Forced; seed?: number }
+  const runNow = (o: RunOpts) => {
     clearTimeout(timer.current)
-    runBB({ sims, strengthCV: o.err ?? err, forced: o.forced ?? forced })
+    runBB({ sims, strengthCV: o.err ?? err, forced: o.forced ?? forced, seed: o.seed ?? seed })
   }
-  const runSoon = (o: { err?: number; forced?: Forced }) => {
+  const runSoon = (o: RunOpts) => {
     clearTimeout(timer.current)
     timer.current = setTimeout(() => runNow(o), DEBOUNCE_MS)
   }
@@ -221,12 +225,25 @@ export default function PickOdds() {
             {err.toFixed(2)}
           </T>
         </Row>
-        <T v="small" c="mute" style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-          {result
-            ? `${num(result.simulations)} sims · ${result.inProgressWeek ? `week ${result.inProgressWeek} in progress` : `through week ${result.lastScoredWeek}`}`
-            : ''}
-          {run.busy ? `${result ? ' · ' : ''}simulating…` : ''}
-        </T>
+        <Row gap={10} style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+          <T v="small" c="mute" style={{ flex: 1 }}>
+            {result
+              ? `${num(result.simulations)} sims · seed ${result.seed} · ${result.inProgressWeek ? `week ${result.inProgressWeek} in progress` : `through week ${result.lastScoredWeek}`}`
+              : ''}
+            {run.busy ? `${result ? ' · ' : ''}simulating…` : ''}
+          </T>
+          <Btn
+            kind="link"
+            label="New seed"
+            disabled={run.busy}
+            onPress={() => {
+              const s = newSeed()
+              setSeed(s)
+              void setSettings({ seed: s })
+              runNow({ seed: s })
+            }}
+          />
+        </Row>
 
         {result && (
           <>

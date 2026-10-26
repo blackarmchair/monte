@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BBResult, BBTeam, LeagueContext, PickOddsOpts, Settings } from '@shared/types'
+import { newSeed, sameRunParams } from '@shared/seed'
 import type { Run } from './App'
 import { InlineError, NextMove, pct, Segmented, SkeletonRows, TeamAvatar } from './ui'
 import './PicksView.css'
@@ -33,19 +34,22 @@ export default function PicksView(props: {
 }) {
   const { context, settings, run } = props
   const result = run.result
-  const base = run.base ?? result
+  // The baseline only counts when it differs from the run on screen by its what-ifs alone.
+  const base = run.base && (!result || sameRunParams(run.base, result)) ? run.base : result
   const [sims, setSims] = useState(settings.sims)
   const [err, setErr] = useState(Math.max(0.02, settings.strengthCV))
+  const [seed, setSeed] = useState(settings.seed)
   const [forced, setForced] = useState<Record<number, number[]>>(() => result?.forced ?? {})
   const [hover, setHover] = useState<number | null>(null)
   const timer = useRef<number | undefined>(undefined)
 
-  const runNow = (o: { sims?: number; err?: number; forced?: Record<number, number[]> }) => {
+  type RunOpts = { sims?: number; err?: number; forced?: Record<number, number[]>; seed?: number }
+  const runNow = (o: RunOpts) => {
     window.clearTimeout(timer.current)
-    props.onRun({ sims: o.sims ?? sims, strengthCV: o.err ?? err, forced: o.forced ?? forced })
+    props.onRun({ sims: o.sims ?? sims, strengthCV: o.err ?? err, forced: o.forced ?? forced, seed: o.seed ?? seed })
   }
   // The real sim takes seconds: slider steps and what-if clicks settle before it runs.
-  const runSoon = (o: { sims?: number; err?: number; forced?: Record<number, number[]> }) => {
+  const runSoon = (o: RunOpts) => {
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => runNow(o), DEBOUNCE_MS)
   }
@@ -153,12 +157,24 @@ export default function PicksView(props: {
         <span className="grow" />
         <span className="pk2-meta">
           {result
-            ? `${result.simulations.toLocaleString()} sims at ${result.strengthCV.toFixed(2)} · ${
+            ? `${result.simulations.toLocaleString()} sims at ${result.strengthCV.toFixed(2)} · seed ${result.seed} · ${
                 result.inProgressWeek ? `week ${result.inProgressWeek} in progress` : `through week ${result.lastScoredWeek}`
               }`
             : ''}
           {run.busy ? `${result ? ' · ' : ''}updating…` : ''}
         </span>
+        <button
+          className="link"
+          title="Odds are reproducible: the same data and seed always give the same numbers. A new seed reruns with fresh random draws."
+          onClick={() => {
+            const s = newSeed()
+            setSeed(s)
+            props.onSettings({ seed: s })
+            runNow({ seed: s })
+          }}
+        >
+          New seed
+        </button>
       </div>
 
       {run.error && <InlineError message={`Simulation failed: ${run.error}`} onRetry={() => runNow({})} />}
