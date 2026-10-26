@@ -35,9 +35,9 @@ export default function PickOdds() {
   const result = run.result
   // The baseline only counts when it differs from the run on screen by its what-ifs alone.
   const base = run.base && (!result || sameRunParams(run.base, result)) ? run.base : result
-  const [err, setErr] = useState(Math.max(0.02, settings?.strengthCV ?? 0.08))
+  const [err, setErr] = useState(Math.max(0.02, settings?.strengthCV ?? 0.04))
   const [seed, setSeed] = useState(settings?.seed ?? 1)
-  const [model, setModel] = useState<'A' | 'B'>(settings?.model ?? 'A')
+  const [model, setModel] = useState<'A' | 'B'>(settings?.model ?? 'B')
   const [forced, setForced] = useState<Forced>(() => result?.forced ?? {})
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const sims = settings?.sims ?? 1000
@@ -239,7 +239,7 @@ export default function PickOdds() {
             }}
             options={[
               { value: 'A', label: 'Classic' },
-              { value: 'B', label: 'Availability β' },
+              { value: 'B', label: 'Availability' },
             ]}
           />
         </Row>

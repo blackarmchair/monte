@@ -36,7 +36,9 @@ const SLEEPER = 'https://api.sleeper.app/v1'
 // 46 of 281 injury fields wrong after three days.
 const PLAYERS_TTL_MS = 6 * 3600 * 1000
 
-export const DEFAULT_SETTINGS: Settings = { sims: 3000, strengthCV: 0.08, seed: 1 }
+// Model B with strength CV 0.04 beat model A at 0.08 on held-out 2025 league-seasons on draft
+// slots, playoffs and matchups (sleeperStandings backtest, paired bootstrap).
+export const DEFAULT_SETTINGS: Settings = { sims: 3000, strengthCV: 0.04, seed: 1, model: 'B' }
 
 // sleeperStandings' hard-coded injury notes, copied at load: on the phone the engine runs in this
 // same JS context and overwrites Config.bb.returnWeek with the user's overrides on every run.
@@ -265,7 +267,7 @@ export function createMonteService(host: Host) {
         strengthCV: opts.strengthCV,
         forced: opts.forced ?? {},
         seed: opts.seed ?? settings.seed,
-        model: opts.model ?? settings.model ?? 'A',
+        model: opts.model ?? settings.model ?? 'B',
         playersMeta: meta,
         overrides: overridesOf(settings),
       })) as BBResult

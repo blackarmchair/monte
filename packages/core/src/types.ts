@@ -30,7 +30,7 @@ export type Settings = {
   strengthCV: number
   /** pick-odds RNG seed: the same inputs and seed give the same odds. Changes only on "New seed". */
   seed: number
-  /** pick-odds model: 'A' everyone projected plays every week; 'B' fitted availability (beta) */
+  /** pick-odds model: 'B' fitted availability (default); 'A' everyone projected plays every week */
   model?: 'A' | 'B'
   /** per league: how much its managers trade like the market (0–1); 1 = fully */
   marketBeta?: Record<string, number>

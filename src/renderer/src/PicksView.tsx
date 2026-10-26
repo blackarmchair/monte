@@ -39,7 +39,7 @@ export default function PicksView(props: {
   const [sims, setSims] = useState(settings.sims)
   const [err, setErr] = useState(Math.max(0.02, settings.strengthCV))
   const [seed, setSeed] = useState(settings.seed)
-  const [model, setModel] = useState<'A' | 'B'>(settings.model ?? 'A')
+  const [model, setModel] = useState<'A' | 'B'>(settings.model ?? 'B')
   const [forced, setForced] = useState<Record<number, number[]>>(() => result?.forced ?? {})
   const [hover, setHover] = useState<number | null>(null)
   const timer = useRef<number | undefined>(undefined)
@@ -161,14 +161,14 @@ export default function PicksView(props: {
           }}
         />
         <span className="mono">{err.toFixed(2)}</span>
-        <span className="pk2-k" title={'Classic: every projected player plays every remaining week. Availability (beta): whether each player plays is drawn from injury tags and history, so absences and dud weeks count.'}>
+        <span className="pk2-k" title={'Classic: every projected player plays every remaining week. Availability (default): whether each player plays is drawn from injury tags and history, so absences and dud weeks count.'}>
           Model
         </span>
         <Segmented
           value={model}
           options={[
             { value: 'A', label: 'Classic' },
-            { value: 'B', label: 'Availability β' },
+            { value: 'B', label: 'Availability' },
           ]}
           onChange={v => {
             setModel(v)
