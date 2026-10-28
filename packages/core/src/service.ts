@@ -272,6 +272,7 @@ export function createMonteService(host: Host) {
         draftRounds,
         myPicks: ownedPicks(infos, owners, draftSeason, mine?.roster_id ?? null),
         firstOwner,
+        pickOwner: Object.fromEntries(owners),
         week: Number(state?.display_week ?? state?.week ?? 0),
         fetchedAt: new Date().toISOString(),
       }

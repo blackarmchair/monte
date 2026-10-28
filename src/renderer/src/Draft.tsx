@@ -2,11 +2,16 @@
 // team's grade; the sticky right panel holds the selected pick (your best-value pick by default)
 // and the draft's controls. While a draft is live (or about to be) there is also a Board of who's
 // left. Grades port draftPunk's sheet-order rule; Sleeper is polled while the draft can change.
-import { useEffect, useMemo, useState } from 'react'
+// Until Sleeper creates next season's draft, that season opens as a provisional order taken from
+// Pick odds' projection, with traded picks applied.
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { DraftData, DraftPickRow, DraftPlayer, DraftPool, DraftPoll, DraftStatus, Result } from '@shared/types'
+import { provisionalOrder } from '@shared/draft'
+import { projectedSlots } from '@shared/slots'
 import { buildPositionalRankIndex, gradePicks, gradeTeam, type GradeLetter, type PickGrade } from '@shared/draftGrade'
 import { teamLabel } from './names'
 import { useApp } from './store'
+import { quantileSlot } from './PickOdds'
 import { Btn, Empty, ErrorBox, GradCard, Headshot, HeatChip, Link, Loading, NeedsSheet, nflColor, Notice, Pills, RING, Seg, Stack2, Tag, TeamAvatar, teamColor, useHeat } from './ui'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
@@ -16,6 +21,9 @@ const TIER_GAP = 12
 const POLL_MS: Record<DraftStatus, number | null> = { drafting: 5000, paused: 15000, pre_draft: 30000, complete: null }
 const STATUS_LABEL: Record<DraftStatus, string> = { drafting: 'Live', paused: 'Paused', pre_draft: 'Not started', complete: 'Complete' }
 const PAGE = 60
+/** Pick and team cards: every round on one page, so the cards stay compact. */
+const CARDS: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }
+const CARD_PAD: CSSProperties = { padding: '6px 12px' }
 const LETTERS: GradeLetter[] = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F']
 /** Grade points for the heat scale: C and below read as bad, A+ as fully good. */
 const GPA: Record<string, number> = { 'A+': 4.3, A: 4, 'A-': 3.7, 'B+': 3.3, B: 3, 'B-': 2.7, 'C+': 2.3, C: 2, 'C-': 1.7, D: 1, F: 0 }
@@ -43,10 +51,12 @@ function GradeChip({ g, big }: { g: string | null | undefined; big?: boolean }) 
 }
 
 export default function DraftPanel() {
-  const { context, settings, hide, dataVersion, sheet, openPlayer } = useApp()
+  const { context, settings, hide, dataVersion, sheet, openPlayer, bb, runBB, setPicksSeg } = useApp()
   const leagueId = context?.league.league_id
   const userId = settings.userId
   const [draftId, setDraftId] = useState<string | undefined>(undefined)
+  /** show the provisional order for next season's draft while Sleeper has none */
+  const [preferNext, setPreferNext] = useState(true)
   const [otherId, setOtherId] = useState('')
   const [res, setRes] = useState<Result<DraftData> | null>(null)
   const [busy, setBusy] = useState(false)
@@ -129,8 +139,131 @@ export default function DraftPanel() {
       .sort((a, b) => (b.grade.averageScore ?? -99) - (a.grade.averageScore ?? -99))
   }, [d, picks, grades])
 
+  const nextSeason = context?.draftSeason
+  const nextMissing = !!d && !!nextSeason && !d.drafts.some(x => x.season === nextSeason && x.leagueId === leagueId)
+  const provisional = nextMissing && preferNext && draftId === undefined
+  const projected = bb.result
+  useEffect(() => {
+    if (provisional && !bb.result && !bb.busy && !bb.error) runBB()
+  }, [provisional]) // eslint-disable-line react-hooks/exhaustive-deps
+  const nextOrder = useMemo(() => {
+    if (!provisional || !projected || !context) return []
+    const slotOf = projectedSlots(projected.teams)
+    const slots = [...slotOf.keys()].sort((a, b) => slotOf.get(a)! - slotOf.get(b)!)
+    // Rookie drafts keep the league's last draft type; a startup (snake) doesn't count.
+    const last = d!.drafts.find(x => x.leagueId === leagueId && x.rounds <= context.draftRounds)
+    return provisionalOrder(slots, context.draftRounds, last?.type ?? 'linear', context.pickOwner ?? {})
+  }, [provisional, projected, context, d, leagueId])
+  const pickDraft = (id: string | undefined, next: boolean) => {
+    setPreferNext(next)
+    setDraftId(id)
+  }
+
+  const draftPills = () => (
+    <>
+      {d && (d.drafts.length > 1 || nextMissing) && (
+        <div className="pills">
+          {nextMissing && (
+            <button className={`pill${provisional ? ' on' : ''}`} style={provisional ? undefined : { background: 'var(--surf2)' }} onClick={() => pickDraft(undefined, true)}>
+              {nextSeason} · provisional
+            </button>
+          )}
+          {d.drafts.map(x => {
+            const on = !provisional && x.draft_id === d.draft.draft_id
+            return (
+              <button key={x.draft_id} className={`pill${on ? ' on' : ''}`} style={on ? undefined : { background: 'var(--surf2)' }} onClick={() => pickDraft(x.draft_id, false)}>
+                {x.season}
+                {x.leagueId === leagueId ? '' : ' mock'} · {STATUS_LABEL[x.status].toLowerCase()}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <label className="field on-surf">
+        <input
+          value={otherId}
+          onChange={e => setOtherId(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && otherId.trim() && pickDraft(otherId.trim(), false)}
+          placeholder="Other draft ID (mocks), then Enter"
+        />
+      </label>
+    </>
+  )
+
+  const renderProvisional = () => {
+    const rounds = [...new Set(nextOrder.map(s => s.round))]
+    const myRid = d?.myRosterId ?? null
+    const mine = nextOrder.filter(s => s.rosterId === myRid)
+    const distOf = new Map(projected?.teams.map(t => [t.roster_id, t.slotDist]))
+    const whatIfs = !!projected && Object.values(projected.forced ?? {}).some(w => w.length)
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 400px', gap: 24, alignItems: 'start' }}>
+        <div className="stack" style={{ gap: 14, minWidth: 0 }}>
+          <div className="hero" style={{ gap: 8 }}>
+            <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.2 }}>{nextSeason} draft: provisional order.</div>
+            {nextOrder.length > 0 && (
+              <div className="sub" style={{ fontSize: 15 }}>
+                {mine.length ? `Your picks: ${mine.map(s => s.label).join(', ')}.` : `You don't own a ${nextSeason} pick in this league.`}
+              </div>
+            )}
+          </div>
+          {bb.error && <ErrorBox message={bb.error} onRetry={() => runBB()} />}
+          {!projected && !bb.error && <Loading label="Projecting the order…" />}
+          {nextOrder.length > 0 && (
+            <>
+              {rounds.map(rd => (
+              <div key={rd} className="stack" style={{ gap: 8 }}>
+              <span className="label" style={{ paddingTop: 4 }}>Round {rd}</span>
+              <div style={CARDS}>
+                {nextOrder
+                  .filter(s => s.round === rd)
+                  .map(s => {
+                    const dist = s.originalRosterId != null ? distOf.get(s.originalRosterId) : undefined
+                    const [lo, hi] = dist ? [quantileSlot(dist, 0.1), quantileSlot(dist, 0.9)] : [0, 0]
+                    const range = !dist ? '' : lo === hi ? `slot ${lo}` : `slots ${lo}–${hi}`
+                    const via = s.originalRosterId != null && s.originalRosterId !== s.rosterId ? `via ${teamName(s.originalRosterId)}` : ''
+                    return (
+                      <GradCard
+                        key={s.pickNo}
+                        color={s.rosterId != null ? teamColor(s.rosterId) : null}
+                        ring={s.rosterId === myRid ? 'inset 0 0 0 1px color-mix(in oklab, var(--acc) 50%, transparent)' : undefined}
+                        minHeight={54}
+                        style={CARD_PAD}
+                      >
+                        <span className="num mute" style={{ width: 34, fontSize: 14, fontWeight: 700 }}>
+                          {s.label}
+                        </span>
+                        {s.rosterId != null && <TeamAvatar rid={s.rosterId} name={teamName(s.rosterId)} size={36} />}
+                        <Stack2 title={`${teamName(s.rosterId)}${s.rosterId === myRid ? ' (you)' : ''}`} sub={[via, range].filter(Boolean).join(' · ') || undefined} />
+                      </GradCard>
+                    )
+                  })}
+              </div>
+              </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        <div className="sticky stack" style={{ gap: 16 }}>
+          <div className="hero" style={{ padding: 22, gap: 12 }}>
+            {draftPills()}
+            <span className="small mute">
+              Sleeper hasn't created the {nextSeason} draft yet. Slots follow the projected order on Pick odds{whatIfs ? ', including its what-ifs' : ''}, with traded picks
+              applied, so they move as the season does. Ranges are where each pick lands in 80% of simulations.
+            </span>
+            <div>
+              <Link label="Open Pick odds" onClick={() => setPicksSeg('odds')} />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!sheet) return <NeedsSheet />
   if (!context) return <Loading label="Loading league…" />
+  if (provisional && d) return renderProvisional()
 
   const made = new Set(picks.map(p => p.pickNo))
   const live = status === 'drafting' || status === 'paused'
@@ -140,8 +273,9 @@ export default function DraftPanel() {
   const myNext = d?.order.filter(s => s.rosterId === myRid && !made.has(s.pickNo)) ?? []
   const available = poolPlayers.filter(p => !pickedBy.has(p.id) && !manual.has(p.id))
   const rounds = [...new Set(picks.map(p => p.round))].sort((a, b) => a - b)
-  const segs = [...(open ? ['Board'] : []), ...rounds.map(r => `Rd ${r}`), 'Teams']
-  const cur = seg && segs.includes(seg) ? seg : segs[0]
+  // Picks (every round, then team grades) on one page; a draft still running also has the Board.
+  const segs = open ? ['Board', 'Picks'] : []
+  const cur = seg && segs.includes(seg) ? seg : segs[0] ?? 'Picks'
   const graded = (no: number) => {
     const g = grades.get(no)
     return g?.graded ? g : null
@@ -172,7 +306,7 @@ export default function DraftPanel() {
   }
 
   const shownPick = picks.find(p => p.pickNo === selPick) ?? myBest ?? picks.find(p => p.rosterId === myRid) ?? picks[0]
-  const shownTeam = cur === 'Teams' ? teamGrades.find(x => x.rid === selTeam) ?? myTeam ?? teamGrades[0] : undefined
+  const shownTeam = selTeam != null ? teamGrades.find(x => x.rid === selTeam) : undefined
   const toggleManual = (id: string) =>
     setManual(m => {
       const n = new Set(m)
@@ -187,13 +321,17 @@ export default function DraftPanel() {
         key={p.pickNo}
         color={p.rosterId != null ? teamColor(p.rosterId) : null}
         ring={ring ? RING : p.rosterId === myRid ? 'inset 0 0 0 1px color-mix(in oklab, var(--acc) 50%, transparent)' : undefined}
-        onClick={() => setSelPick(p.pickNo)}
-        style={{ padding: '8px 14px' }}
+        onClick={() => {
+          setSelPick(p.pickNo)
+          setSelTeam(null)
+        }}
+        minHeight={54}
+        style={CARD_PAD}
       >
         <span className="num mute" style={{ width: 34, fontSize: 14, fontWeight: 700 }}>
           {p.label}
         </span>
-        <Headshot id={p.playerId} name={p.name} size={40} />
+        <Headshot id={p.playerId} name={p.name} size={36} />
         <Stack2 title={p.name} sub={`${p.pos} · ${teamName(p.rosterId)}`} />
         <GradeChip g={g?.graded ? g.letter : null} />
       </GradCard>
@@ -217,7 +355,7 @@ export default function DraftPanel() {
 
         {d && (
           <>
-            <Pills value={cur} onChange={setSeg} options={segs.map(s => ({ value: s, label: s.replace(/^Rd /, 'Round ') }))} />
+            {segs.length > 0 && <Pills value={cur} onChange={setSeg} options={segs.map(s => ({ value: s, label: s }))} />}
 
             {cur === 'Board' && (
               <>
@@ -260,29 +398,46 @@ export default function DraftPanel() {
               </>
             )}
 
-            {cur.startsWith('Rd ') && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }}>
-                {picks.filter(p => `Rd ${p.round}` === cur).map(p => pickCard(p, p.pickNo === shownPick?.pickNo))}
-              </div>
-            )}
-
-            {cur === 'Teams' &&
-              (teamGrades.length === 0 ? (
-                <Empty message="Team grades appear once picks are made." />
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }}>
-                  {teamGrades.map((x, i) => (
-                    <GradCard key={x.rid} color={teamColor(x.rid)} ring={x.rid === shownTeam?.rid ? RING : undefined} onClick={() => setSelTeam(x.rid)} style={{ padding: '8px 14px' }}>
-                      <span className="num mute" style={{ width: 22, fontSize: 14, fontWeight: 700 }}>
-                        {i + 1}
-                      </span>
-                      <TeamAvatar rid={x.rid} name={teamName(x.rid)} size={40} />
-                      <Stack2 title={teamName(x.rid)} sub={`${x.picks.length} pick${x.picks.length === 1 ? '' : 's'}${x.rid === myRid ? ' · you' : ''}`} />
-                      <GradeChip g={x.grade.letter} />
-                    </GradCard>
-                  ))}
+            {cur === 'Picks' &&
+              rounds.map(rd => (
+                <div key={rd} className="stack" style={{ gap: 8 }}>
+                  <span className="label" style={{ paddingTop: 4 }}>
+                    Round {rd}
+                  </span>
+                  <div style={CARDS}>{picks.filter(p => p.round === rd).map(p => pickCard(p, !shownTeam && p.pickNo === shownPick?.pickNo))}</div>
                 </div>
               ))}
+
+            {cur === 'Picks' && (
+              <div className="stack" style={{ gap: 8 }}>
+                <span className="label" style={{ paddingTop: 4 }}>
+                  Team grades
+                </span>
+                {teamGrades.length === 0 ? (
+                  <Empty message="Team grades appear once picks are made." />
+                ) : (
+                  <div style={CARDS}>
+                    {teamGrades.map((x, i) => (
+                      <GradCard
+                        key={x.rid}
+                        color={teamColor(x.rid)}
+                        ring={x.rid === shownTeam?.rid ? RING : undefined}
+                        onClick={() => setSelTeam(x.rid === selTeam ? null : x.rid)}
+                        minHeight={54}
+                        style={CARD_PAD}
+                      >
+                        <span className="num mute" style={{ width: 22, fontSize: 14, fontWeight: 700 }}>
+                          {i + 1}
+                        </span>
+                        <TeamAvatar rid={x.rid} name={teamName(x.rid)} size={36} />
+                        <Stack2 title={teamName(x.rid)} sub={`${x.picks.length} pick${x.picks.length === 1 ? '' : 's'}${x.rid === myRid ? ' · you' : ''}`} />
+                        <GradeChip g={x.grade.letter} />
+                      </GradCard>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -350,24 +505,7 @@ export default function DraftPanel() {
                 ]}
               />
             </div>
-            {d.drafts.length > 1 && (
-              <div className="pills">
-                {d.drafts.map(x => (
-                  <button key={x.draft_id} className={`pill${x.draft_id === d.draft.draft_id ? ' on' : ''}`} style={x.draft_id === d.draft.draft_id ? undefined : { background: 'var(--surf2)' }} onClick={() => setDraftId(x.draft_id)}>
-                    {x.season}
-                    {x.leagueId === leagueId ? '' : ' mock'} · {STATUS_LABEL[x.status].toLowerCase()}
-                  </button>
-                ))}
-              </div>
-            )}
-            <label className="field on-surf">
-              <input
-                value={otherId}
-                onChange={e => setOtherId(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && otherId.trim() && setDraftId(otherId.trim())}
-                placeholder="Other draft ID (mocks), then Enter"
-              />
-            </label>
+            {draftPills()}
             <div className="row" style={{ gap: 10 }}>
               <Tag label={STATUS_LABEL[status]} tone={status === 'drafting' ? 'acc' : status === 'paused' ? 'warn' : 'mid'} />
               <span className="small mute" style={{ flex: 1 }}>

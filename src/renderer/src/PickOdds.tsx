@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { BBResult, LeagueContext } from '@shared/types'
 import { newSeed, sameRunParams } from '@shared/seed'
+import { projectedSlots } from '@shared/slots'
 import { useApp, type Forced } from './store'
 import { Btn, DistBars, Empty, ErrorBox, grad, Histogram, Link, Loading, num, pad2, RING, RING_SOFT, Seg, teamColor } from './ui'
 
@@ -20,8 +21,8 @@ export function quantileSlot(d: number[], q: number): number {
   return d.length
 }
 
-/** Projected slot = rank of the mean draft slot, earliest first. */
-const slotsOf = (r: BBResult | undefined) => new Map([...(r?.teams ?? [])].sort((a, b) => a.meanDraftSlot - b.meanDraftSlot).map((t, i) => [t.roster_id, i + 1]))
+/** Projected slot: the jointly most likely assignment of teams to slots. */
+const slotsOf = (r: BBResult | undefined) => projectedSlots(r?.teams ?? [])
 const top3 = (d: number[] | undefined) => (d ? (d[0] ?? 0) + (d[1] ?? 0) + (d[2] ?? 0) : 0)
 
 type RunOpts = { err?: number; forced?: Forced; seed?: number; model?: 'A' | 'B' }
@@ -72,8 +73,8 @@ export default function PickOdds() {
 
   const byId = new Map(result?.teams.map(x => [x.roster_id, x]))
   const baseById = new Map(base?.teams.map(x => [x.roster_id, x]))
-  const order = result ? [...result.teams].sort((a, b) => a.meanDraftSlot - b.meanDraftSlot) : []
   const slotOf = slotsOf(result)
+  const order = result ? [...result.teams].sort((a, b) => slotOf.get(a.roster_id)! - slotOf.get(b.roster_id)!) : []
   const picks = [...context.myPicks].sort((a, b) => a.round - b.round || (slotOf.get(a.originalRosterId) ?? 99) - (slotOf.get(b.originalRosterId) ?? 99))
   const firsts = picks.filter(p => p.round === 1)
   const top3Firsts = firsts.reduce((s, p) => s + top3(byId.get(p.originalRosterId)?.slotDist), 0)
@@ -201,7 +202,7 @@ export default function PickOdds() {
                 )
               })}
               <div className="small mute" style={{ paddingTop: 4 }}>
-                The strip shows how often each team lands at picks 1–{context.rosters.length} across sims; the number is the average slot. Draft order: non-playoff
+                The strip shows how often each team lands at picks 1–{context.rosters.length} across sims; the number is the average slot. Teams are listed in the most likely order of the sims as a whole, which is where the projected picks come from. Draft order: non-playoff
                 teams by reverse max points for, then playoff teams the same way. {num(result.simulations)} sims{result.model === 'B' ? ' · availability' : ''} · seed{' '}
                 {result.seed} · {result.inProgressWeek ? `week ${result.inProgressWeek} in progress` : `through week ${result.lastScoredWeek}`}.
                 {result.zeroed.length > 0 ? ` ${result.zeroed.length} injured players are held out of projections.` : ''}

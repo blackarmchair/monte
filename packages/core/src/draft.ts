@@ -78,6 +78,20 @@ export function pickOrder(draft: any, rosters: any[], traded: any[]): DraftSlot[
   return out
 }
 
+/**
+ * The order of a draft Sleeper hasn't created yet (next season's, mid-season): `slots` is roster
+ * ids from slot 1 down, from a projection, and `owner` is the season's pick ownership keyed
+ * `original:round`, so traded picks land where they belong.
+ */
+export function provisionalOrder(slots: number[], rounds: number, type: string, owner: Record<string, number>): DraftSlot[] {
+  const draft = { type, settings: { teams: slots.length, rounds }, slot_to_roster_id: Object.fromEntries(slots.map((rid, i) => [i + 1, rid])) }
+  const traded = Object.entries(owner).map(([key, owner_id]) => {
+    const [roster_id, round] = key.split(':').map(Number)
+    return { roster_id, round, owner_id }
+  })
+  return pickOrder(draft, [], traded)
+}
+
 /** Sleeper's picks, trimmed to what the board needs. */
 export function normalisePicks(picks: any[], teams: number): DraftPickRow[] {
   return [...(picks ?? [])]

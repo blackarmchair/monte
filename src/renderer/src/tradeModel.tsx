@@ -5,6 +5,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Result, TradeData } from '@shared/types'
 import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, type Asset, type Package, type Verdict } from '@shared/tradeMath'
+import { projectedSlots } from '@shared/slots'
 import { anonTrades } from './names'
 import { EMPTY_TRADE, useApp } from './store'
 import { ORD } from './ui'
@@ -111,7 +112,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     if (!d) return [] as Asset[]
     const blend = (s: number, m: number | null) => (m == null ? s : s + beta * (m - s))
     const dist = new Map(bb.result?.teams.map(x => [x.roster_id, x.slotDist]))
-    const slotOf = new Map([...(bb.result?.teams ?? [])].sort((a, b) => a.meanDraftSlot - b.meanDraftSlot).map((x, i) => [x.roster_id, i + 1]))
+    const slotOf = projectedSlots(bb.result?.teams ?? [])
     const picks: Asset[] = d.picks.map(p => {
       const v = pickValues(d.pickInputs, p.season, p.round, dist.get(p.originalOwner) ?? null)
       const own = p.originalOwner === p.owner

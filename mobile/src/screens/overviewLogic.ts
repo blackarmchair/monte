@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BBResult, OverviewData, OvPlayer, OvTeam, Result } from '@monte/core/types'
 import { anonOverview } from '@monte/core/names'
+import { projectedSlots } from '@monte/core/slots'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 
@@ -84,7 +85,7 @@ export function buildRows(data: OverviewData, bb: BBResult | undefined): TeamRow
       : Array.from({ length: n }, (_, k) => curve(rd, k + 1)).reduce((a, b) => a + b, 0) / n
     return ev * disc
   }
-  const slotOf = new Map([...(bb?.teams ?? [])].sort((a, b) => a.meanDraftSlot - b.meanDraftSlot).map((t, i) => [t.roster_id, i + 1]))
+  const slotOf = projectedSlots(bb?.teams ?? [])
 
   const base = data.teams.map(team => {
     const pos = Object.fromEntries(

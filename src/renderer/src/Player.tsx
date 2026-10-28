@@ -1,20 +1,13 @@
 // Player (pushed from anywhere a player shows): a sticky profile card on the left (NFL-colour hero
-// with his headshot, name, chips and a 3×2 bio), tabs on the right. Value: sheet against market.
-// Stats: this season's games, every cell heat-coloured within its column. Trade: who has him, the
-// one action and a deal Monte found. Injury: the override every model uses.
-import { useEffect, useMemo, useState } from 'react'
+// with his headshot, name, chips and a 3×2 bio), everything else on the right at once. Value: sheet
+// against market. Trade: who has him, the one action and a deal Monte found. Injury: the override
+// every model uses. Stats: this season's games, every cell heat-coloured within its column.
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { GameLog, ManualInjury, PlayerInfo, Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
 import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Stepper, StatTile, useHeat } from './ui'
 
-type Tab = 'value' | 'stats' | 'trade' | 'injury'
-const TABS: Array<[Tab, string]> = [
-  ['value', 'Value'],
-  ['stats', 'Stats'],
-  ['trade', 'Trade'],
-  ['injury', 'Injury'],
-]
 type Usage = { usagePPG: number | null; sleeperPPG: number | null; delta: number | null }
 const n1 = (x: number | null | undefined) => (x == null ? '—' : x.toFixed(1))
 const sgn1 = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x).toFixed(1)}`
@@ -31,7 +24,6 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
   const { context, pw } = useApp()
   const { byId, me, teamName, d } = useTrade()
   const [info, setInfo] = useState<Result<PlayerInfo> | null>(null)
-  const [tab, setTab] = useState<Tab>('value')
   const [shot, setShot] = useState(true)
   useEffect(() => {
     let live = true
@@ -60,70 +52,72 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
 
   return (
     <div className="page" style={{ display: 'grid', gridTemplateColumns: '360px minmax(0,1fr)', gap: 28, alignItems: 'start' }}>
-      <div className="sticky" style={{ borderRadius: 22, overflow: 'hidden', background: 'var(--card)' }}>
-        <div style={{ position: 'relative', height: 250, background: heroGrad(nflColor(nfl)), display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden' }}>
-          <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 72, fontWeight: 700, opacity: 0.18 }}>{initialsOf(name)}</span>
-          {shot && /^\d+$/.test(id) && (
-            <img
-              src={headshotUrl(id, true)}
-              alt=""
-              onError={() => setShot(false)}
-              style={{ position: 'relative', height: 230, width: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 10px 20px rgba(0,0,0,.35))' }}
-            />
-          )}
-        </div>
-        <div style={{ padding: '20px 22px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.05, letterSpacing: '-.02em', textWrap: 'balance' }}>{name}</div>
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            {!!nfl && <span style={{ padding: '3px 10px', borderRadius: 12, background: nflColor(nfl), color: '#fff', fontWeight: 700, fontSize: 13 }}>{nfl}</span>}
-            <span style={{ fontWeight: 700 }}>{pos}</span>
-            {exp && <span className="sub">{exp}</span>}
+      <div className="sticky stack" style={{ gap: 16 }}>
+        <div style={{ borderRadius: 22, overflow: 'hidden', background: 'var(--card)' }}>
+          <div style={{ position: 'relative', height: 250, background: heroGrad(nflColor(nfl)), display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden' }}>
+            <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 72, fontWeight: 700, opacity: 0.18 }}>{initialsOf(name)}</span>
+            {shot && /^\d+$/.test(id) && (
+              <img
+                src={headshotUrl(id, true)}
+                alt=""
+                onError={() => setShot(false)}
+                style={{ position: 'relative', height: 230, width: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 10px 20px rgba(0,0,0,.35))' }}
+              />
+            )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 10px', paddingTop: 4 }}>
-            {bio.map(([k, v]) => (
-              <div key={k} className="stack" style={{ gap: 1, minWidth: 0 }}>
-                <span className="label">{k}</span>
-                <span className="trunc" style={{ fontSize: 16, fontWeight: 700 }} title={v}>
-                  {v}
-                </span>
-              </div>
-            ))}
+          <div style={{ padding: '20px 22px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.05, letterSpacing: '-.02em', textWrap: 'balance' }}>{name}</div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {!!nfl && <span style={{ padding: '3px 10px', borderRadius: 12, background: nflColor(nfl), color: '#fff', fontWeight: 700, fontSize: 13 }}>{nfl}</span>}
+              <span style={{ fontWeight: 700 }}>{pos}</span>
+              {exp && <span className="sub">{exp}</span>}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 10px', paddingTop: 4 }}>
+              {bio.map(([k, v]) => (
+                <div key={k} className="stack" style={{ gap: 1, minWidth: 0 }}>
+                  <span className="label">{k}</span>
+                  <span className="trunc" style={{ fontSize: 16, fontWeight: 700 }} title={v}>
+                    {v}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
+        <InjuryTab id={id} name={name} pos={pos} team={nfl} sleeperTag={p?.injury ?? ''} />
       </div>
 
-      <div className="stack" style={{ gap: 20, minWidth: 0 }}>
-        <div className="row" style={{ gap: 4 }} role="tablist">
-          {TABS.map(([k, label]) => (
-            <button
-              key={k}
-              role="tab"
-              aria-selected={tab === k}
-              onClick={() => setTab(k)}
-              style={{ minHeight: 48, padding: '0 20px', fontWeight: 600, color: tab === k ? 'var(--ink)' : 'var(--mute)', boxShadow: tab === k ? 'inset 0 -3px 0 var(--acc)' : 'inset 0 -1px 0 var(--surf2)' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {tab === 'value' && <ValueTab id={id} usage={usage} ranks={d?.ranks[id]} />}
-        {tab === 'stats' && (info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab p={info.value} usage={usage} />)}
-        {tab === 'trade' && <TradeTab id={id} name={name} owner={owner} />}
-        {tab === 'injury' && <InjuryTab id={id} name={name} pos={pos} team={nfl} sleeperTag={p?.injury ?? ''} />}
+      <div className="stack" style={{ gap: 28, minWidth: 0 }}>
+        <Section title="Value">
+          <ValueTab id={id} usage={usage} ranks={d?.ranks[id]} />
+        </Section>
+        <Section title="Trade">
+          <TradeTab id={id} name={name} owner={owner} />
+        </Section>
+        {info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab p={info.value} usage={usage} />}
       </div>
     </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="stack" style={{ gap: 12, minWidth: 0 }}>
+      <span className="title-l">{title}</span>
+      {children}
+    </section>
   )
 }
 
 function ValueTab({ id, usage, ranks }: { id: string; usage: Usage | undefined; ranks?: { sheetRank: number | null; marketRank: number | null } }) {
   const { byId } = useTrade()
   const a = byId.get(id)
-  const head = (text: string) => <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25, textWrap: 'pretty', maxWidth: 720 }}>{text}</div>
+  const head = (text: string) => <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, textWrap: 'pretty' }}>{text}</div>
   if (!a)
     return (
       <>
         {head("Not in the trade pool: he isn't on a roster in this league, or not on Tyler's sheet.")}
-        {usage && <div style={{ maxWidth: 520 }}><UsageCard usage={usage} /></div>}
+        {usage && <UsageCard usage={usage} />}
       </>
     )
   const tag = marketTag(a)
@@ -140,22 +134,13 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: Usage | undefined; 
   return (
     <>
       {head(line)}
-      <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0,1fr)', gap: 12 }}>
-        <div className="stack" style={{ gap: 12 }}>
-          <StatTile k="Tyler's sheet" v={num(mine)} />
-          <StatTile k="Market" v={a.market == null ? '—' : num(a.val)} color={tag.tone === 'acc' ? 'var(--acc)' : tag.tone === 'pos' ? 'var(--pos)' : undefined} />
-        </div>
-        <div className="stack" style={{ gap: 12 }}>
-          <div style={{ padding: 18, borderRadius: 18, background: 'var(--surf)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>Where he ranks</span>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <StatTile k="Tyler, overall" v={ranks?.sheetRank ? `#${ranks.sheetRank}` : '—'} size={26} bg="var(--surf2)" />
-              <StatTile k="Market, overall" v={ranks?.marketRank ? `#${Math.round(ranks.marketRank)}` : '—'} size={26} bg="var(--surf2)" />
-            </div>
-          </div>
-          {usage && <UsageCard usage={usage} />}
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+        <StatTile k="Tyler's sheet" v={num(mine)} size={26} />
+        <StatTile k="Market" v={a.market == null ? '—' : num(a.val)} size={26} color={tag.tone === 'acc' ? 'var(--acc)' : tag.tone === 'pos' ? 'var(--pos)' : undefined} />
+        <StatTile k="Tyler, overall" v={ranks?.sheetRank ? `#${ranks.sheetRank}` : '—'} size={26} />
+        <StatTile k="Market, overall" v={ranks?.marketRank ? `#${Math.round(ranks.marketRank)}` : '—'} size={26} />
       </div>
+      {usage && <UsageCard usage={usage} />}
     </>
   )
 }
@@ -204,15 +189,15 @@ function StatsTab({ p, usage }: { p: PlayerInfo; usage: Usage | undefined }) {
     </span>
   )
   return (
-    <>
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', maxWidth: 760 }}>
-        <span style={{ fontWeight: 700, fontSize: 20 }}>{p.season} by week</span>
+    <section className="stack" style={{ gap: 12, minWidth: 0 }}>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span className="title-l">Stats: {p.season} by week</span>
         <span className="small mute">{p.pos} · PPR</span>
       </div>
       {games.length === 0 ? (
         <div className="mute">No games yet this season.</div>
       ) : (
-        <div className="num" style={{ display: 'grid', gridTemplateColumns: '44px 56px repeat(5, minmax(0,1fr))', gap: 6, alignItems: 'center', maxWidth: 760 }}>
+        <div className="num" style={{ display: 'grid', gridTemplateColumns: '44px 56px repeat(5, minmax(0,1fr))', gap: 6, alignItems: 'center' }}>
           {['WK', 'OPP', ...cols.map(c => c.k)].map(h => (
             <span key={h} style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.06em', color: 'var(--mute)', textAlign: 'center' }}>
               {h}
@@ -236,7 +221,7 @@ function StatsTab({ p, usage }: { p: PlayerInfo; usage: Usage | undefined }) {
       <div className="small mute">
         Brighter cells are his best weeks in that stat.{usage?.usagePPG != null ? ` Usage ${n1(usage.usagePPG)} PPG vs projection ${n1(usage.sleeperPPG)}.` : ''}
       </div>
-    </>
+    </section>
   )
 }
 
@@ -262,13 +247,13 @@ function TradeTab({ id, name, owner }: { id: string; name: string; owner: number
       ? `${first} is yours. ${a && marketTag(a).label === 'Sell high' ? 'Now is a good time to shop him.' : 'Hold unless the return is clear.'}`
       : `${name} is on ${x.teamName(owner)}.`
   return (
-    <div className="stack" style={{ gap: 14, maxWidth: 620 }}>
-      <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.3, textWrap: 'pretty' }}>{line}</div>
+    <div className="stack" style={{ gap: 12 }}>
+      <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.35, textWrap: 'pretty' }}>{line}</div>
       <div>
         {owner != null && a ? (
-          <Btn kind="primary" size="lg" label={yours ? 'Offer him in a trade' : `Trade for ${last}`} onClick={() => add(a.id, owner, a.name)} />
+          <Btn kind="primary" label={yours ? 'Offer him in a trade' : `Trade for ${last}`} onClick={() => add(a.id, owner, a.name)} />
         ) : owner == null && context ? (
-          <Btn kind="primary" size="lg" label="Claim in Sleeper ↗" onClick={() => window.open(`https://sleeper.com/leagues/${context.league.league_id}/players`, '_blank')} />
+          <Btn kind="primary" label="Claim in Sleeper ↗" onClick={() => window.open(`https://sleeper.com/leagues/${context.league.league_id}/players`, '_blank')} />
         ) : null}
       </div>
       {deal && v && (
@@ -304,22 +289,20 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
   }
   const status = o ? (o.returnWeek == null ? 'Out for the season (your override)' : `Out until week ${o.returnWeek} (your override)`) : sleeperTag ? `${sleeperTag}, per Sleeper` : 'Healthy'
   return (
-    <div className="stack" style={{ gap: 14, maxWidth: 520 }}>
-      <div style={{ padding: 18, borderRadius: 18, background: 'var(--surf)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span className="small mute">Status Monte is using</span>
-        <span style={{ fontSize: 20, fontWeight: 700, color: o || sleeperTag ? 'var(--warn)' : 'var(--pos)' }}>{status}</span>
+    <div className="stack" style={{ gap: 12, padding: '20px 22px 22px', borderRadius: 22, background: 'var(--card)' }}>
+      <div className="stack" style={{ gap: 2 }}>
+        <span className="label">Injury status</span>
+        <span style={{ fontSize: 18, fontWeight: 700, color: o || sleeperTag ? 'var(--warn)' : 'var(--pos)' }}>{status}</span>
       </div>
-      <div className="sub" style={{ fontSize: 14 }}>
-        Overrides outrank Sleeper's tag and ESPN's estimate in Pick odds, Usage and Lineup.
-      </div>
-      <div className="row" style={{ gap: 10, padding: '10px 16px', borderRadius: 18, background: 'var(--surf)' }}>
+      <div className="row" style={{ gap: 10, padding: '6px 6px 6px 16px', borderRadius: 16, background: 'var(--surf)' }}>
         <span style={{ flex: 1, fontWeight: 600 }}>Back in week</span>
         <Stepper value={wk} onDec={() => setWk(w => Math.max(first, w - 1))} onInc={() => setWk(w => Math.min(18, w + 1))} />
       </div>
       <div className="row" style={{ gap: 8 }}>
-        <Btn kind="primary" label="Save" onClick={() => save(wk)} style={{ flex: 1, minHeight: 46 }} />
-        <Btn label="Out for season" onClick={() => save(null)} style={{ flex: 1, minHeight: 46 }} />
+        <Btn kind="primary" label="Save" onClick={() => save(wk)} style={{ flex: 1, minHeight: 42 }} />
+        <Btn label="Out for season" onClick={() => save(null)} style={{ flex: 1, minHeight: 42 }} />
       </div>
+      <span className="small mute">Overrides outrank Sleeper's tag and ESPN's estimate in Pick odds, Usage and Lineup.</span>
       {o && (
         <Link
           label="Clear override"

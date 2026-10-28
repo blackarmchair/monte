@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Result, TradeData } from '@monte/core/types'
 import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, type Asset, type Package, type Verdict } from '@monte/core/tradeMath'
 import { anonTrades } from '@monte/core/names'
+import { projectedSlots } from '@monte/core/slots'
 import { monte } from './monte'
 import { EMPTY_TRADE, useApp } from './store'
 import { useOverlay } from '@/ui/overlay'
@@ -109,7 +110,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     if (!d) return [] as Asset[]
     const blend = (s: number, m: number | null) => (m == null ? s : s + beta * (m - s))
     const dist = new Map(bb.result?.teams.map(x => [x.roster_id, x.slotDist]))
-    const slotOf = new Map([...(bb.result?.teams ?? [])].sort((a, b) => a.meanDraftSlot - b.meanDraftSlot).map((x, i) => [x.roster_id, i + 1]))
+    const slotOf = projectedSlots(bb.result?.teams ?? [])
     const picks: Asset[] = d.picks.map(p => {
       const v = pickValues(d.pickInputs, p.season, p.round, dist.get(p.originalOwner) ?? null)
       const own = p.originalOwner === p.owner

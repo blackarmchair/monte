@@ -1,10 +1,13 @@
 // Draft: how the rookie draft went, round by round, and every team's grade, as team-coloured pick
 // cards with a grade heat chip. While a draft is live (or about to be) it also has the clock and
 // a Board of who's left. Grades port draftPunk's sheet-order rule; Sleeper is polled while the
-// draft can still change.
+// draft can still change. Until Sleeper creates next season's draft, that season opens as a
+// provisional order taken from Pick odds' projection, with traded picks applied.
 import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import type { DraftData, DraftPickRow, DraftPlayer, DraftPool, DraftPoll, DraftStatus, Result } from '@monte/core/types'
+import { provisionalOrder } from '@monte/core/draft'
+import { projectedSlots } from '@monte/core/slots'
 import { buildPositionalRankIndex, gradePicks, gradeTeam, type GradeLetter, type PickGrade } from '@monte/core/draftGrade'
 import { teamLabel } from '@monte/core/names'
 import { monte } from '@/lib/monte'
@@ -12,6 +15,7 @@ import { useApp } from '@/lib/store'
 import { useOverlay } from '@/ui/overlay'
 import { Btn, Card, Empty, ErrorBox, Field, GradCard, Headshot, HeatChip, Hero, Loading, NeedsSheet, Notice, Pills, Row, Seg, Stack2, T, Tag, TeamAvatar } from '@/ui/kit'
 import { heat, nflColor, teamColor, useTheme } from '@/ui/theme'
+import { quantileSlot } from './PickOdds'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
 /** A new tier starts where 12+ players sit between two pool players on Tyler's overall board. */
@@ -32,11 +36,13 @@ function whyOf(g: PickGrade): string {
 
 export default function DraftPanel() {
   const t = useTheme()
-  const { context, settings, hide, dataVersion, sheet } = useApp()
+  const { context, settings, hide, dataVersion, sheet, bb, runBB, setPicksSeg } = useApp()
   const { openSheet } = useOverlay()
   const leagueId = context?.league.league_id
   const userId = settings?.userId
   const [draftId, setDraftId] = useState<string | undefined>(undefined)
+  /** show the provisional order for next season's draft while Sleeper has none */
+  const [preferNext, setPreferNext] = useState(true)
   const [otherId, setOtherId] = useState('')
   const [res, setRes] = useState<Result<DraftData> | null>(null)
   const [busy, setBusy] = useState(false)
@@ -118,8 +124,109 @@ export default function DraftPanel() {
       .sort((a, b) => (b.grade.averageScore ?? -99) - (a.grade.averageScore ?? -99))
   }, [d, picks, grades])
 
+  const nextSeason = context?.draftSeason
+  const nextMissing = !!d && !!nextSeason && !d.drafts.some(x => x.season === nextSeason && x.leagueId === leagueId)
+  const provisional = nextMissing && preferNext && draftId === undefined
+  const projected = bb.result
+  useEffect(() => {
+    if (provisional && !bb.result && !bb.busy && !bb.error) runBB()
+  }, [provisional]) // eslint-disable-line react-hooks/exhaustive-deps
+  const nextOrder = useMemo(() => {
+    if (!provisional || !projected || !context) return []
+    const slotOf = projectedSlots(projected.teams)
+    const slots = [...slotOf.keys()].sort((a, b) => slotOf.get(a)! - slotOf.get(b)!)
+    // Rookie drafts keep the league's last draft type; a startup (snake) doesn't count.
+    const last = d!.drafts.find(x => x.leagueId === leagueId && x.rounds <= context.draftRounds)
+    return provisionalOrder(slots, context.draftRounds, last?.type ?? 'linear', context.pickOwner ?? {})
+  }, [provisional, projected, context, d, leagueId])
+  const pickDraft = (id: string | undefined, next: boolean) => {
+    setPreferNext(next)
+    setDraftId(id)
+  }
+
+  const draftPills = () => (
+    <>
+      {d && (d.drafts.length > 1 || nextMissing) && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+          {[...(nextMissing ? [null] : []), ...d.drafts].map(x => {
+            const on = x ? !provisional && x.draft_id === d.draft.draft_id : provisional
+            return (
+              <Pressable
+                key={x?.draft_id ?? 'next'}
+                onPress={() => pickDraft(x?.draft_id, !x)}
+                style={{ minHeight: 36, justifyContent: 'center', borderRadius: 18, paddingHorizontal: 12, backgroundColor: on ? t.ink : t.surf2 }}
+              >
+                <T v="semi" size={13} color={on ? t.bg : t.ink2}>
+                  {x ? `${x.season}${x.leagueId === leagueId ? '' : ' mock'} · ${STATUS_LABEL[x.status].toLowerCase()}` : `${nextSeason} · provisional`}
+                </T>
+              </Pressable>
+            )
+          })}
+        </ScrollView>
+      )}
+      <Field
+        value={otherId}
+        onChangeText={setOtherId}
+        onSubmitEditing={() => otherId.trim() && pickDraft(otherId.trim(), false)}
+        placeholder="Other draft ID (mocks)"
+        autoCapitalize="none"
+        returnKeyType="go"
+        boxStyle={{ backgroundColor: t.surf2 }}
+      />
+    </>
+  )
+
   if (!sheet) return <NeedsSheet inset={false} />
   if (!context) return <Loading label="Loading league…" />
+
+  if (provisional) {
+    const segs = [...new Set(nextOrder.map(s => `Rd ${s.round}`))]
+    const cur = seg && segs.includes(seg) ? seg : segs[0]
+    const myRid = d?.myRosterId ?? null
+    const mine = nextOrder.filter(s => s.rosterId === myRid)
+    const distOf = new Map(projected?.teams.map(x => [x.roster_id, x.slotDist]))
+    const whatIfs = !!projected && Object.values(projected.forced ?? {}).some(w => w.length)
+    return (
+      <>
+        <Hero gap={8}>
+          <T v="head">{nextSeason} draft: provisional order.</T>
+          {nextOrder.length > 0 && <T c="ink2">{mine.length ? `Your picks: ${mine.map(s => s.label).join(', ')}.` : `You don't own a ${nextSeason} pick in this league.`}</T>}
+        </Hero>
+        {bb.error && <ErrorBox message={bb.error} onRetry={() => runBB()} />}
+        {!projected && !bb.error && <Loading label="Projecting the order…" />}
+        {nextOrder.length > 0 && (
+          <>
+            <Pills value={cur} onChange={setSeg} options={segs.map(s => ({ value: s, label: s.replace(/^Rd /, 'Round ') }))} />
+            {nextOrder
+              .filter(s => `Rd ${s.round}` === cur)
+              .map(s => {
+                const dist = s.originalRosterId != null ? distOf.get(s.originalRosterId) : undefined
+                const [lo, hi] = dist ? [quantileSlot(dist, 0.1), quantileSlot(dist, 0.9)] : [0, 0]
+                const range = !dist ? '' : lo === hi ? `slot ${lo}` : `slots ${lo}–${hi}`
+                const via = s.originalRosterId != null && s.originalRosterId !== s.rosterId ? `via ${teamName(s.originalRosterId)}` : ''
+                return (
+                  <GradCard key={s.pickNo} color={s.rosterId != null ? teamColor(s.rosterId) : null} selected={s.rosterId === myRid} minHeight={64} style={{ paddingVertical: 8 }}>
+                    <T v="bold" size={14} c="mute" num style={{ width: 34 }}>
+                      {s.label}
+                    </T>
+                    {s.rosterId != null && <TeamAvatar rid={s.rosterId} name={teamName(s.rosterId)} size={42} />}
+                    <Stack2 title={`${teamName(s.rosterId)}${s.rosterId === myRid ? ' (you)' : ''}`} size={15} sub={[via, range].filter(Boolean).join(' · ') || undefined} />
+                  </GradCard>
+                )
+              })}
+          </>
+        )}
+        <Card gap={12} style={{ marginTop: 8 }}>
+          {draftPills()}
+          <T v="small" c="mute">
+            Sleeper hasn't created the {nextSeason} draft yet. Slots follow the projected order on Pick odds{whatIfs ? ', including its what-ifs' : ''}, with traded picks applied,
+            so they move as the season does. Ranges are where each pick lands in 80% of simulations.
+          </T>
+          <Btn kind="link" label="Open Pick odds" onPress={() => setPicksSeg('odds')} />
+        </Card>
+      </>
+    )
+  }
 
   const made = new Set(picks.map(p => p.pickNo))
   const live = status === 'drafting' || status === 'paused'
@@ -289,34 +396,7 @@ export default function DraftPanel() {
                 ]}
               />
             </Row>
-            {d.drafts.length > 1 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                {d.drafts.map(x => {
-                  const on = x.draft_id === d.draft.draft_id
-                  return (
-                    <Pressable
-                      key={x.draft_id}
-                      onPress={() => setDraftId(x.draft_id)}
-                      style={{ minHeight: 36, justifyContent: 'center', borderRadius: 18, paddingHorizontal: 12, backgroundColor: on ? t.ink : t.surf2 }}
-                    >
-                      <T v="semi" size={13} color={on ? t.bg : t.ink2}>
-                        {x.season}
-                        {x.leagueId === leagueId ? '' : ' mock'} · {STATUS_LABEL[x.status].toLowerCase()}
-                      </T>
-                    </Pressable>
-                  )
-                })}
-              </ScrollView>
-            )}
-            <Field
-              value={otherId}
-              onChangeText={setOtherId}
-              onSubmitEditing={() => otherId.trim() && setDraftId(otherId.trim())}
-              placeholder="Other draft ID (mocks)"
-              autoCapitalize="none"
-              returnKeyType="go"
-              boxStyle={{ backgroundColor: t.surf2 }}
-            />
+            {draftPills()}
             <Row gap={10}>
               <Tag label={STATUS_LABEL[status]} tone={status === 'drafting' ? 'acc' : status === 'paused' ? 'warn' : 'mid'} />
               <T v="small" c="mute" style={{ flex: 1 }}>

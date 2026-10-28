@@ -113,6 +113,8 @@ export type LeagueContext = {
   myPicks: OwnedPick[]
   /** original roster id -> roster id that currently owns its next-draft 1st */
   firstOwner: Record<number, number>
+  /** `original:round` -> roster id that currently owns that next-draft pick */
+  pickOwner: Record<string, number>
   /** NFL week Sleeper is displaying */
   week: number
   fetchedAt: string
