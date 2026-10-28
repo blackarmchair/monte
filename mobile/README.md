@@ -36,17 +36,28 @@ A standalone, signed APK: no Expo Go, no computer needed once installed.
    it's signed with the same key.
 2. Regenerate the native project when native config changes (new native package, app.json):
    `npx expo prebuild --platform android --no-install`.
-3. Build from a short path, since Windows' 260-character limit breaks the C++ step from
-   `C:\home\_standaloneApps\…`. Map the folder that holds both `monte` and `sleeperStandings`:
+3. Build from the real path. The C++ step writes object files whose names embed the full source
+   path, past Windows' 260-character limit, so it needs:
+   - Windows long paths on (one-time, admin PowerShell, then a new terminal):
+     `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force`
+   - a CMake whose ninja is long-path aware (1.12+). The SDK's default 3.22.1 ships ninja 1.10;
+     install 3.31.6 once with `sdkmanager "cmake;3.31.6"`, and after every prebuild (it wipes
+     `android\`) point Gradle at it in `android\local.properties`:
+
+     ```properties
+     sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
+     cmake.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk\\cmake\\3.31.6
+     ```
 
    ```powershell
-   subst M: C:\home\_standaloneApps
-   cd M:\monte\mobile\android
+   cd C:\home\_standaloneApps\monte\mobile\android
    .\gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a
-   subst M: /D
    ```
 
-   If a build from the long path ran first, delete `android\app\.cxx` and `android\app\build`.
+   Don't build from a `subst` drive any more: Node now resolves it back to `C:\…`, and React
+   Native's codegen fails with "this and base files have different roots" when the project and
+   its libraries sit on different drives. Prebuild and build from the same real path. After a
+   failed C++ build, delete `android\app\.cxx` and `android\app\build` before retrying.
 4. The APK is `android/app/build/outputs/apk/release/app-release.apk`. Install it with
    `adb install -r` over USB, or copy it to the phone and open it (allow installs from that
    app when Android asks). Bump `versionCode` in app.json for each new release.
