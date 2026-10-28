@@ -300,7 +300,10 @@ export function buildStartSit(o: {
   const me = o.rosters.find(r => r.owner_id === o.userId || (r.co_owners ?? []).includes(o.userId))
   if (!me) throw new Error('You don’t have a roster in this league.')
   const positions: string[] = (o.league.roster_positions ?? []).filter((p: string) => !['BN', 'IR', 'TAXI'].includes(p))
-  const starterIds: string[] = me.starters ?? []
+  // The matchup leg is the lineup that plays and the one Sleeper's app writes; the roster's
+  // `starters` can lag behind it (see sleeperLineup), so it is only the fallback.
+  const mine = o.matchups.find(m => m.roster_id === me.roster_id)
+  const starterIds: string[] = mine?.starters?.length ? mine.starters : me.starters ?? []
   const taxi = new Set<string>(me.taxi ?? [])
   const ir = new Set<string>(me.reserve ?? [])
   const all = new Map<string, SSPlayer>()
@@ -373,12 +376,11 @@ export function buildStartSit(o: {
 
   // Opponent's projection from the lineup they actually have set, priced the same way.
   let opponent: StartSitData['opponent'] = null
-  const mine = o.matchups.find(m => m.roster_id === me.roster_id)
   const theirs = mine && o.matchups.find(m => m.matchup_id === mine.matchup_id && m.roster_id !== me.roster_id)
   if (theirs) {
     const r = o.rosters.find(x => x.roster_id === theirs.roster_id)
     const u = o.users.find(x => x.user_id === r?.owner_id)
-    const total = (r?.starters ?? [])
+    const total = ((theirs.starters?.length ? theirs.starters : r?.starters) ?? [])
       .filter((id: string) => id && id !== '0')
       .map((id: string) => player(id, 'starter'))
       .reduce((s: number, p: SSPlayer | null) => s + (p && p.startable ? p.proj : 0), 0)
