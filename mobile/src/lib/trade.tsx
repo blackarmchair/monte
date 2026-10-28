@@ -7,6 +7,7 @@ import type { Result, TradeData } from '@monte/core/types'
 import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, type Asset, type Package, type Verdict } from '@monte/core/tradeMath'
 import { anonTrades } from '@monte/core/names'
 import { projectedSlots } from '@monte/core/slots'
+import { buildIdeas, demandModel, giveWarnings, heldPick, teamMode, type Ideas, type Mode } from '@monte/core/strategy'
 import { monte } from './monte'
 import { EMPTY_TRADE, useApp } from './store'
 import { useOverlay } from '@/ui/overlay'
@@ -63,6 +64,8 @@ type Trade = {
   /** bodies you take on past a full roster */
   extra: number
   fitWarnings: string[]
+  /** why the partner values this trade differently from the market (their team, their needs) */
+  theirView: string[]
   groups: Array<{ g: string; before: number; after: number }>
   toggle: (id: string) => void
   remove: (id: string) => void
@@ -71,6 +74,11 @@ type Trade = {
   loadDeal: (x: Deal) => void
   /** packages where both sides win, best for you first (empty give = shop your top assets) */
   findDeals: (give: Asset[], perTeam: number, limit: number) => Deal[]
+  /** your direction for trade ideas: the override if set, else worked out from record and odds */
+  direction: { mode: Mode; auto: { mode: Mode; why: string }; override: Mode | null }
+  setMode: (m: Mode | null) => void
+  /** Tyler's-strategy ideas at the current values (not memoised: call it from a useMemo) */
+  getIdeas: () => Ideas
 }
 
 const Ctx = createContext<Trade | null>(null)
@@ -87,7 +95,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
   const [res, setRes] = useState<Result<TradeData> | null>(null)
   // Market influence re-blends live; the saved setting follows when the slider is released.
   const [beta, setBeta] = useState(settings?.marketBeta?.[leagueId] ?? 1)
-  const mode = settings?.tradeDelta ?? 'relative'
+  const mode = settings?.tradeDelta ?? 'raw'
 
   const load = () => {
     if (!leagueId || !settings?.userId || !sheet) return
@@ -144,10 +152,22 @@ export function TradeProvider({ children }: { children: ReactNode }) {
   const give = trade.give.map(id => byId.get(id)).filter(Boolean) as Asset[]
   const get = trade.get.map(id => byId.get(id)).filter(Boolean) as Asset[]
   const partner = trade.partner
+  // Every team as the strategy sees it (the sim's playoff odds are a percentage), and what each
+  // pays over the market given its direction, depth and missing starters.
+  const sTeams = useMemo(() => {
+    const odds = new Map(bb.result?.teams.map(t => [t.roster_id, t.playoffPct / 100]))
+    return (d?.teams ?? []).map(t => ({ ...t, playoffPct: odds.get(t.roster_id) ?? null }))
+  }, [d, bb.result])
+  const demand = useMemo(
+    () => (d ? demandModel({ assets, teams: sTeams, phase: d.phase, starterLine: d.starterLine, teamCount: d.teams.length }) : null),
+    [assets, sTeams, d],
+  )
+  const demandOf = (rid: number) => (demand ? (a: Asset) => demand(a, rid).mult : undefined)
   const meFull = !!d?.teams.find(x => x.roster_id === me)?.full
-  const params = d && { gamma: d.gamma, spotCost: d.spotCost, meFull, themFull: !!d.teams.find(x => x.roster_id === partner)?.full }
+  const params = d && { gamma: d.gamma, spotCost: d.spotCost, meFull, themFull: !!d.teams.find(x => x.roster_id === partner)?.full, demand: partner != null ? demandOf(partner) : undefined }
   const verdict = params && give.length && get.length ? evaluate(give, get, params) : null
   const { label, tone } = verdictText(verdict)
+  const theirView = demand && partner != null ? [...new Set([...give, ...get].flatMap(a => demand(a, partner).why))] : []
 
   // Roster value by position, before and after, in your valuation.
   const groups = POS_GROUPS.map(g => {
@@ -174,6 +194,31 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     return inV > outV && posRank[g] && posRank[g] <= 2
   }).map(g => `Adds ${g}; you're already #${posRank[g]} at ${g}.`)
   const extra = verdict && meFull ? Math.max(0, verdict.bodyDelta) : 0
+  const nextSeason = d?.pickInputs.season ?? ''
+  if (me != null) fitWarnings.push(...giveWarnings(give, me, nextSeason))
+
+  // Direction: the saved override, else the record and the sim's playoff odds (a percentage).
+  const myTeam = sTeams.find(t => t.roster_id === me)
+  const auto = myTeam && d ? teamMode(myTeam, d.phase) : { mode: 'middle' as Mode, why: '' }
+  const override = settings?.tradeMode?.[leagueId] ?? null
+  const direction = { mode: override ?? auto.mode, auto, override }
+  const getIdeas = (): Ideas =>
+    !d || me == null
+      ? { mode: direction.mode, sells: [], buys: [] }
+      : buildIdeas({
+          // Always Tyler's sheet as-is: within-position mode would hand the market its view of
+          // whole positions (TEs over WRs), the very gap the ideas are meant to exploit.
+          assets: assets.map(a => ({ ...a, mine: a.sheet })),
+          me,
+          teams: sTeams,
+          phase: d.phase,
+          mode: direction.mode,
+          nextSeason,
+          teamCount: d.teams.length,
+          gamma: d.gamma,
+          spotCost: d.spotCost,
+          starterLine: d.starterLine,
+        })
 
   const remove = (id: string) => setTrade(x => ({ ...x, give: x.give.filter(y => y !== id), get: x.get.filter(y => y !== id) }))
   const toggle = (id: string) => {
@@ -186,12 +231,13 @@ export function TradeProvider({ children }: { children: ReactNode }) {
 
   const findDeals = (gv: Asset[], perTeam: number, limit: number): Deal[] => {
     if (!d || me == null) return []
-    const gives = gv.length ? [gv] : mine.filter(a => mineOf(a) > 0).slice(0, SHOP_TOP).map(a => [a])
+    // Shopping never offers a pick Tyler says to hold.
+    const gives = gv.length ? [gv] : mine.filter(a => mineOf(a) > 0 && !heldPick(a, me, d.pickInputs.season)).slice(0, SHOP_TOP).map(a => [a])
     const out: Deal[] = []
     for (const g of gives)
       for (const team of d.teams) {
         if (team.roster_id === me) continue
-        const p = { gamma: d.gamma, spotCost: d.spotCost, meFull, themFull: team.full }
+        const p = { gamma: d.gamma, spotCost: d.spotCost, meFull, themFull: team.full, demand: demandOf(team.roster_id) }
         const pool = assets.filter(a => a.owner === team.roster_id)
         out.push(...findPackages(g, pool, p, perTeam).map(pk => ({ ...pk, partner: team.roster_id, give: g })))
       }
@@ -219,6 +265,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     tone,
     extra,
     fitWarnings,
+    theirView,
     groups,
     toggle,
     remove,
@@ -226,6 +273,12 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     setPartner: rid => setTrade(x => ({ ...x, partner: rid, get: x.partner === rid ? x.get : [] })),
     loadDeal: x => setTrade(() => ({ partner: x.partner, give: x.give.map(a => a.id), get: x.get.map(a => a.id) })),
     findDeals,
+    direction,
+    setMode: m => {
+      const { [leagueId]: _, ...rest } = settings?.tradeMode ?? {}
+      void setSettings({ tradeMode: m ? { ...rest, [leagueId]: m } : rest })
+    },
+    getIdeas,
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

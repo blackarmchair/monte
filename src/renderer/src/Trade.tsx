@@ -1,13 +1,15 @@
-// Trade: three columns. Your roster on the left and theirs on the right (the team list until you
-// pick a partner), each row with a +/✓ toggle; in the middle (sticky) Monte's deal ideas while the
-// trade is empty, then the verdict card with both sides, your roster after, Market influence and
-// Send in Sleeper.
+// Trade: two tabs. Build is three columns: your roster on the left and theirs on the right (the
+// team list until you pick a partner), each row with a +/✓ toggle; in the middle (sticky) the
+// verdict card with both sides, your roster after, Market influence and Send in Sleeper. Ideas is
+// Tyler's strategy against the market: your direction, then what to sell and what to buy, each with
+// the rule behind it and an ask / settle deal that opens in Build.
 import { useMemo, useState } from 'react'
 import type { Asset } from '@shared/tradeMath'
+import { MODE_LABEL, PHASE_LINE, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
 import { useApp } from './store'
-import { assetMeta, marketTag, mineOf, useTrade, verdictText, type VerdictTone } from './tradeModel'
+import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from './tradeModel'
 import SleeperSend from './SleeperSend'
-import { Btn, Check, ErrorBox, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, nflColor, Notice, num, RING, signed, Stack2, StatTile, TeamAvatar, teamColor, useHeat } from './ui'
+import { Btn, Check, ErrorBox, GradCard, grad, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, nflColor, Notice, num, RING, Seg, signed, Stack2, StatTile, TeamAvatar, teamColor, useHeat } from './ui'
 
 const tone = (t: VerdictTone) => `var(--${t})`
 /** Position change in "your roster after" that reads as fully good or bad. */
@@ -31,8 +33,8 @@ export default function Trade() {
   const x = useTrade()
   const { d, res, partner, give, get, count, verdict: v } = x
   const [sending, setSending] = useState(false)
-  // Deal ideas while the trade is empty: your top assets shopped one at a time, both sides winning.
-  const ideas = useMemo(() => (d && count === 0 ? x.findDeals([], 2, 3) : []), [d, count, x.assets]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Ideas first when there is nothing being built.
+  const [tab, setTab] = useState<'build' | 'ideas'>(count === 0 ? 'ideas' : 'build')
 
   if (!sheet)
     return (
@@ -74,6 +76,26 @@ export default function Trade() {
       )}
 
       {d && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Seg
+            lg
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'build', label: count ? `Build (${count})` : 'Build' },
+              { value: 'ideas', label: 'Ideas' },
+            ]}
+          />
+        </div>
+      )}
+
+      {d && tab === 'ideas' && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <IdeasView onOpen={() => setTab('build')} />
+        </div>
+      )}
+
+      {d && tab === 'build' && (
         <>
           <div className="stack" style={{ gap: 8 }}>
             <span className="title-l" style={{ paddingBottom: 2 }}>
@@ -83,29 +105,6 @@ export default function Trade() {
           </div>
 
           <div className="sticky stack" style={{ gap: 16 }}>
-            {count === 0 ? (
-              <div className="stack" style={{ gap: 8 }}>
-                <span className="title-l">Deals Monte found</span>
-                {ideas.length === 0 && <div className="card mute small">No deal where both sides win right now.</div>}
-                {ideas.map((deal, i) => {
-                  const vt = verdictText(deal.verdict)
-                  return (
-                    <button key={i} className="gcard" onClick={() => x.loadDeal(deal)} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, padding: '16px 18px' }}>
-                      <span className="row small" style={{ justifyContent: 'space-between', gap: 8 }}>
-                        <span className="mute trunc">with {x.teamName(deal.partner)}</span>
-                        <span style={{ color: tone(vt.tone), fontWeight: 700 }}>{vt.label}</span>
-                      </span>
-                      <span style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.35 }}>
-                        Give {deal.give.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(', ')}. Get {deal.get.map(a => a.name).join(' + ')}.
-                      </span>
-                    </button>
-                  )
-                })}
-                <span className="small mute" style={{ paddingTop: 4 }}>
-                  Or click + on any player in either roster.
-                </span>
-              </div>
-            ) : (
               <div className="hero" style={{ padding: 22, gap: 16 }}>
                 <div style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.1, color: tone(x.tone) }}>{x.label}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -146,6 +145,18 @@ export default function Trade() {
                 {x.fitWarnings.map(w => (
                   <Notice key={w} bg="var(--surf2)" message={w} />
                 ))}
+                {x.theirView.length > 0 && (
+                  <div className="stack" style={{ gap: 2 }}>
+                    <span className="small" style={{ fontWeight: 700 }}>
+                      How they see it
+                    </span>
+                    {x.theirView.map(w => (
+                      <span key={w} className="small mute">
+                        {w}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="stack" style={{ gap: 8 }}>
                   <span style={{ fontWeight: 700 }}>Your roster after</span>
                   <HeatTiles
@@ -162,7 +173,7 @@ export default function Trade() {
                 </div>
                 <div
                   style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 44px', gap: 10, alignItems: 'center' }}
-                  title="How much your league trades like the market (FantasyCalc) versus Tyler. Their side of every trade is judged on this blend."
+                  title={`How much your league trades like the market (${d.market.source}) versus Tyler. Their side of every trade is judged on this blend.`}
                 >
                   <span className="sub" style={{ fontSize: 14 }}>
                     Market influence
@@ -185,10 +196,9 @@ export default function Trade() {
                   <Btn size="lg" label="Clear" onClick={x.clear} />
                 </div>
               </div>
-            )}
             <span className="small mute">
               Your side is Tyler's sheet; theirs is the market, blended by Market influence. Verdicts use effective value: one star beats a bundle of the same raw total.
-              {d.market.stale ? ' Market values are a stale copy: FantasyCalc did not answer.' : ''}
+              {d.market.stale ? ` Market values are a stale copy: ${d.market.source} did not answer.` : ''}
             </span>
           </div>
 
@@ -226,6 +236,110 @@ export default function Trade() {
           onClose={() => setSending(false)}
         />
       )}
+    </div>
+  )
+}
+
+const MODES: Mode[] = ['contend', 'middle', 'rebuild']
+const dealText = (dl: IdeaDeal) =>
+  `Give ${dl.give.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(' + ')}. Get ${dl.get.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(' + ')}.`
+
+/** Ideas: your direction (auto or set), then Sell and Buy side by side. */
+function IdeasView({ onOpen }: { onOpen: () => void }) {
+  const x = useTrade()
+  const { direction, d } = x
+  const ideas = useMemo(() => x.getIdeas(), [x.assets, direction.mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!d) return null
+  const autoLabel = `Auto: ${MODE_LABEL[direction.auto.mode]}`
+  return (
+    <div className="stack" style={{ gap: 20 }}>
+      <div className="card stack" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span className="title-l" style={{ flex: 1 }}>
+            You’re {direction.mode === 'middle' ? 'in between' : direction.mode === 'contend' ? 'contending' : 'rebuilding'}
+          </span>
+          <Seg
+            onSurf
+            value={direction.override ?? 'auto'}
+            onChange={v => x.setMode(v === 'auto' ? null : (v as Mode))}
+            options={[{ value: 'auto', label: autoLabel }, ...MODES.map(m => ({ value: m, label: MODE_LABEL[m] }))]}
+          />
+        </div>
+        <span className="sub">
+          {direction.override ? `Set by you. Auto would say ${MODE_LABEL[direction.auto.mode]}${direction.auto.why ? ` (${direction.auto.why})` : ''}.` : direction.auto.why}
+        </span>
+        <span className="small mute">{PHASE_LINE[d.phase]}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
+        {(
+          [
+            ['Sell', ideas.sells, 'Nothing to sell right now: no asset of yours where the market pays more, or Tyler says move on, and a partner says yes.'],
+            ['Buy', ideas.buys, 'Nothing to buy right now that a partner would sell for a deal you win.'],
+          ] as const
+        ).map(([title, list, empty]) => (
+          <div key={title} className="stack" style={{ gap: 10 }}>
+            <span className="title-l">{title}</span>
+            {list.length === 0 && <div className="card mute small">{empty}</div>}
+            {list.map(i => (
+              <IdeaCard key={i.asset.id} i={i} onOpen={onOpen} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <span className="small mute">
+        Ideas follow Tyler’s strategy doc: values stay his board and the market, the rules pick what to shop, what to chase and who to aim at. Picks he says to hold never appear.
+        Ask is the most you can take while they still say yes; Settle is what they clearly say yes to. Greed is good: open with the ask.
+      </span>
+    </div>
+  )
+}
+
+function IdeaCard({ i, onOpen }: { i: Idea; onOpen: () => void }) {
+  const x = useTrade()
+  const { openPlayer } = useApp()
+  const a = i.asset
+  const open = (dl: IdeaDeal) => {
+    x.loadDeal(dl)
+    onOpen()
+  }
+  const deal = (label: string, dl: IdeaDeal) => (
+    <button className="gcard" onClick={() => open(dl)} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4, padding: '10px 14px', background: 'var(--surf2)', minHeight: 0 }}>
+      <span className="row small" style={{ justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontWeight: 700 }}>
+          {label} · {x.teamName(dl.partner)}
+        </span>
+        <span className="num mute">
+          You {signed(dl.verdict.em)} · Them {signed(dl.verdict.et)}
+        </span>
+      </span>
+      <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{dealText(dl)}</span>
+    </button>
+  )
+  return (
+    <div className="gcard" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: '14px 16px', background: grad(assetColor(a)) }}>
+      <div className="row" style={{ gap: 10 }}>
+        <AssetFace a={a} />
+        <button onClick={() => a.kind === 'player' && openPlayer(a.id, a.name)} style={{ flex: 1, minWidth: 0, cursor: a.kind === 'player' ? 'pointer' : 'default', textAlign: 'left' }}>
+          <Stack2 title={assetName(a)} size={15} sub={`${assetMeta(a)}${i.kind === 'buy' ? ` · ${x.teamName(a.owner)}` : ''}`} subStyle={{ fontSize: 12 }} />
+        </button>
+        <span className="num" style={{ fontSize: 13, fontWeight: 700 }}>
+          {kfmt(mineOf(a))}
+        </span>
+      </div>
+      <div className="stack" style={{ gap: 4 }}>
+        {[...i.reasons.map(r => [r.rule, r.text]), ...i.partnerWhy.map(w => ['Partner', w])].map(([rule, text]) => (
+          <span key={text} className="small" style={{ lineHeight: 1.4 }}>
+            <b style={{ color: 'var(--acc)' }}>{rule}.</b> {text}
+          </span>
+        ))}
+      </div>
+      {deal('Ask', i.ask)}
+      {i.settle && deal('Settle', i.settle)}
+      {i.notes.map(n => (
+        <span key={n} className="small" style={{ color: 'var(--warn)', fontWeight: 600 }}>
+          {n}
+        </span>
+      ))}
     </div>
   )
 }

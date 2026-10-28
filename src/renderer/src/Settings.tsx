@@ -101,11 +101,11 @@ export default function Settings() {
         </span>
         <Seg<'relative' | 'raw'>
           onSurf
-          value={settings.tradeDelta ?? 'relative'}
+          value={settings.tradeDelta ?? 'raw'}
           onChange={tradeDelta => void setSettings({ tradeDelta })}
           options={[
+            { value: 'raw', label: 'Tyler’s sheet' },
             { value: 'relative', label: 'Within position' },
-            { value: 'raw', label: 'Raw' },
           ]}
         />
       </div>

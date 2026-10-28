@@ -26,6 +26,7 @@ const ALIAS: Record<string, string> = {
   'mitch trubisky': 'mitchell trubisky',
   'josh palmer': 'joshua palmer',
   'matt hibner': 'matthew hibner',
+  'chigoziem okonkwo': 'chig okonkwo', // KeepTradeCut
 }
 
 const isTep = (banner: string) => /te prem/i.test(banner) && !/no te prem/i.test(banner)

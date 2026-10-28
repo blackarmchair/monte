@@ -63,8 +63,10 @@ export type Settings = {
   injuries?: ManualInjury[]
   /** replace usernames and team names with "Team #n" everywhere */
   hideNames?: boolean
-  /** trade gaps: 'relative' = within position (default), 'raw' = Tyler vs market as-is */
+  /** trade builder: 'raw' = Tyler's sheet as-is (default), 'relative' = within position. Ideas always use raw. */
   tradeDelta?: 'relative' | 'raw'
+  /** per league: your direction for trade ideas; unset = worked out from record and pick odds */
+  tradeMode?: Record<string, 'contend' | 'rebuild' | 'middle'>
   /** phone app: when the rankings workbook in `ranksFile` was picked (it has no watcher) */
   ranksPickedAt?: string
   /** phone app: the picked workbook's own file name (the stored copy has a fixed name) */
@@ -314,7 +316,16 @@ export type StartSitData = {
   builtAt: string
 }
 
-export type TradeTeam = { roster_id: number; name: string; owner: string; wins: number; losses: number; full: boolean }
+export type TradeTeam = {
+  roster_id: number
+  name: string
+  owner: string
+  wins: number
+  losses: number
+  full: boolean
+  /** starters out this week, by position */
+  holes: Array<{ pos: string; name: string; status: string }>
+}
 
 export type TradeData = {
   /** every rostered player; picks are priced in the renderer from `picks` + `pickInputs` */
@@ -324,6 +335,9 @@ export type TradeData = {
   pickInputs: import('./tradeMath').PickInputs
   teams: TradeTeam[]
   myRosterId: number | null
+  phase: import('./strategy').Phase
+  /** in-season positional PPG rank a weekly starter clears, per position */
+  starterLine: Record<string, number>
   gamma: number
   spotCost: number
   shape: import('./tradeMath').LeagueShape

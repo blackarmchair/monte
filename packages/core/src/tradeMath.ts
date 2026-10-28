@@ -3,7 +3,7 @@
 // Two valuations of every asset:
 //   sheet   Tyler's rank -> value curve, translated into this league's scoring. What YOU judge on.
 //   val     what this league's managers pay: sheet + beta·(market − sheet), where market is
-//           FantasyCalc's trade-derived rank through the SAME curve (so no scale calibration is
+//           the market's (KeepTradeCut's trade-derived) rank through the SAME curve (so no scale calibration is
 //           assumed). What THEY judge on, and therefore what drives acceptance.
 // gap = sheet − val. Positive: the room underprices him relative to Tyler — a buy. Negative: the
 // room overpays — a sell.
@@ -11,7 +11,9 @@
 // A trade is scored in EFFECTIVE space, where "four quarters don't equal a dollar": eff() is
 // convex, so consolidating into one premium asset beats a bundle of the same raw total. Both
 // sides must come out positive for a deal to be worth sending: em (you, on sheet) and et (them,
-// on val). Each side also pays a roster-spot cost for every extra body it receives.
+// on val). Each side also pays a roster-spot cost for every extra body it receives. Their side can
+// carry a demand multiplier (strategy.ts): what THIS manager pays, given their team, over the
+// average manager the market describes.
 
 export const value = (rank: number | null | undefined) => (rank == null ? 0 : 10000 * Math.exp(-rank / 70))
 
@@ -22,7 +24,8 @@ export function scoringAdj(pos: string, v: number, src: { te: number; passTd: nu
   return v
 }
 export const SHEET_SCORING = { te: 0.75, passTd: 4 } // Tyler's TE-prem column, standard pass TD
-export const MARKET_SCORING = { te: 0, passTd: 4 } // FantasyCalc: plain PPR
+/** FantasyCalc publishes plain PPR; KeepTradeCut's scoring depends on the TE-premium tier read. */
+export const FC_SCORING = { te: 0, passTd: 4 }
 
 export type LeagueShape = {
   /** starters */
@@ -49,8 +52,15 @@ export type Asset = {
   mine?: number
   /** market-blended value this league pays */
   val: number
-  /** raw market value before the beta blend (null = FantasyCalc has no row) */
+  /** raw market value before the beta blend (null = the market has no row) */
   market: number | null
+  /** Sleeper injury status (IR, Out, …), null when healthy */
+  injury?: string | null
+  yearsExp?: number | null
+  /** the market's recent trend as a share of its value (KeepTradeCut only) */
+  trend?: number | null
+  /** this season's positional PPG rank (in season only; null = no games) */
+  ppgRank?: number | null
   /** pick metadata */
   season?: string
   round?: number
@@ -72,12 +82,18 @@ export type Verdict = {
  * Score one trade. `give` leaves your roster, `get` arrives. A side only pays the spot cost if
  * its roster is full (receiving an extra body there means cutting someone).
  */
-export function evaluate(
-  give: Asset[],
-  get: Asset[],
-  p: { gamma: number; spotCost: number; meFull: boolean; themFull: boolean },
-): Verdict {
-  const sum = (xs: Asset[], k: 'mine' | 'val') => xs.reduce((s, a) => s + eff(k === 'mine' ? a.mine ?? a.sheet : a.val, p.gamma), 0)
+export type EvalParams = {
+  gamma: number
+  spotCost: number
+  meFull: boolean
+  themFull: boolean
+  /** their valuation of an asset as a multiple of the market (1 = the average manager) */
+  demand?: (a: Asset) => number
+}
+
+export function evaluate(give: Asset[], get: Asset[], p: EvalParams): Verdict {
+  const sum = (xs: Asset[], k: 'mine' | 'val') =>
+    xs.reduce((s, a) => s + eff(k === 'mine' ? a.mine ?? a.sheet : a.val * (p.demand?.(a) ?? 1), p.gamma), 0)
   const bodyDelta = get.length - give.length
   const spotMe = p.meFull ? p.spotCost * Math.max(0, bodyDelta) : 0
   const spotThem = p.themFull ? p.spotCost * Math.max(0, -bodyDelta) : 0
@@ -105,7 +121,7 @@ export type Package = { get: Asset[]; verdict: Verdict }
 export function findPackages(
   give: Asset[],
   partnerAssets: Asset[],
-  p: { gamma: number; spotCost: number; meFull: boolean; themFull: boolean },
+  p: EvalParams,
   limit = 12,
 ): Package[] {
   const out: Package[] = []
@@ -154,7 +170,7 @@ export type PickInputs = {
   sheetCurve: number[]
   /** discount by draft: index 0 = `season` */
   discount: number[]
-  /** FantasyCalc pick values (already through value() on the players-only scale), by key
+  /** Market pick values (already through value() on the players-only scale), by key
    *  "2027:1:early" / "2027:1:mid" / "2027:1:late" / "2028:1" (generic) */
   market: Record<string, number>
 }

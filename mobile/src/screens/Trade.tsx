@@ -1,13 +1,16 @@
-// Trade: who you're trading with (tap to change), deal ideas while the trade is empty, then
-// You give and You get as asset cards, each with an "Add from …" picker. A verdict bar floats
-// above the tab bar while the trade has anything in it; Review opens the full read and the send.
+// Trade: two tabs. Build is who you're trading with (tap to change), then You give and You get as
+// asset cards, each with an "Add from …" picker. Ideas is Tyler's strategy against the market: your
+// direction, then what to sell and what to buy, each with its rule and an ask / settle deal that
+// opens in Build. A verdict bar floats above the tab bar while the trade has anything in it;
+// Review opens the full read and the send.
 import { useMemo, useState } from 'react'
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import type { Asset } from '@monte/core/tradeMath'
+import { MODE_LABEL, PHASE_LINE, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
-import { assetMeta, marketTag, mineOf, useTrade, verdictText, type VerdictTone } from '@/lib/trade'
-import { Btn, Card, Check, ErrorBox, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, Notice, Row, Section, Slider, StatTile, Stack2, T, TeamAvatar, num, signed, useTopOnFocus } from '@/ui/kit'
+import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from '@/lib/trade'
+import { Btn, Card, Check, ErrorBox, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, Notice, Pills, Row, Section, Seg, Slider, StatTile, Stack2, T, TeamAvatar, num, signed, useTopOnFocus } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
 import { font, heat, nflColor, R, teamColor, useTheme, type Palette } from '@/ui/theme'
 import SleeperConnect from './SleeperConnect'
@@ -28,8 +31,8 @@ export default function Trade() {
   const scroll = useTopOnFocus<ScrollView>()
   const { d, res, partner, give, get, count } = x
 
-  // Deal ideas while the trade is empty: your top assets shopped one at a time, both sides winning.
-  const ideas = useMemo(() => (d && count === 0 ? x.findDeals([], 2, 3) : []), [d, count, x.assets]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Ideas first when there is nothing being built.
+  const [tab, setTab] = useState<'build' | 'ideas'>(count === 0 ? 'ideas' : 'build')
 
   if (!sheet) return <NeedsSheet />
 
@@ -52,6 +55,20 @@ export default function Trade() {
         {!res && <Loading label="Pricing every roster…" />}
 
         {d && (
+          <Seg
+            fill
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'build', label: count ? `Build (${count})` : 'Build' },
+              { value: 'ideas', label: 'Ideas' },
+            ]}
+          />
+        )}
+
+        {d && tab === 'ideas' && <IdeasView onOpen={() => setTab('build')} />}
+
+        {d && tab === 'build' && (
           <>
             <GradCard color={partner != null ? teamColor(partner) : null} minHeight={72} onPress={() => openSheet(<PartnerSheet />)} style={{ borderRadius: 18, paddingHorizontal: 16 }}>
               {partner != null && <TeamAvatar rid={partner} name={partnerName ?? ''} />}
@@ -67,30 +84,6 @@ export default function Trade() {
                 Change
               </T>
             </GradCard>
-
-            {count === 0 && ideas.length > 0 && (
-              <View style={{ gap: 8 }}>
-                <Section title="Deals Monte found" />
-                {ideas.map((deal, i) => {
-                  const v = verdictText(deal.verdict)
-                  return (
-                    <Card key={i} gap={6} onPress={() => x.loadDeal(deal)}>
-                      <Row style={{ justifyContent: 'space-between' }}>
-                        <T v="small" c="mute" lines={1} style={{ flexShrink: 1 }}>
-                          with {x.teamName(deal.partner)}
-                        </T>
-                        <T v="bold" size={13} color={toneColor(t, v.tone)}>
-                          {v.label}
-                        </T>
-                      </Row>
-                      <T v="semi" size={16}>
-                        Give {deal.give.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(', ')}. Get {deal.get.map(a => a.name).join(' + ')}.
-                      </T>
-                    </Card>
-                  )
-                })}
-              </View>
-            )}
 
             {sides.map(s => (
               <View key={s.title} style={{ gap: 8 }}>
@@ -373,6 +366,18 @@ function TradeSheet() {
       {x.fitWarnings.map(w => (
         <Notice key={w} message={w} />
       ))}
+      {x.theirView.length > 0 && (
+        <View style={{ gap: 2 }}>
+          <T v="bold" size={13}>
+            How they see it
+          </T>
+          {x.theirView.map(w => (
+            <T key={w} v="small" c="mute">
+              {w}
+            </T>
+          ))}
+        </View>
+      )}
 
       <T v="bold" size={16}>
         Your roster after
@@ -399,7 +404,7 @@ function TradeSheet() {
         </T>
       </Row>
       <T v="small" c="mute">
-        Their side is FantasyCalc's market, blended toward Tyler's sheet as you lower this: how much your league trades like the market.
+        Their side is the market ({x.d?.market.source ?? 'KeepTradeCut'}), blended toward Tyler's sheet as you lower this: how much your league trades like the market.
       </T>
       <Row gap={8}>
         <Btn
@@ -423,5 +428,122 @@ function TradeSheet() {
         />
       </Row>
     </View>
+  )
+}
+
+const MODES: Mode[] = ['contend', 'middle', 'rebuild']
+const short = (a: Asset) => (a.kind === 'pick' && a.slot ? a.slot : a.name)
+const dealText = (dl: IdeaDeal) => `Give ${dl.give.map(short).join(' + ')}. Get ${dl.get.map(short).join(' + ')}.`
+
+/** Ideas: your direction (auto or set), then Sell and Buy. */
+function IdeasView({ onOpen }: { onOpen: () => void }) {
+  const x = useTrade()
+  const { direction, d } = x
+  const ideas = useMemo(() => x.getIdeas(), [x.assets, direction.mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!d) return null
+  return (
+    <View style={{ gap: 20 }}>
+      <Card gap={10}>
+        <T v="bold" size={20}>
+          You’re {direction.mode === 'middle' ? 'in between' : direction.mode === 'contend' ? 'contending' : 'rebuilding'}
+        </T>
+        <Pills
+          value={direction.override ?? 'auto'}
+          onChange={v => x.setMode(v === 'auto' ? null : (v as Mode))}
+          options={[{ value: 'auto', label: `Auto: ${MODE_LABEL[direction.auto.mode]}` }, ...MODES.map(m => ({ value: m, label: MODE_LABEL[m] }))]}
+        />
+        <T v="small" c="ink2">
+          {direction.override ? `Set by you. Auto would say ${MODE_LABEL[direction.auto.mode]}${direction.auto.why ? ` (${direction.auto.why})` : ''}.` : direction.auto.why}
+        </T>
+        <T v="small" c="mute">
+          {PHASE_LINE[d.phase]}
+        </T>
+      </Card>
+      {(
+        [
+          ['Sell', ideas.sells, 'Nothing to sell right now: no asset of yours where the market pays more, or Tyler says move on, and a partner says yes.'],
+          ['Buy', ideas.buys, 'Nothing to buy right now that a partner would sell for a deal you win.'],
+        ] as const
+      ).map(([title, list, empty]) => (
+        <View key={title} style={{ gap: 8 }}>
+          <Section title={title} />
+          {list.length === 0 && (
+            <Card>
+              <T v="small" c="mute">
+                {empty}
+              </T>
+            </Card>
+          )}
+          {list.map(i => (
+            <IdeaCard key={i.asset.id} i={i} onOpen={onOpen} />
+          ))}
+        </View>
+      ))}
+      <T v="small" c="mute">
+        Ideas follow Tyler’s strategy doc: values stay his board and the market, the rules pick what to shop, what to chase and who to aim at. Picks he says to hold never
+        appear. Ask is the most you can take while they still say yes; Settle is what they clearly say yes to. Greed is good: open with the ask.
+      </T>
+    </View>
+  )
+}
+
+function IdeaCard({ i, onOpen }: { i: Idea; onOpen: () => void }) {
+  const t = useTheme()
+  const x = useTrade()
+  const { openPlayer } = useApp()
+  const a = i.asset
+  const deal = (label: string, dl: IdeaDeal) => (
+    <Card
+      key={label}
+      gap={4}
+      pad={12}
+      style={{ backgroundColor: t.surf2 }}
+      onPress={() => {
+        x.loadDeal(dl)
+        onOpen()
+      }}
+    >
+      <Row style={{ justifyContent: 'space-between' }}>
+        <T v="bold" size={13} lines={1} style={{ flexShrink: 1 }}>
+          {label} · {x.teamName(dl.partner)}
+        </T>
+        <T v="small" c="mute" num>
+          {signed(dl.verdict.em)} / {signed(dl.verdict.et)}
+        </T>
+      </Row>
+      <T v="semi" size={15}>
+        {dealText(dl)}
+      </T>
+    </Card>
+  )
+  return (
+    <GradCard color={assetColor(t, a)} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+      <Row gap={12}>
+        <AssetFace a={a} />
+        <Pressable onPress={a.kind === 'player' ? () => openPlayer(a.id, a.name) : undefined} disabled={a.kind !== 'player'} style={{ flex: 1, minWidth: 0 }}>
+          <Stack2 title={assetName(a)} sub={`${assetMeta(a)}${i.kind === 'buy' ? ` · ${x.teamName(a.owner)}` : ''}`} />
+        </Pressable>
+        <T v="bold" num>
+          {kfmt(mineOf(a))}
+        </T>
+      </Row>
+      <View style={{ gap: 4 }}>
+        {[...i.reasons.map(r => [r.rule, r.text]), ...i.partnerWhy.map(w => ['Partner', w])].map(([rule, text]) => (
+          <T key={text} v="small" c="ink2">
+            <T v="small" c="acc" style={{ fontFamily: font.sansBold }}>
+              {rule}.
+            </T>{' '}
+            {text}
+          </T>
+        ))}
+      </View>
+      {deal('Ask', i.ask)}
+      {i.settle && deal('Settle', i.settle)}
+      {i.notes.map(n => (
+        <T key={n} v="small" c="warn">
+          {n}
+        </T>
+      ))}
+    </GradCard>
   )
 }

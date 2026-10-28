@@ -174,7 +174,7 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: { usagePPG: number 
       : tag.label === 'Undervalued'
       ? `Undervalued. The market is ${gap}% below Tyler's sheet.`
       : tag.label === 'No market'
-      ? "No market price: FantasyCalc doesn't list him."
+      ? "No market price: the market source doesn't list him."
       : 'Fairly priced. Market and sheet are within 10%.'
   return (
     <>

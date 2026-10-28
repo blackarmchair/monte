@@ -1,5 +1,5 @@
 // Everything Monte does between "the user asked for a screen" and "here is its data": Sleeper,
-// FantasyCalc and schedule fetches, short-lived caches, and the screen builders. The host (the
+// KeepTradeCut/FantasyCalc and schedule fetches, short-lived caches, and the screen builders. The host (the
 // Electron main process, or the phone) supplies settings, storage, the workbook and the engine,
 // so the same code serves both apps.
 import { Config } from 'sleeper-standings/dist/config.js'
@@ -8,7 +8,9 @@ import type { EngineJob } from './engine'
 import { buildOverview } from './overview'
 import { buildRanks } from './ranks'
 import { buildStartSit, type SeasonStats } from './startSit'
-import { buildTrades, type FcRow } from './trades'
+import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
+import { ktcTier, parseKtc, type KtcRow } from './ktc'
+import { FC_SCORING } from './tradeMath'
 import type {
   BBResult,
   DraftData,
@@ -166,6 +168,20 @@ export function createMonteService(host: Host) {
     return stats
   }
 
+  /** This season's stats so far: 12h cache, and a failure only costs the PPG ranks. */
+  async function liveStats(season: number): Promise<SeasonStats | undefined> {
+    const key = `stats_live_${season}.json`
+    const cached = await cachedJson<{ asOf: string; stats: SeasonStats }>(key)
+    if (cached && Date.now() - Date.parse(cached.asOf) < 12 * 3600 * 1000) return cached.stats
+    try {
+      const stats = await sleeper<SeasonStats>(`/stats/nfl/regular/${season}`)
+      await host.cacheWrite(key, JSON.stringify({ asOf: new Date().toISOString(), stats }))
+      return stats
+    } catch {
+      return cached?.stats
+    }
+  }
+
   // A player's weeks so far: a game a week, kept an hour since this week's can still change.
   const logMem = new Map<string, { at: number; games: GameLog[] }>()
   async function gameLogs(id: string, season: string): Promise<GameLog[]> {
@@ -217,6 +233,48 @@ export function createMonteService(host: Host) {
       if (cached) return { ...cached, stale: true }
       throw new Error(`Market values unavailable (${e instanceof Error ? e.message : e}) and no cached copy.`)
     }
+  }
+
+  /**
+   * KeepTradeCut dynasty values. KTC has no API: its rankings page embeds every value as JSON in a
+   * <script id="ktc-players">, which is parsed here and slimmed to the trade-derived ("vft")
+   * values per format, so one cached copy serves every league. 12h cache; a stale copy is reused
+   * (and flagged) on a failure. Returns null when there is neither, and the caller falls back.
+   */
+  async function keepTradeCut(): Promise<{ asOf: string; rows: KtcRow[]; stale: boolean } | null> {
+    const key = 'market_ktc.json'
+    const cached = await cachedJson<{ asOf: string; rows: KtcRow[] }>(key)
+    if (cached && Date.now() - Date.parse(cached.asOf) < 12 * 3600 * 1000) return { ...cached, stale: false }
+    try {
+      const res = await fetch('https://keeptradecut.com/dynasty-rankings', { headers: { 'User-Agent': 'Mozilla/5.0 (Monte)' } })
+      if (!res.ok) throw new Error(`KeepTradeCut returned ${res.status}`)
+      const fresh = { asOf: new Date().toISOString(), rows: parseKtc(await res.text()) }
+      await host.cacheWrite(key, JSON.stringify(fresh))
+      return { ...fresh, stale: false }
+    } catch {
+      return cached ? { ...cached, stale: true } : null
+    }
+  }
+
+  /** The league's market: KeepTradeCut in this format, else FantasyCalc (the phone's web build,
+   *  which KTC's missing CORS header blocks, or a first run with KTC down). */
+  async function market(league: any, teams: number): Promise<Market> {
+    const positions: string[] = league.roster_positions ?? []
+    const superflex = positions.includes('SUPER_FLEX') || positions.filter(p => p === 'QB').length > 1
+    const ktc = await keepTradeCut()
+    if (ktc) {
+      const tier = ktcTier(Number(league.scoring_settings?.bonus_rec_te ?? 0), positions.filter(p => p === 'TE').length)
+      return {
+        source: 'KeepTradeCut',
+        rows: ktc.rows.map(r => ({ name: r.name, pos: r.pos, value: (superflex ? r.sf : r.one)[tier.i], trend: r.trend[superflex ? 1 : 0] })),
+        asOf: ktc.asOf,
+        stale: ktc.stale,
+        scoring: { te: tier.te, passTd: 4 },
+      }
+    }
+    const rec = Number(league.scoring_settings?.rec ?? 1)
+    const fc = await fantasyCalc({ teams, qbs: superflex ? 2 : 1, ppr: rec >= 0.75 ? 1 : rec >= 0.25 ? 0.5 : 0 })
+    return { source: 'FantasyCalc', rows: fromFantasyCalc(fc.rows), asOf: fc.asOf, stale: fc.stale, scoring: FC_SCORING }
   }
 
   async function league4(leagueId: string, traded = true) {
@@ -341,12 +399,10 @@ export function createMonteService(host: Host) {
 
     async trades(leagueId: string, userId: string): Promise<TradeData> {
       const [[league, rosters, users, traded], meta, settings] = await Promise.all([league4(leagueId), playersMeta(), host.settings()])
-      const positions: string[] = league.roster_positions ?? []
-      const superflex = positions.includes('SUPER_FLEX') || positions.filter(p => p === 'QB').length > 1
-      const rec = Number(league.scoring_settings?.rec ?? 1)
-      const [book, fc] = await Promise.all([
+      const [book, mk, stats] = await Promise.all([
         host.loadBook(),
-        fantasyCalc({ teams: rosters.length, qbs: superflex ? 2 : 1, ppr: rec >= 0.75 ? 1 : rec >= 0.25 ? 0.5 : 0 }),
+        market(league, rosters.length),
+        league.status === 'in_season' ? liveStats(Number(league.season)) : Promise.resolve(undefined),
       ])
       return buildTrades({
         wb: book.wb,
@@ -357,7 +413,8 @@ export function createMonteService(host: Host) {
         users,
         traded,
         meta,
-        fc: { rows: fc.rows, asOf: fc.asOf, stale: fc.stale },
+        market: mk,
+        stats,
         beta: settings.marketBeta?.[leagueId] ?? 1,
         userId,
       })

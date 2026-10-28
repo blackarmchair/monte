@@ -127,11 +127,11 @@ export default function Settings() {
         </View>
         <Seg<'relative' | 'raw'>
           track={t.surf2}
-          value={settings.tradeDelta ?? 'relative'}
+          value={settings.tradeDelta ?? 'raw'}
           onChange={tradeDelta => setSettings({ tradeDelta })}
           options={[
+            { value: 'raw', label: 'Tyler' },
             { value: 'relative', label: 'By pos' },
-            { value: 'raw', label: 'Raw' },
           ]}
         />
       </View>

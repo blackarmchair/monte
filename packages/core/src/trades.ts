@@ -3,9 +3,8 @@
 // in the renderer (tradeMath.ts) so building a trade re-scores instantly.
 import { fileName } from './paths'
 import type { Workbook } from './xlsx'
-import { FUTURE_DISCOUNT, findBoard, matchBoard, type Meta } from './values'
+import { FUTURE_DISCOUNT, findBoard, matchBoard, rowMatcher, type Meta } from './values'
 import {
-  MARKET_SCORING,
   SHEET_SCORING,
   gammaFor,
   scoringAdj,
@@ -15,38 +14,88 @@ import {
   type PickInputs,
 } from './tradeMath'
 import type { TradeData } from './types'
+import { starterLine, type Phase } from './strategy'
 
 const SKILL = ['QB', 'RB', 'WR', 'TE']
+/** A starter with one of these statuses leaves his team a hole this week. */
+const HOLE_STATUS = new Set(['IR', 'PUP', 'NFI', 'Out', 'Doubtful', 'Sus'])
+/** Games before a player gets a PPG rank. */
+const MIN_GP = 2
+
+/** Positional PPG rank (PPR) for every skill player with MIN_GP games this season. */
+function ppgRanks(stats: Record<string, Record<string, number>>, meta: Meta): Map<string, number> {
+  const by = new Map<string, Array<{ id: string; ppg: number }>>()
+  for (const [id, s] of Object.entries(stats)) {
+    const pos = meta[id]?.position
+    if (!SKILL.includes(pos) || (s.gp ?? 0) < MIN_GP) continue
+    if (!by.has(pos)) by.set(pos, [])
+    by.get(pos)!.push({ id, ppg: (s.pts_ppr ?? 0) / s.gp })
+  }
+  const out = new Map<string, number>()
+  for (const xs of by.values()) xs.sort((a, b) => b.ppg - a.ppg).forEach((x, i) => out.set(x.id, i + 1))
+  return out
+}
+
+/** One market row, from either source. `sleeperId` when the source has it (FantasyCalc);
+ *  KeepTradeCut rows are matched to Sleeper by name, the same way as Tyler's board. */
+export type MarketRow = { name: string; pos: string; value: number; sleeperId?: string; trend?: number }
+export type Market = { source: 'KeepTradeCut' | 'FantasyCalc'; rows: MarketRow[]; asOf: string | null; stale: boolean; scoring: { te: number; passTd: number } }
 
 export type FcRow = { player?: { name?: string; position?: string; sleeperId?: string }; value?: number; overallRank?: number }
+export const fromFantasyCalc = (rows: FcRow[]): MarketRow[] =>
+  rows
+    .filter(r => r.value != null)
+    .map(r => ({ name: r.player?.name ?? '', pos: r.player?.position ?? '', value: r.value!, sleeperId: r.player?.sleeperId ? String(r.player.sleeperId) : undefined }))
 
 /**
- * FantasyCalc rows -> players-only ranks. The engine fetches WITHOUT picks, so a player's rank
- * counts players only; asking with picks shifts everyone down. One call with picks, then:
- * players ranked among players, and each pick given "players ahead of it + ½" on that scale.
+ * Market rows -> players-only ranks, by value. Monte's player values are on a players-only scale,
+ * so each pick is given "players ahead of it + ½" on that scale rather than its overall rank.
  */
-export function marketRanks(rows: FcRow[]) {
-  const sorted = [...rows].filter(r => r.overallRank).sort((a, b) => a.overallRank! - b.overallRank!)
-  const players = new Map<string, { rank: number; pos: string }>()
+export function marketRanks(rows: MarketRow[], idFor: (r: MarketRow) => string | null) {
+  const sorted = [...rows].sort((a, b) => b.value - a.value)
+  const players = new Map<string, { rank: number; pos: string; trend: number | null }>()
   const picks = new Map<string, number>()
   let n = 0
   for (const r of sorted) {
-    const pl = r.player ?? {}
-    if (pl.position === 'PICK') {
-      picks.set(pl.name ?? '', n + 0.5)
-    } else if (pl.sleeperId) {
-      n += 1
-      players.set(String(pl.sleeperId), { rank: n, pos: pl.position ?? '' })
+    if (r.pos === 'PICK' || r.pos === 'RDP') {
+      picks.set(r.name, n + 0.5)
+      continue
     }
+    const id = idFor(r)
+    // A player matched twice (two rows, one Sleeper id) keeps the higher rank.
+    if (!id || players.has(id)) continue
+    n += 1
+    players.set(id, { rank: n, pos: r.pos, trend: r.trend ?? null })
   }
   return { players, picks }
 }
 
-/** "2027 1st (Early)" -> "2027:1:early"; "2028 2nd" -> "2028:2". */
-function pickKey(name: string): string | null {
-  const m = /^(\d{4}) (\d)(?:st|nd|rd|th)(?: \((Early|Mid|Late)\))?$/.exec(name.trim())
-  if (!m) return null
-  return m[3] ? `${m[1]}:${m[2]}:${m[3].toLowerCase()}` : `${m[1]}:${m[2]}`
+const TRANCHES = ['early', 'mid', 'late']
+/** "2027 1st (Early)" (FantasyCalc) or "2027 Early 1st" (KeepTradeCut) -> "2027:1:early";
+ *  "2028 2nd" -> "2028:2". */
+export function pickKey(name: string): string | null {
+  const t = name.trim()
+  const fc = /^(\d{4}) (\d)(?:st|nd|rd|th)(?: \((Early|Mid|Late)\))?$/.exec(t)
+  if (fc) return fc[3] ? `${fc[1]}:${fc[2]}:${fc[3].toLowerCase()}` : `${fc[1]}:${fc[2]}`
+  const ktc = /^(\d{4}) (Early|Mid|Late) (\d)(?:st|nd|rd|th)$/.exec(t)
+  return ktc ? `${ktc[1]}:${ktc[3]}:${ktc[2].toLowerCase()}` : null
+}
+
+/** Pick values by key. A round priced only by tranche (KeepTradeCut) also gets the round
+ *  average, which is what a later draft or an unsimulated slot is priced at. */
+export function pickMarket(picks: Map<string, number>): Record<string, number> {
+  const market: Record<string, number> = {}
+  for (const [name, rank] of picks) {
+    const key = pickKey(name)
+    if (key) market[key] = value(rank)
+  }
+  const rounds = new Set(Object.keys(market).filter(k => k.split(':').length === 3).map(k => k.split(':').slice(0, 2).join(':')))
+  for (const r of rounds) {
+    if (market[r] != null) continue
+    const xs = TRANCHES.map(t => market[`${r}:${t}`]).filter((v): v is number => v != null)
+    if (xs.length === TRANCHES.length) market[r] = xs.reduce((a, b) => a + b, 0) / xs.length
+  }
+  return market
 }
 
 export function buildTrades(o: {
@@ -58,7 +107,9 @@ export function buildTrades(o: {
   users: any[]
   traded: any[]
   meta: Meta
-  fc: { rows: FcRow[]; asOf: string | null; stale: boolean }
+  market: Market
+  /** this season's stats so far (in season), for PPG ranks */
+  stats?: Record<string, Record<string, number>>
   beta: number
   userId: string
 }): TradeData {
@@ -72,7 +123,8 @@ export function buildTrades(o: {
   const board = findBoard(o.wb)
   const rostered = new Set<string>(o.rosters.flatMap(r => r.players ?? []))
   const { values } = matchBoard(board, o.meta, rostered)
-  const { players: fcPlayers, picks: fcPicks } = marketRanks(o.fc.rows)
+  const byName = rowMatcher(o.meta, rostered)
+  const { players: mkPlayers, picks: mkPicks } = marketRanks(o.market.rows, r => r.sleeperId ?? byName({ rank: 0, name: r.name, pos: r.pos }))
 
   const sheetOf = (id: string, pos: string) => {
     const v = values.get(id)
@@ -83,11 +135,12 @@ export function buildTrades(o: {
     return { rank: v.rank, sheet: scoringAdj(pos, value(v.rank), SHEET_SCORING, lg) }
   }
   const marketOf = (id: string, pos: string) => {
-    const m = fcPlayers.get(id)
+    const m = mkPlayers.get(id)
     if (!m || (SKILL.includes(m.pos) && m.pos !== pos)) return null
-    return scoringAdj(pos, value(m.rank), MARKET_SCORING, lg)
+    return scoringAdj(pos, value(m.rank), o.market.scoring, lg)
   }
 
+  const ppgRank = ppgRanks(o.stats ?? {}, o.meta)
   const assets: Asset[] = []
   const ranks: Record<string, { sheetRank: number | null; marketRank: number | null }> = {}
   for (const r of o.rosters)
@@ -98,7 +151,7 @@ export function buildTrades(o: {
       const { rank, sheet } = sheetOf(id, pos)
       const market = marketOf(id, pos)
       const val = market == null ? sheet : sheet + o.beta * (market - sheet)
-      ranks[id] = { sheetRank: rank, marketRank: fcPlayers.get(id)?.rank ?? null }
+      ranks[id] = { sheetRank: rank, marketRank: mkPlayers.get(id)?.rank ?? null }
       assets.push({
         id,
         kind: 'player',
@@ -110,6 +163,10 @@ export function buildTrades(o: {
         sheet,
         val,
         market,
+        injury: m.injury_status || null,
+        yearsExp: typeof m.years_exp === 'number' ? m.years_exp : null,
+        trend: mkPlayers.get(id)?.trend ?? null,
+        ppgRank: ppgRank.get(id) ?? null,
       })
     }
 
@@ -129,11 +186,7 @@ export function buildTrades(o: {
     return { season: s, round: Number(rd), originalOwner: Number(orig), owner: own }
   })
 
-  const market: Record<string, number> = {}
-  for (const [name, rank] of fcPicks) {
-    const key = pickKey(name)
-    if (key) market[key] = value(rank)
-  }
+  const market = pickMarket(mkPicks)
   const pickInputs: PickInputs = {
     season: String(first),
     teams: o.rosters.length,
@@ -145,6 +198,20 @@ export function buildTrades(o: {
     discount: FUTURE_DISCOUNT.slice(first - season).concat(Array(3).fill(FUTURE_DISCOUNT[FUTURE_DISCOUNT.length - 1])),
     market,
   }
+
+  // Each team's starters out this week: its top players at a position, as many as the league starts.
+  const slots: Record<string, number> = {}
+  for (const p of positions) if (SKILL.includes(p)) slots[p] = (slots[p] ?? 0) + 1
+  const holesOf = (rid: number) =>
+    SKILL.flatMap(pos =>
+      assets
+        .filter(a => a.owner === rid && a.pos === pos)
+        .sort((a, b) => b.sheet - a.sheet)
+        .slice(0, slots[pos] ?? 0)
+        .filter(a => a.injury && HOLE_STATUS.has(a.injury))
+        .map(a => ({ pos, name: a.name, status: a.injury! })),
+    )
+  const phase: Phase = o.league.status === 'in_season' ? 'inSeason' : o.league.status === 'drafting' ? 'drafting' : 'offseason'
 
   const active = (r: any) => (r.players ?? []).length - (r.taxi ?? []).length - (r.reserve ?? []).length
   const userOf = new Map(o.users.map(u => [u.user_id, u]))
@@ -163,15 +230,18 @@ export function buildTrades(o: {
         wins: Number(r.settings?.wins ?? 0),
         losses: Number(r.settings?.losses ?? 0),
         full: active(r) >= shape.rosterCap,
+        holes: holesOf(r.roster_id),
       }
     }),
     myRosterId: me?.roster_id ?? null,
+    phase,
+    starterLine: starterLine(positions, o.rosters.length),
     gamma: gammaFor(shape),
     spotCost: spotCostFor(shape),
     shape,
     beta: o.beta,
     sheet: { name: fileName(o.sheetPath), modifiedAt: o.modifiedAt },
-    market: { source: 'FantasyCalc', asOf: o.fc.asOf, stale: o.fc.stale, matched: fcPlayers.size },
+    market: { source: o.market.source, asOf: o.market.asOf, stale: o.market.stale, matched: mkPlayers.size },
     builtAt: new Date().toISOString(),
   }
 }
