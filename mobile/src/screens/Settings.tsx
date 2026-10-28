@@ -135,6 +135,24 @@ export default function Settings() {
           ]}
         />
       </View>
+      <View style={line}>
+        <View style={{ flex: 1 }}>
+          <T v="semi">Rank board</T>
+          <T v="small" c="mute">
+            Which of Tyler's boards the ranks use
+          </T>
+        </View>
+        <Seg<'league' | 'tep' | 'plain'>
+          track={t.surf2}
+          value={settings.rankBoard ?? 'league'}
+          onChange={rankBoard => setSettings({ rankBoard })}
+          options={[
+            { value: 'league', label: 'League' },
+            { value: 'tep', label: 'TEP' },
+            { value: 'plain', label: 'No TEP' },
+          ]}
+        />
+      </View>
 
       <Card radius={18} gap={8}>
         <T v="small" c="mute">

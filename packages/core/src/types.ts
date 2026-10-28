@@ -24,6 +24,17 @@ export type PlayerHit = { id: string; name: string; pos: string; team: string; i
 export type GameLog = { week: number; opp: string; stats: Record<string, number> }
 
 /** A player's Sleeper record and this season's games, for the player page. */
+/** A player's place on Tyler's overall board: overall rank and rank within his position. */
+export type TylerRank = { rank: number; posRank: number }
+
+/** Which of Tyler's two board blocks to show: the setting, or by default the league's own TE
+ *  bonus (the .75 TE-prem block when it has one). */
+export const tepBoardFor = (pref: Settings['rankBoard'], tePremium: number) => (pref === 'tep' ? true : pref === 'plain' ? false : tePremium > 0)
+export const tylerFor = (t: { plain: TylerRank | null; tep: TylerRank | null } | null | undefined, tep: boolean) =>
+  t ? (tep ? t.tep ?? t.plain : t.plain ?? t.tep) : null
+/** "Tyler #12 · WR4", or null when he isn't on the board. */
+export const tylerLabel = (r: TylerRank | null, pos: string) => (r ? `Tyler #${r.rank} · ${pos}${r.posRank}` : null)
+
 export type PlayerInfo = {
   id: string
   name: string
@@ -40,6 +51,8 @@ export type PlayerInfo = {
   injury: string
   season: string
   games: GameLog[]
+  /** Tyler's rank on each board block (no TE prem / TE prem); null when there's no sheet */
+  tyler: { plain: TylerRank | null; tep: TylerRank | null } | null
 }
 
 export type Settings = {
@@ -65,6 +78,9 @@ export type Settings = {
   hideNames?: boolean
   /** trade builder: 'raw' = Tyler's sheet as-is (default), 'relative' = within position. Ideas always use raw. */
   tradeDelta?: 'relative' | 'raw'
+  /** Tyler board for ranks shown on Players and player pages: 'league' (default) follows the
+   *  league's TE bonus; 'tep' / 'plain' force the TE-prem or no-TE-prem block */
+  rankBoard?: 'league' | 'tep' | 'plain'
   /** per league: your direction for trade ideas; unset = worked out from record and pick odds */
   tradeMode?: Record<string, 'contend' | 'rebuild' | 'middle'>
   /** phone app: when the rankings workbook in `ranksFile` was picked (it has no watcher) */
@@ -330,6 +346,8 @@ export type TradeTeam = {
 export type TradeData = {
   /** every rostered player; picks are priced in the renderer from `picks` + `pickInputs` */
   assets: import('./tradeMath').Asset[]
+  /** players on no roster here that Tyler or the market prices (owner 0): the Vacuum tab's extra pool */
+  freeAgents: import('./tradeMath').Asset[]
   ranks: Record<string, { sheetRank: number | null; marketRank: number | null }>
   picks: Array<{ season: string; round: number; originalOwner: number; owner: number }>
   pickInputs: import('./tradeMath').PickInputs

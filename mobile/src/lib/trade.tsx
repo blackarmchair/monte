@@ -4,7 +4,7 @@
 // their side on the market blended by Market influence, picks priced over the sim's slot odds.
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Result, TradeData } from '@monte/core/types'
-import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, type Asset, type Package, type Verdict } from '@monte/core/tradeMath'
+import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, vacuum, type Asset, type Package, type Verdict, type VacuumVerdict } from '@monte/core/tradeMath'
 import { anonTrades } from '@monte/core/names'
 import { projectedSlots } from '@monte/core/slots'
 import { buildIdeas, demandModel, giveWarnings, heldPick, teamMode, type Ideas, type Mode } from '@monte/core/strategy'
@@ -79,6 +79,13 @@ type Trade = {
   setMode: (m: Mode | null) => void
   /** Tyler's-strategy ideas at the current values (not memoised: call it from a useMemo) */
   getIdeas: () => Ideas
+  /** Vacuum: any player (rostered or not) or pick, two sides, no teams. Its own trade. */
+  vacuumPool: Asset[]
+  vac: { a: Asset[]; b: Asset[] }
+  vacVerdict: VacuumVerdict | null
+  vacAdd: (id: string, side: 'a' | 'b') => void
+  vacRemove: (id: string) => void
+  vacClear: () => void
 }
 
 const Ctx = createContext<Trade | null>(null)
@@ -147,6 +154,18 @@ export function TradeProvider({ children }: { children: ReactNode }) {
   }, [d, bb.result, names, mode, beta])
   const byId = useMemo(() => new Map(assets.map(a => [a.id, a])), [assets])
 
+  // Vacuum: this league's assets plus every free agent Tyler or the market prices. Kept apart from
+  // the trade being built, and cleared with the league (pick ids belong to it).
+  const vacuumPool = useMemo(() => [...assets, ...(d?.freeAgents ?? [])], [assets, d])
+  const vacById = useMemo(() => new Map(vacuumPool.map(a => [a.id, a])), [vacuumPool])
+  const [vacIds, setVacIds] = useState<{ a: string[]; b: string[] }>({ a: [], b: [] })
+  useEffect(() => setVacIds({ a: [], b: [] }), [leagueId])
+  const vac = {
+    a: vacIds.a.map(id => vacById.get(id)).filter(Boolean) as Asset[],
+    b: vacIds.b.map(id => vacById.get(id)).filter(Boolean) as Asset[],
+  }
+  const vacVerdict = d && (vac.a.length || vac.b.length) ? vacuum(vac.a, vac.b, d.gamma) : null
+
   const me = d?.myRosterId ?? null
   const mine = useMemo(() => assets.filter(a => a.owner === me).sort((a, b) => mineOf(b) - mineOf(a)), [assets, me])
   const give = trade.give.map(id => byId.get(id)).filter(Boolean) as Asset[]
@@ -204,7 +223,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
   const direction = { mode: override ?? auto.mode, auto, override }
   const getIdeas = (): Ideas =>
     !d || me == null
-      ? { mode: direction.mode, sells: [], buys: [] }
+      ? { mode: direction.mode, sells: [], buys: [], chains: [] }
       : buildIdeas({
           // Always Tyler's sheet as-is: within-position mode would hand the market its view of
           // whole positions (TEs over WRs), the very gap the ideas are meant to exploit.
@@ -279,6 +298,12 @@ export function TradeProvider({ children }: { children: ReactNode }) {
       void setSettings({ tradeMode: m ? { ...rest, [leagueId]: m } : rest })
     },
     getIdeas,
+    vacuumPool,
+    vac,
+    vacVerdict,
+    vacAdd: (id, side) => setVacIds(v => ({ a: side === 'a' ? [...v.a.filter(x => x !== id), id] : v.a.filter(x => x !== id), b: side === 'b' ? [...v.b.filter(x => x !== id), id] : v.b.filter(x => x !== id) })),
+    vacRemove: id => setVacIds(v => ({ a: v.a.filter(x => x !== id), b: v.b.filter(x => x !== id) })),
+    vacClear: () => setVacIds({ a: [], b: [] }),
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
-import type { GameLog, ManualInjury, PlayerInfo, Result } from '@monte/core/types'
+import { tepBoardFor, tylerFor, tylerLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from '@/lib/trade'
@@ -37,7 +37,7 @@ export default function Player() {
 
 function PlayerBody({ id, fallbackName }: { id: string; fallbackName: string }) {
   const t = useTheme()
-  const { context, pw } = useApp()
+  const { context, pw, settings } = useApp()
   const { byId, me, teamName, d } = useTrade()
   const [info, setInfo] = useState<Result<PlayerInfo> | null>(null)
   const [tab, setTab] = useState<Tab>('value')
@@ -65,6 +65,9 @@ function PlayerBody({ id, fallbackName }: { id: string; fallbackName: string }) 
     ['Value', asset ? kfmt(mineOf(asset)) : '–'],
   ]
   const usage = pw.result?.rows.find(r => r.player_id === id)
+  // Tyler's rank, on the board that matches the league (or the one Settings picks).
+  const tyler = tylerFor(p?.tyler, tepBoardFor(settings?.rankBoard, context?.league.tePremium ?? 0))
+  const tylerText = p?.tyler ? tylerLabel(tyler, pos) ?? 'Not on Tyler’s board' : null
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: t.bg }} contentContainerStyle={{ paddingBottom: 28 }} stickyHeaderIndices={[1]} keyboardShouldPersistTaps="handled">
@@ -87,6 +90,11 @@ function PlayerBody({ id, fallbackName }: { id: string; fallbackName: string }) 
               </T>
             )}
           </Row>
+          {!!tylerText && (
+            <View style={{ alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, backgroundColor: tyler ? t.acc : t.surf2 }}>
+              <Text style={{ fontFamily: font.sansBold, fontSize: 15, color: tyler ? t.accInk : t.mute }}>{tylerText}</Text>
+            </View>
+          )}
         </View>
         <View
           style={{

@@ -102,9 +102,9 @@ export async function buildOverview(opts: {
     picks,
     freeAgents,
     pickCurve: rookieCurve(values, meta),
-    // Index = seasons ahead of the CURRENT season, so the next draft's discount sits at
-    // first − season (0 before this year's draft, 1 after it).
-    discount: FUTURE_DISCOUNT.slice(first - season).concat(Array(3).fill(FUTURE_DISCOUNT[FUTURE_DISCOUNT.length - 1])),
+    // Index 0 is the NEXT draft, in season too, the same as the Trade screen's pick prices (see
+    // trades.ts): a 2027 pick during the 2026 season is worth its class, not a year-out discount.
+    discount: FUTURE_DISCOUNT.concat(Array(3).fill(FUTURE_DISCOUNT[FUTURE_DISCOUNT.length - 1])),
     builtAt: new Date().toISOString(),
   }
 }

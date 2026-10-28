@@ -3,7 +3,7 @@
 // against market. Trade: who has him, the one action and a deal Monte found. Injury: the override
 // every model uses. Stats: this season's games, every cell heat-coloured within its column.
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { GameLog, ManualInjury, PlayerInfo, Result } from '@shared/types'
+import { tepBoardFor, tylerFor, tylerLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
 import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Stepper, StatTile, useHeat } from './ui'
@@ -21,7 +21,7 @@ const initialsOf = (name: string) =>
     .toUpperCase()
 
 export default function Player({ id, fallbackName }: { id: string; fallbackName: string }) {
-  const { context, pw } = useApp()
+  const { context, pw, settings } = useApp()
   const { byId, me, teamName, d } = useTrade()
   const [info, setInfo] = useState<Result<PlayerInfo> | null>(null)
   const [shot, setShot] = useState(true)
@@ -49,6 +49,9 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
     ['Value', asset ? kfmt(mineOf(asset)) : '–'],
   ]
   const usage = pw.result?.rows.find(r => r.player_id === id)
+  // Tyler's rank, on the board that matches the league (or the one Settings picks).
+  const tyler = tylerFor(p?.tyler, tepBoardFor(settings?.rankBoard, context?.league.tePremium ?? 0))
+  const tylerText = p?.tyler ? tylerLabel(tyler, pos) ?? 'Not on Tyler’s board' : null
 
   return (
     <div className="page" style={{ display: 'grid', gridTemplateColumns: '360px minmax(0,1fr)', gap: 28, alignItems: 'start' }}>
@@ -72,6 +75,14 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
               <span style={{ fontWeight: 700 }}>{pos}</span>
               {exp && <span className="sub">{exp}</span>}
             </div>
+            {tylerText && (
+              <span
+                className="num"
+                style={{ alignSelf: 'flex-start', padding: '5px 12px', borderRadius: 12, fontWeight: 700, fontSize: 15, background: tyler ? 'var(--acc)' : 'var(--surf2)', color: tyler ? 'var(--acc-ink)' : 'var(--mute)' }}
+              >
+                {tylerText}
+              </span>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 10px', paddingTop: 4 }}>
               {bio.map(([k, v]) => (
                 <div key={k} className="stack" style={{ gap: 1, minWidth: 0 }}>

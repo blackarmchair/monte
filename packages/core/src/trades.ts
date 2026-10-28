@@ -143,32 +143,41 @@ export function buildTrades(o: {
   const ppgRank = ppgRanks(o.stats ?? {}, o.meta)
   const assets: Asset[] = []
   const ranks: Record<string, { sheetRank: number | null; marketRank: number | null }> = {}
+  const toAsset = (id: string, owner: number): Asset | null => {
+    const m = o.meta[id]
+    const pos = SKILL.includes(m?.position) ? m.position : (m?.fantasy_positions ?? []).find((f: string) => SKILL.includes(f))
+    if (!m || !pos) return null
+    const { rank, sheet } = sheetOf(id, pos)
+    const market = marketOf(id, pos)
+    const val = market == null ? sheet : sheet + o.beta * (market - sheet)
+    ranks[id] = { sheetRank: rank, marketRank: mkPlayers.get(id)?.rank ?? null }
+    return {
+      id,
+      kind: 'player',
+      name: m.full_name ?? `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim(),
+      pos,
+      team: m.team ?? 'FA',
+      age: typeof m.age === 'number' ? m.age : null,
+      owner,
+      sheet,
+      val,
+      market,
+      injury: m.injury_status || null,
+      yearsExp: typeof m.years_exp === 'number' ? m.years_exp : null,
+      trend: mkPlayers.get(id)?.trend ?? null,
+      ppgRank: ppgRank.get(id) ?? null,
+    }
+  }
   for (const r of o.rosters)
     for (const id of r.players ?? []) {
-      const m = o.meta[id]
-      const pos = SKILL.includes(m?.position) ? m.position : (m?.fantasy_positions ?? []).find((f: string) => SKILL.includes(f))
-      if (!m || !pos) continue
-      const { rank, sheet } = sheetOf(id, pos)
-      const market = marketOf(id, pos)
-      const val = market == null ? sheet : sheet + o.beta * (market - sheet)
-      ranks[id] = { sheetRank: rank, marketRank: mkPlayers.get(id)?.rank ?? null }
-      assets.push({
-        id,
-        kind: 'player',
-        name: m.full_name ?? `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim(),
-        pos,
-        team: m.team ?? 'FA',
-        age: typeof m.age === 'number' ? m.age : null,
-        owner: r.roster_id,
-        sheet,
-        val,
-        market,
-        injury: m.injury_status || null,
-        yearsExp: typeof m.years_exp === 'number' ? m.years_exp : null,
-        trend: mkPlayers.get(id)?.trend ?? null,
-        ppgRank: ppgRank.get(id) ?? null,
-      })
+      const a = toAsset(id, r.roster_id)
+      if (a) assets.push(a)
     }
+  // Everyone else Tyler or the market prices, for the Vacuum tab: owner 0, on no roster.
+  const freeAgents = [...new Set([...values.keys(), ...mkPlayers.keys()])]
+    .filter(id => !rostered.has(id))
+    .map(id => toAsset(id, 0))
+    .filter((a): a is Asset => !!a && (a.sheet > 0 || a.market != null))
 
   // Picks: ownership for the next three drafts; values are priced in the renderer.
   const season = Number(o.league.season)
@@ -195,7 +204,11 @@ export function buildTrades(o: {
       .filter(([id]) => Number(o.meta[id]?.years_exp) === 0)
       .map(([id, v]) => scoringAdj(o.meta[id]?.position ?? '', value(v.rank), SHEET_SCORING, lg))
       .sort((a, b) => b - a),
-    discount: FUTURE_DISCOUNT.slice(first - season).concat(Array(3).fill(FUTURE_DISCOUNT[FUTURE_DISCOUNT.length - 1])),
+    // Index 0 is the NEXT draft, in season too: a 2027 pick during the 2026 season is worth its class,
+    // not a year-out discount of it. Backtested against Tyler's #dynasty-trade-questions answers
+    // (2026-08..10): discounting it to 0.72 was the largest single source of misses, all of them
+    // Tyler taking the pick side.
+    discount: FUTURE_DISCOUNT.concat(Array(3).fill(FUTURE_DISCOUNT[FUTURE_DISCOUNT.length - 1])),
     market,
   }
 
@@ -218,6 +231,7 @@ export function buildTrades(o: {
   const me = o.rosters.find(r => r.owner_id === o.userId || (r.co_owners ?? []).includes(o.userId))
   return {
     assets,
+    freeAgents,
     ranks,
     picks,
     pickInputs,

@@ -1,16 +1,18 @@
-// Trade: two tabs. Build is who you're trading with (tap to change), then You give and You get as
+// Trade: three tabs. Build is who you're trading with (tap to change), then You give and You get as
 // asset cards, each with an "Add from …" picker. Ideas is Tyler's strategy against the market: your
 // direction, then what to sell and what to buy, each with its rule and an ask / settle deal that
-// opens in Build. A verdict bar floats above the tab bar while the trade has anything in it;
+// opens in Build, then chains (two linked trades through a team that values the middle player less
+// than another does). Vacuum scores any two sides of players and picks, rostered or not, on Tyler's
+// sheet and on the market, with no teams at all. A verdict bar floats above the tab bar while the trade has anything in it;
 // Review opens the full read and the send.
 import { useMemo, useState } from 'react'
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
-import type { Asset } from '@monte/core/tradeMath'
-import { MODE_LABEL, PHASE_LINE, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
+import { vacuumText, type Asset, type Side } from '@monte/core/tradeMath'
+import { MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from '@/lib/trade'
-import { Btn, Card, Check, ErrorBox, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, Notice, Pills, Row, Section, Seg, Slider, StatTile, Stack2, T, TeamAvatar, num, signed, useTopOnFocus } from '@/ui/kit'
+import { Btn, Card, Check, ErrorBox, Field, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, Notice, Pills, Row, Section, Seg, Slider, StatTile, Stack2, T, TeamAvatar, num, signed, useTopOnFocus } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
 import { font, heat, nflColor, R, teamColor, useTheme, type Palette } from '@/ui/theme'
 import SleeperConnect from './SleeperConnect'
@@ -32,7 +34,7 @@ export default function Trade() {
   const { d, res, partner, give, get, count } = x
 
   // Ideas first when there is nothing being built.
-  const [tab, setTab] = useState<'build' | 'ideas'>(count === 0 ? 'ideas' : 'build')
+  const [tab, setTab] = useState<'build' | 'ideas' | 'vacuum'>(count === 0 ? 'ideas' : 'build')
 
   if (!sheet) return <NeedsSheet />
 
@@ -62,9 +64,12 @@ export default function Trade() {
             options={[
               { value: 'build', label: count ? `Build (${count})` : 'Build' },
               { value: 'ideas', label: 'Ideas' },
+              { value: 'vacuum', label: 'Vacuum' },
             ]}
           />
         )}
+
+        {d && tab === 'vacuum' && <VacuumView />}
 
         {d && tab === 'ideas' && <IdeasView onOpen={() => setTab('build')} />}
 
@@ -479,6 +484,24 @@ function IdeasView({ onOpen }: { onOpen: () => void }) {
           ))}
         </View>
       ))}
+      <View style={{ gap: 8 }}>
+        <Section title="Chains" />
+        {ideas.chains.length === 0 && (
+          <Card>
+            <T v="small" c="mute">
+              No chain beats selling directly right now. That’s normal: two teams have to value the middle player differently by more than the model’s error bar.
+            </T>
+          </Card>
+        )}
+        {ideas.chains.map(ch => (
+          <ChainCard key={ch.first.give[0].id} ch={ch} onOpen={onOpen} />
+        ))}
+        {ideas.chains.length > 0 && (
+          <T v="small" c="mute">
+            A chain is two ordinary trades: send the first, and only once it’s accepted offer the second. Step one is a win on its own, so you’re fine holding the middle player if the second falls through.
+          </T>
+        )}
+      </View>
       <T v="small" c="mute">
         Ideas follow Tyler’s strategy doc: values stay his board and the market, the rules pick what to shop, what to chase and who to aim at. Picks he says to hold never
         appear. Ask is the most you can take while they still say yes; Settle is what they clearly say yes to. Greed is good: open with the ask.
@@ -545,5 +568,153 @@ function IdeaCard({ i, onOpen }: { i: Idea; onOpen: () => void }) {
         </T>
       ))}
     </GradCard>
+  )
+}
+
+function ChainCard({ ch, onOpen }: { ch: Chain; onOpen: () => void }) {
+  const t = useTheme()
+  const x = useTrade()
+  const step = (n: number, dl: IdeaDeal, open: boolean) => (
+    <Card
+      key={n}
+      gap={4}
+      pad={12}
+      style={{ backgroundColor: t.surf2 }}
+      onPress={
+        open
+          ? () => {
+              x.loadDeal(dl)
+              onOpen()
+            }
+          : undefined
+      }
+    >
+      <Row style={{ justifyContent: 'space-between' }}>
+        <T v="bold" size={13} lines={1} style={{ flexShrink: 1 }}>
+          {n === 1 ? '1 · Send' : '2 · Then offer'} · {x.teamName(dl.partner)}
+        </T>
+        <T v="small" c="mute" num>
+          {signed(dl.verdict.em)} / {signed(dl.verdict.et)}
+        </T>
+      </Row>
+      <T v="semi" size={15}>
+        {dealText(dl)}
+      </T>
+    </Card>
+  )
+  const a = ch.first.give[0]
+  return (
+    <GradCard color={assetColor(t, a)} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+      <Row gap={12}>
+        <AssetFace a={a} />
+        <Stack2 title={`${assetName(a)} → ${ch.first.get[0].name} → ${ch.second.get.map(g => g.name).join(' + ')}`} sub={`You ${signed(ch.total)} over both · direct ${signed(ch.direct)}`} />
+      </Row>
+      <View style={{ gap: 4 }}>
+        {ch.why.map(w => (
+          <T key={w} v="small" c="ink2">
+            <T v="small" c="acc" style={{ fontFamily: font.sansBold }}>
+              Why it works.
+            </T>{' '}
+            {w}
+          </T>
+        ))}
+      </View>
+      {step(1, ch.first, true)}
+      {step(2, ch.second, false)}
+    </GradCard>
+  )
+}
+
+/** Vacuum: the two lenses on top, both sides, then search any player or pick to add. */
+function VacuumView() {
+  const t = useTheme()
+  const x = useTrade()
+  const [q, setQ] = useState('')
+  const { vac, vacVerdict: v } = x
+  const hits = useMemo(() => {
+    const n = q.trim().toLowerCase()
+    const on = new Set([...vac.a, ...vac.b].map(a => a.id))
+    return x.vacuumPool
+      .filter(a => !on.has(a.id) && (!n || a.name.toLowerCase().includes(n)))
+      .sort((a, b) => b.sheet - a.sheet)
+      .slice(0, 25)
+  }, [q, x.vacuumPool, vac.a.length, vac.b.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const txt = vacuumText(v)
+  const where = (a: Asset) => (a.owner ? x.teamName(a.owner) : 'Free agent')
+  const lensTile = (k: string, l: { a: number; b: number; diff: number }, w: Side) => (
+    <StatTile k={k} v={w === 'even' ? 'Even' : `${w.toUpperCase()} +${kfmt(Math.abs(l.diff))}`} sub={`A ${kfmt(l.a)} · B ${kfmt(l.b)}`} size={22} color={w === 'even' ? undefined : t.pos} />
+  )
+  const vals = (a: Asset) => (
+    <View style={{ alignItems: 'flex-end' }}>
+      <T v="bold" size={14} num>
+        {kfmt(a.sheet)}
+      </T>
+      <T v="small" c="mute" num>
+        {a.market == null ? 'no mkt' : kfmt(a.market)}
+      </T>
+    </View>
+  )
+  return (
+    <View style={{ gap: 16 }}>
+      <Card gap={10}>
+        <T v="bold" size={22} color={txt.tone === 'mute' ? undefined : t[txt.tone]}>
+          {txt.title}
+        </T>
+        <T v="small" c="ink2">
+          {txt.line}
+        </T>
+        {v && (
+          <Row gap={8}>
+            {lensTile('Tyler’s sheet', v.tyler, v.tylerWinner)}
+            {lensTile('Market', v.market, v.marketWinner)}
+          </Row>
+        )}
+      </Card>
+      {(
+        [
+          ['Side A gets', vac.a],
+          ['Side B gets', vac.b],
+        ] as const
+      ).map(([title, items]) => (
+        <View key={title} style={{ gap: 8 }}>
+          <Section title={title} />
+          {items.map(a => (
+            <GradCard key={a.id} color={assetColor(t, a)} minHeight={60} style={{ paddingVertical: 8, paddingLeft: 12, paddingRight: 6 }}>
+              <AssetFace a={a} />
+              <Stack2 title={assetName(a)} sub={where(a)} />
+              {vals(a)}
+              <Pressable onPress={() => x.vacRemove(a.id)} hitSlop={4} accessibilityLabel={`Remove ${a.name}`} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontFamily: font.sans, fontSize: 20, color: t.mute }}>×</Text>
+              </Pressable>
+            </GradCard>
+          ))}
+          {items.length === 0 && (
+            <Card>
+              <T v="small" c="mute">
+                Add from the search below
+              </T>
+            </Card>
+          )}
+        </View>
+      ))}
+      {v && v.unpriced.length > 0 && <Notice message={`No market price for ${v.unpriced.map(a => a.name).join(', ')}: the market lens uses Tyler’s value for them.`} />}
+      {(vac.a.length > 0 || vac.b.length > 0) && <Btn label="Clear" onPress={x.vacClear} />}
+      <View style={{ gap: 8 }}>
+        <Section title="Add" />
+        <Field placeholder="Any player or pick" value={q} onChangeText={setQ} />
+        {hits.map(a => (
+          <GradCard key={a.id} color={assetColor(t, a)} minHeight={60} style={{ paddingVertical: 8, paddingLeft: 12, paddingRight: 8, gap: 8 }}>
+            <AssetFace a={a} size={38} />
+            <Stack2 title={assetName(a)} sub={`${assetMeta(a)} · ${where(a)}`} />
+            {vals(a)}
+            <Btn size="sm" label="A" onPress={() => x.vacAdd(a.id, 'a')} />
+            <Btn size="sm" label="B" onPress={() => x.vacAdd(a.id, 'b')} />
+          </GradCard>
+        ))}
+      </View>
+      <T v="small" c="mute">
+        Vacuum ignores teams: no partner, no demand, no roster spots. Tyler’s lens is his sheet as-is, the market’s is KeepTradeCut’s price, both in this league’s scoring and in effective value (one star beats a bundle).
+      </T>
+    </View>
   )
 }

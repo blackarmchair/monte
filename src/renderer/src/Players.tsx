@@ -3,7 +3,7 @@
 // bar's search filters it live. Click a card for his page; its button adds him to the trade (or
 // claims a free agent in Sleeper).
 import { useEffect, useMemo, useState } from 'react'
-import type { RanksData, Result } from '@shared/types'
+import { tepBoardFor, type RanksData, type Result } from '@shared/types'
 import { teamLabel } from './names'
 import { value as rankValue } from '@shared/tradeMath'
 import { useApp } from './store'
@@ -20,6 +20,8 @@ type Line = {
   team: string
   owner: number | null
   meta: string
+  /** Tyler's board: "#12 · WR4", null when he isn't on it */
+  rank: string | null
   v: string
   /** heat position, 0 … 1 */
   h: number
@@ -62,10 +64,12 @@ export default function Players() {
 
   const lines = useMemo((): Line[] => {
     const q = ui.q.trim().toLowerCase()
+    // The board that matches the league (TE-premium leagues get the TE-prem block), unless Settings
+    // picks one. Usage rows take their Tyler rank from it too.
+    const board = ranks ? ranks.boards[Math.max(0, ranks.boards.findIndex(b => b.tep === tepBoardFor(settings?.rankBoard, ranks.tePremium)))] : null
+    const rankOf = new Map((board?.rows ?? []).filter(r => r.id).map(r => [r.id!, `#${r.rank} · ${r.pos}${r.posRank}`]))
     if (ui.mode === 'value') {
       if (!ranks) return []
-      // The board that matches the league: TE-premium leagues get the TE-prem block.
-      const board = ranks.boards[Math.max(0, ranks.boards.findIndex(b => b.tep === ranks.tePremium > 0))]
       const teAdj = 1 + 0.25 * (ranks.tePremium - 0.75)
       const rows = (board?.rows ?? []).filter(r => r.id)
       const last = Math.max(2, rows[rows.length - 1]?.rank ?? 2)
@@ -82,7 +86,8 @@ export default function Players() {
             name: r.name,
             team: r.team,
             owner: r.owner,
-            meta: [r.pos, r.team, r.age, ownerName(r.owner)].filter(x => x != null && x !== '').join(' · '),
+            meta: [r.team, r.age, ownerName(r.owner)].filter(x => x != null && x !== '').join(' · '),
+            rank: rankOf.get(r.id!) ?? null,
             v: kfmt(v),
             h: 1 - (r.rank - 1) / (last - 1),
             tag: tag && tag.label !== 'No market' ? tag.label : r.owner == null ? 'Free agent' : '',
@@ -104,7 +109,8 @@ export default function Players() {
           name: r.name,
           team: r.team,
           owner,
-          meta: `${r.pos} · ${r.team} · ${ownerName(owner)} · ${r.usagePPG?.toFixed(1) ?? '—'} → ${r.sleeperPPG?.toFixed(1) ?? '—'} PPG`,
+          meta: `${rankOf.has(r.player_id) ? '' : `${r.pos} · `}${r.team} · ${ownerName(owner)} · ${r.usagePPG?.toFixed(1) ?? '—'} → ${r.sleeperPPG?.toFixed(1) ?? '—'} PPG`,
+          rank: rankOf.get(r.player_id) ?? null,
           v: `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d).toFixed(1)}`,
           h: 0.5 + d / 16,
           tag: sig,
@@ -112,7 +118,7 @@ export default function Players() {
           assetId: byId.has(r.player_id) ? r.player_id : null,
         }
       })
-  }, [ui, ranks, pw.result, byId, ownerOf, me, hide, teamNames]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ui, ranks, pw.result, byId, ownerOf, me, hide, teamNames, settings?.rankBoard]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!sheet)
     return (
@@ -162,7 +168,15 @@ export default function Players() {
         {lines.map(l => (
           <GradCard key={l.key} div color={nflColor(l.team)} minHeight={68} onClick={() => openPlayer(l.id, l.name)} style={{ padding: '10px 10px 10px 14px' }}>
             <Headshot id={l.id} name={l.name} />
-            <Stack2 title={l.name} sub={l.meta} />
+            <Stack2
+              title={l.name}
+              sub={
+                <>
+                  {l.rank && <b style={{ color: 'var(--acc)' }}>{l.rank} · </b>}
+                  {l.meta}
+                </>
+              }
+            />
             <span className="stack" style={{ alignItems: 'flex-end', gap: 3 }}>
               <HeatChip label={l.v} colors={heat(l.h)} minWidth={54} height={28} size={14} />
               {!!l.tag && <span style={{ fontSize: 12, fontWeight: 600, color: l.tagColor }}>{l.tag}</span>}

@@ -3,7 +3,8 @@
 import { fileName } from './paths'
 import type { Book } from './xlsx'
 import { boardIsTep, findBoards, rowMatcher, userAvatar, type Meta } from './values'
-import type { RankRow, RanksData } from './types'
+import type { RankRow, RanksData, TylerRank } from './types'
+import type { Workbook } from './xlsx'
 
 export async function buildRanks(opts: {
   book: Book
@@ -58,4 +59,27 @@ export async function buildRanks(opts: {
     tePremium: Number(league?.scoring_settings?.bonus_rec_te ?? 0),
     builtAt: new Date().toISOString(),
   }
+}
+
+/**
+ * Every player's place on Tyler's overall board, by Sleeper id: overall and positional rank on the
+ * no-TE-prem block and on the TE-prem block. Matched the same way as the Ranks/Players view.
+ */
+export function tylerIndex(wb: Workbook, meta: Meta): Map<string, { plain: TylerRank | null; tep: TylerRank | null }> {
+  const idFor = rowMatcher(meta, new Set())
+  const out = new Map<string, { plain: TylerRank | null; tep: TylerRank | null }>()
+  for (const b of findBoards(wb)) {
+    const key = boardIsTep(b) ? 'tep' : 'plain'
+    const seen = new Map<string, number>()
+    for (const row of b.rows) {
+      const posRank = (seen.get(row.pos) ?? 0) + 1
+      seen.set(row.pos, posRank)
+      const id = idFor(row)
+      if (!id) continue
+      const e = out.get(id) ?? { plain: null, tep: null }
+      if (!e[key]) e[key] = { rank: row.rank, posRank }
+      out.set(id, e)
+    }
+  }
+  return out
 }

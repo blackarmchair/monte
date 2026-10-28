@@ -1,17 +1,22 @@
-// Trade: two tabs. Build is three columns: your roster on the left and theirs on the right (the
+// Trade: three tabs. Build is three columns: your roster on the left and theirs on the right (the
 // team list until you pick a partner), each row with a +/✓ toggle; in the middle (sticky) the
 // verdict card with both sides, your roster after, Market influence and Send in Sleeper. Ideas is
 // Tyler's strategy against the market: your direction, then what to sell and what to buy, each with
-// the rule behind it and an ask / settle deal that opens in Build.
+// the rule behind it and an ask / settle deal that opens in Build, then chains (two linked trades
+// through a team that values the middle player less than another does). Vacuum scores any two sides
+// of players and picks, rostered or not, on Tyler's sheet and on the market, with no teams at all.
 import { useMemo, useState } from 'react'
-import type { Asset } from '@shared/tradeMath'
-import { MODE_LABEL, PHASE_LINE, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
+import { vacuumText, type Asset, type Side } from '@shared/tradeMath'
+import { MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
 import { useApp } from './store'
 import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from './tradeModel'
 import SleeperSend from './SleeperSend'
-import { Btn, Check, ErrorBox, GradCard, grad, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, nflColor, Notice, num, RING, Seg, signed, Stack2, StatTile, TeamAvatar, teamColor, useHeat } from './ui'
+import { Btn, Check, ErrorBox, GradCard, grad, Headshot, Icon, HeatTiles, kfmt, Loading, NeedsSheet, nflColor, Notice, num, RING, Seg, signed, Stack2, StatTile, TeamAvatar, teamColor, useHeat } from './ui'
 
 const tone = (t: VerdictTone) => `var(--${t})`
+/** Build's three column headings share one height (the partner side's Change button sets it), so
+ *  the verdict card and the first card on each side start on the same line. */
+const HEAD = { minHeight: 34, alignItems: 'center' } as const
 /** Position change in "your roster after" that reads as fully good or bad. */
 const POS_SCALE = 8000
 /** Players carry their NFL colour; picks their original team's. */
@@ -34,7 +39,7 @@ export default function Trade() {
   const { d, res, partner, give, get, count, verdict: v } = x
   const [sending, setSending] = useState(false)
   // Ideas first when there is nothing being built.
-  const [tab, setTab] = useState<'build' | 'ideas'>(count === 0 ? 'ideas' : 'build')
+  const [tab, setTab] = useState<'build' | 'ideas' | 'vacuum'>(count === 0 ? 'ideas' : 'build')
 
   if (!sheet)
     return (
@@ -84,8 +89,15 @@ export default function Trade() {
             options={[
               { value: 'build', label: count ? `Build (${count})` : 'Build' },
               { value: 'ideas', label: 'Ideas' },
+              { value: 'vacuum', label: 'Vacuum' },
             ]}
           />
+        </div>
+      )}
+
+      {d && tab === 'vacuum' && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <VacuumView />
         </div>
       )}
 
@@ -98,13 +110,14 @@ export default function Trade() {
       {d && tab === 'build' && (
         <>
           <div className="stack" style={{ gap: 8 }}>
-            <span className="title-l" style={{ paddingBottom: 2 }}>
-              Your roster
-            </span>
+            <div className="row" style={HEAD}>
+              <span className="title-l">Your roster</span>
+            </div>
             {x.mine.map(row)}
           </div>
 
-          <div className="sticky stack" style={{ gap: 16 }}>
+          <div className="sticky stack" style={{ gap: 8 }}>
+            <div aria-hidden style={HEAD} />
               <div className="hero" style={{ padding: 22, gap: 16 }}>
                 <div style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.1, color: tone(x.tone) }}>{x.label}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -196,14 +209,14 @@ export default function Trade() {
                   <Btn size="lg" label="Clear" onClick={x.clear} />
                 </div>
               </div>
-            <span className="small mute">
+            <span className="small mute" style={{ paddingTop: 8 }}>
               Your side is Tyler's sheet; theirs is the market, blended by Market influence. Verdicts use effective value: one star beats a bundle of the same raw total.
               {d.market.stale ? ` Market values are a stale copy: ${d.market.source} did not answer.` : ''}
             </span>
           </div>
 
           <div className="stack" style={{ gap: 8 }}>
-            <div className="row" style={{ justifyContent: 'space-between', gap: 8, paddingBottom: 2 }}>
+            <div className="row" style={{ ...HEAD, justifyContent: 'space-between', gap: 8 }}>
               <span className="title-l trunc">{partnerName ?? 'Choose a partner'}</span>
               {partner != null && <Btn size="sm" label="Change" onClick={() => setTrade(t => ({ ...t, partner: null, get: [] }))} bg="var(--surf)" style={{ color: 'var(--acc)', minHeight: 32, fontSize: 13 }} />}
             </div>
@@ -286,6 +299,16 @@ function IdeasView({ onOpen }: { onOpen: () => void }) {
           </div>
         ))}
       </div>
+      <div className="stack" style={{ gap: 10 }}>
+        <span className="title-l">Chains</span>
+        {ideas.chains.length === 0 && <div className="card mute small">No chain beats selling directly right now. That’s normal: two teams have to value the middle player differently by more than the model’s error bar.</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
+          {ideas.chains.map(ch => (
+            <ChainCard key={ch.first.give[0].id} ch={ch} onOpen={onOpen} />
+          ))}
+        </div>
+        {ideas.chains.length > 0 && <span className="small mute">A chain is two ordinary trades: send the first, and only once it’s accepted offer the second. Step one is a win on its own, so you’re fine holding the middle player if the second falls through.</span>}
+      </div>
       <span className="small mute">
         Ideas follow Tyler’s strategy doc: values stay his board and the market, the rules pick what to shop, what to chase and who to aim at. Picks he says to hold never appear.
         Ask is the most you can take while they still say yes; Settle is what they clearly say yes to. Greed is good: open with the ask.
@@ -340,6 +363,142 @@ function IdeaCard({ i, onOpen }: { i: Idea; onOpen: () => void }) {
           {n}
         </span>
       ))}
+    </div>
+  )
+}
+
+function ChainCard({ ch, onOpen }: { ch: Chain; onOpen: () => void }) {
+  const x = useTrade()
+  const step = (n: number, dl: IdeaDeal, open: boolean) => (
+    <GradCard
+      color={null}
+      onClick={open ? () => (x.loadDeal(dl), onOpen()) : undefined}
+      minHeight={0}
+      style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4, padding: '10px 14px', background: 'var(--surf2)' }}
+    >
+      <span className="row small" style={{ justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontWeight: 700 }}>
+          {n === 1 ? '1 · Send' : '2 · Then offer'} · {x.teamName(dl.partner)}
+        </span>
+        <span className="num mute">
+          You {signed(dl.verdict.em)} · Them {signed(dl.verdict.et)}
+        </span>
+      </span>
+      <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{dealText(dl)}</span>
+    </GradCard>
+  )
+  const a = ch.first.give[0]
+  return (
+    <div className="gcard" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10, padding: '14px 16px', background: grad(assetColor(a)) }}>
+      <div className="row" style={{ gap: 10 }}>
+        <AssetFace a={a} />
+        <Stack2 title={`${assetName(a)} → ${ch.first.get[0].name} → ${ch.second.get.map(g => g.name).join(' + ')}`} size={15} sub={`You ${signed(ch.total)} over both steps · selling ${a.name} directly: ${signed(ch.direct)}`} subStyle={{ fontSize: 12 }} />
+      </div>
+      <div className="stack" style={{ gap: 4 }}>
+        {ch.why.map(w => (
+          <span key={w} className="small" style={{ lineHeight: 1.4 }}>
+            <b style={{ color: 'var(--acc)' }}>Why it works.</b> {w}
+          </span>
+        ))}
+      </div>
+      {step(1, ch.first, true)}
+      {step(2, ch.second, false)}
+    </div>
+  )
+}
+
+/** Vacuum: search any player or pick on the left, add it to a side; the two lenses on the right. */
+function VacuumView() {
+  const x = useTrade()
+  const [q, setQ] = useState('')
+  const { vac, vacVerdict: v } = x
+  const hits = useMemo(() => {
+    const n = q.trim().toLowerCase()
+    const on = new Set([...vac.a, ...vac.b].map(a => a.id))
+    return x.vacuumPool
+      .filter(a => !on.has(a.id) && (!n || a.name.toLowerCase().includes(n)))
+      .sort((a, b) => b.sheet - a.sheet)
+      .slice(0, 40)
+  }, [q, x.vacuumPool, vac.a.length, vac.b.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const txt = vacuumText(v)
+  const where = (a: Asset) => (a.owner ? x.teamName(a.owner) : 'Free agent')
+  const lensTile = (k: string, l: { a: number; b: number; diff: number }, w: Side) => (
+    <StatTile
+      k={k}
+      v={w === 'even' ? 'Even' : `${w.toUpperCase()} +${kfmt(Math.abs(l.diff))}`}
+      sub={`A gets ${kfmt(l.a)} · B gets ${kfmt(l.b)}`}
+      size={26}
+      bg="var(--surf2)"
+      color={w === 'even' ? undefined : 'var(--pos)'}
+    />
+  )
+  const vals = (a: Asset) => (
+    <span className="num small" style={{ textAlign: 'right', lineHeight: 1.3 }}>
+      <b>{kfmt(a.sheet)}</b>
+      <br />
+      <span className="mute">{a.market == null ? 'no mkt' : kfmt(a.market)}</span>
+    </span>
+  )
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.2fr)', gap: 20, alignItems: 'start' }}>
+      <div className="stack" style={{ gap: 8 }}>
+        <label className="search-pill" style={{ width: '100%' }}>
+          <Icon name="search" size={18} stroke={2} style={{ color: 'var(--mute)' }} />
+          <input autoFocus placeholder="Any player or pick" value={q} onChange={e => setQ(e.target.value)} />
+        </label>
+        <span className="small mute" style={{ padding: '0 4px' }}>
+          Tyler’s value over the market’s. Add to the side that gets him.
+        </span>
+        {hits.map(a => (
+          <GradCard key={a.id} color={assetColor(a)} minHeight={56} style={{ gap: 10, padding: '6px 8px 6px 10px', borderRadius: 14 }}>
+            <AssetFace a={a} />
+            <Stack2 title={assetName(a)} size={14} sub={`${assetMeta(a)} · ${where(a)}`} subStyle={{ fontSize: 12 }} />
+            {vals(a)}
+            <Btn size="sm" label="A" onClick={() => x.vacAdd(a.id, 'a')} style={{ minWidth: 40 }} />
+            <Btn size="sm" label="B" onClick={() => x.vacAdd(a.id, 'b')} style={{ minWidth: 40 }} />
+          </GradCard>
+        ))}
+        {hits.length === 0 && <div className="card mute small">No player or pick matches “{q}”.</div>}
+      </div>
+
+      <div className="sticky hero" style={{ padding: 22, gap: 16 }}>
+        <div className="stack" style={{ gap: 6 }}>
+          <div style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.1, color: `var(--${txt.tone === 'mute' ? 'ink' : txt.tone})` }}>{txt.title}</div>
+          <span className="sub">{txt.line}</span>
+        </div>
+        {v && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {lensTile('Tyler’s sheet', v.tyler, v.tylerWinner)}
+            {lensTile('Market', v.market, v.marketWinner)}
+          </div>
+        )}
+        {(
+          [
+            ['Side A gets', vac.a],
+            ['Side B gets', vac.b],
+          ] as const
+        ).map(([title, items]) => (
+          <div key={title} className="stack" style={{ gap: 6 }}>
+            <span style={{ fontWeight: 700 }}>{title}</span>
+            {items.map(a => (
+              <GradCard key={a.id} color={assetColor(a)} minHeight={52} style={{ gap: 10, padding: '4px 4px 4px 10px', borderRadius: 14 }}>
+                <AssetFace a={a} size={36} />
+                <Stack2 title={assetName(a)} size={14} sub={where(a)} subStyle={{ fontSize: 12 }} />
+                {vals(a)}
+                <button onClick={() => x.vacRemove(a.id)} aria-label={`Remove ${a.name}`} style={{ width: 34, height: 34, borderRadius: 17, color: 'var(--mute)', fontSize: 18, textAlign: 'center' }}>
+                  ×
+                </button>
+              </GradCard>
+            ))}
+            {items.length === 0 && <div className="dashed">Add from the search on the left</div>}
+          </div>
+        ))}
+        {v && v.unpriced.length > 0 && (
+          <Notice bg="var(--surf2)" message={`No market price for ${v.unpriced.map(a => a.name).join(', ')}: the market lens uses Tyler’s value for them.`} />
+        )}
+        {(vac.a.length > 0 || vac.b.length > 0) && <Btn size="lg" label="Clear" onClick={x.vacClear} />}
+        <span className="small mute">Vacuum ignores teams: no partner, no demand, no roster spots. Tyler’s lens is his sheet as-is, the market’s is KeepTradeCut’s price, both in this league’s scoring and in effective value (one star beats a bundle).</span>
+      </div>
     </div>
   )
 }

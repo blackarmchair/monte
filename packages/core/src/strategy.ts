@@ -9,7 +9,7 @@
 // youth), its depth at the position, and starters it is missing this week. Ideas sell one asset at a time ("simplify, especially when selling") and buy one
 // target at a time, each with an ask (the most you can take while they still say yes) and a
 // settle (the most you can take while they clearly say yes).
-import { ET_NOISE, eff, evaluate, findPackages, type Asset, type EvalParams, type Package } from './tradeMath'
+import { ET_NOISE, eff, evaluate, findPackages, pickBar, type Asset, type EvalParams, type Package } from './tradeMath'
 
 export type Phase = 'offseason' | 'drafting' | 'inSeason'
 export type Mode = 'contend' | 'rebuild' | 'middle'
@@ -27,9 +27,6 @@ const INJURED = new Set(['IR', 'PUP', 'NFI'])
 /** Contend at or above this playoff chance, rebuild at or below. */
 const CONTEND_PCT = 0.6
 const REBUILD_PCT = 0.25
-/** Giving a future pick needs an obvious win: this much effective value, or this share of it. */
-const FUTURE_BAR = 500
-const FUTURE_SHARE = 0.3
 /** An idea must gain you at least this much effective value: the same size as the model's error bar. */
 const MIN_GAIN = ET_NOISE
 /** Rebuilding, a sell that brings back picks ranks ahead by this. */
@@ -141,9 +138,7 @@ export function heldPick(a: Asset, me: number, nextSeason: string): string | nul
 
 /** The bar a deal giving away future picks must clear, in effective value (0 when it gives none). */
 export function futureBar(give: Asset[], gamma: number): number {
-  const picks = give.filter(a => a.kind === 'pick')
-  if (!picks.length) return 0
-  return Math.max(FUTURE_BAR, FUTURE_SHARE * picks.reduce((s, a) => s + eff(mineOf(a), gamma), 0))
+  return pickBar(give.filter(a => a.kind === 'pick').reduce((s, a) => s + eff(mineOf(a), gamma), 0))
 }
 
 /** Every warning the builder shows for a give basket. */
@@ -299,7 +294,27 @@ export function demandModel(c: { assets: Asset[]; teams: StrategyTeam[]; phase: 
   }
 }
 
-export type Ideas = { mode: Mode; sells: Idea[]; buys: Idea[] }
+/**
+ * Two linked trades: your X to one team for Y, then Y to another team for Z. Each step is an
+ * ordinary two-team offer; the chain exists because the two teams value Y differently.
+ */
+export type Chain = {
+  first: IdeaDeal
+  second: IdeaDeal
+  /** your effective gain over both steps */
+  total: number
+  /** the best you could do selling X directly, one step */
+  direct: number
+  why: string[]
+}
+export type Ideas = { mode: Mode; sells: Idea[]; buys: Idea[]; chains: Chain[] }
+
+/** A chain must beat selling X directly by more than the model's error bar, or the extra step is noise. */
+const CHAIN_EDGE = ET_NOISE
+/** Only middle assets some other team values this much more than the seller does. */
+const CHAIN_SPREAD = 1.05
+/** Your assets shopped as a chain's first leg, highest value first. */
+const CHAIN_TOP = 12
 
 export function buildIdeas(c: StrategyCtx, limit = 8): Ideas {
   const held = (a: Asset) => !!heldPick(a, c.me, c.nextSeason)
@@ -355,7 +370,7 @@ export function buildIdeas(c: StrategyCtx, limit = 8): Ideas {
   }
 
   const top = (xs: Array<Idea & { score: number }>) => xs.sort((x, y) => y.score - x.score).slice(0, limit).map(({ score: _, ...i }) => i)
-  return { mode: c.mode, sells: top(sells), buys: top(buys) }
+  return { mode: c.mode, sells: top(sells), buys: top(buys), chains: buildChains(c, demand, params, held, limit) }
 }
 
 /** Per position, the PPG rank a weekly starter clears in this league: teams × (slots + flex share). */
@@ -373,4 +388,94 @@ export function starterLine(positions: string[], teams: number): Record<string, 
   const n: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 }
   for (const p of positions) for (const [pos, s] of Object.entries(share[p] ?? {})) n[pos] += s
   return Object.fromEntries(Object.entries(n).map(([pos, k]) => [pos, Math.round(k * teams)]))
+}
+
+/**
+ * Chains: X (yours) to B for Y, then Y to C for Z. Both steps must be a clear yes (two managers have
+ * to agree, so no coin flips); step one alone must not lose you value on Tyler's sheet, so being
+ * stuck holding Y is fine; and the whole must beat selling X directly by CHAIN_EDGE.
+ */
+function buildChains(
+  c: StrategyCtx,
+  demand: ReturnType<typeof demandModel>,
+  params: (t: StrategyTeam) => EvalParams,
+  held: (a: Asset) => boolean,
+  limit: number,
+): Chain[] {
+  const partners = c.teams.filter(t => t.roster_id !== c.me)
+  const poolOf = new Map(partners.map(t => [t.roster_id, c.assets.filter(a => a.owner === t.roster_id && !avoid(a, c.mode))]))
+  const shop = c.assets
+    .filter(a => a.owner === c.me && mineOf(a) > 0 && !held(a))
+    .sort((a, b) => mineOf(b) - mineOf(a))
+    .slice(0, CHAIN_TOP)
+  // "Team #3 is contending: veterans are worth more to them (+8%)" -> "contending: veterans are worth more to them"
+  const reasons = (a: Asset, t: StrategyTeam) => demand(a, t.roster_id).parts.map(q => q.text.replace(/ \([^)]*\)$/, '').replace(`${t.name} is `, '')).join('; ')
+  const pct = (x: number) => `${Math.round(x * 100)}%`
+  const out: Chain[] = []
+  for (const x of shop) {
+    // The bar: X's best direct sale to anyone, held to the same clear yes as each chain step.
+    let direct = 0
+    for (const t of partners) {
+      const best = bestSale(x, poolOf.get(t.roster_id)!, params(t))
+      if (best) direct = Math.max(direct, best.verdict.em)
+    }
+    let best: Chain | null = null
+    for (const b of partners) {
+      for (const y of poolOf.get(b.roster_id)!) {
+        // You hold Y between the steps, so it must be a pick Tyler lets you flip.
+        if (heldPick({ ...y, owner: c.me }, c.me, c.nextSeason)) continue
+        const dB = demand(y, b.roster_id).mult
+        const buyers = partners.filter(t => t.roster_id !== b.roster_id && demand(y, t.roster_id).mult >= dB * CHAIN_SPREAD)
+        if (!buyers.length) continue
+        const first = evaluate([x], [y], params(b))
+        if (first.em < 0 || first.et <= ET_NOISE) continue
+        for (const t of buyers) {
+          const second = bestSale(y, poolOf.get(t.roster_id)!, params(t))
+          if (!second) continue
+          const total = first.em + second.verdict.em
+          if (total < direct + CHAIN_EDGE || total < futureBar([y], c.gamma)) continue
+          if (best && total <= best.total) continue
+          const dT = demand(y, t.roster_id).mult
+          best = {
+            first: { get: [y], give: [x], verdict: first, partner: b.roster_id },
+            second: { ...second, give: [y], partner: t.roster_id },
+            total,
+            direct,
+            why: [
+              `${b.name} values ${y.name} at ${pct(dB)} of the market${dB !== 1 ? `: ${reasons(y, b)}` : ''}.`,
+              `${t.name} values him at ${pct(dT)}: ${reasons(y, t)}.`,
+            ],
+          }
+        }
+      }
+    }
+    if (best) out.push(best)
+  }
+  return out.sort((a, b) => b.total - b.direct - (a.total - a.direct)).slice(0, limit)
+}
+
+/**
+ * The best 1- or 2-asset return for selling `a` alone where they clearly say yes: the same answer
+ * as findPackages(...).find(et > ET_NOISE), without building and sorting every package. Each
+ * asset's value to you and to them is computed once; the winner is re-scored by evaluate().
+ */
+function bestSale(a: Asset, pool: Asset[], p: EvalParams): Package | null {
+  const me = pool.map(z => eff(mineOf(z), p.gamma))
+  const them = pool.map(z => eff(z.val * (p.demand?.(z) ?? 1), p.gamma))
+  const out = eff(mineOf(a), p.gamma)
+  const inn = eff(a.val * (p.demand?.(a) ?? 1), p.gamma)
+  const spot = p.meFull ? p.spotCost : 0
+  let bi = -1
+  let bj = -1
+  let bem = 0
+  for (let i = 0; i < pool.length; i++) {
+    if (inn - them[i] > ET_NOISE && me[i] - out > bem) [bi, bj, bem] = [i, -1, me[i] - out]
+    for (let j = i + 1; j < pool.length; j++) {
+      const em = me[i] + me[j] - out - spot
+      if (em > bem && inn - them[i] - them[j] > ET_NOISE) [bi, bj, bem] = [i, j, em]
+    }
+  }
+  if (bi < 0) return null
+  const get = bj < 0 ? [pool[bi]] : [pool[bi], pool[bj]]
+  return { get, verdict: evaluate([a], get, p) }
 }

@@ -109,6 +109,22 @@ export default function Settings() {
           ]}
         />
       </div>
+      <div style={line}>
+        <span className="stack" style={{ flex: 1 }}>
+          <span style={{ fontWeight: 600 }}>Rank board</span>
+          <span className="small mute">Which of Tyler's boards the ranks on Players and player pages use</span>
+        </span>
+        <Seg<'league' | 'tep' | 'plain'>
+          onSurf
+          value={settings.rankBoard ?? 'league'}
+          onChange={rankBoard => void setSettings({ rankBoard })}
+          options={[
+            { value: 'league', label: 'Match league' },
+            { value: 'tep', label: 'TE premium' },
+            { value: 'plain', label: 'No TE premium' },
+          ]}
+        />
+      </div>
 
       <div style={block}>
         <span className="small mute">Injury overrides</span>

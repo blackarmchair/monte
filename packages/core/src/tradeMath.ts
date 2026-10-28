@@ -111,6 +111,12 @@ export function evaluate(give: Asset[], get: Asset[], p: EvalParams): Verdict {
 /** Their side under ~200 effective is inside the model's error bar: a coin flip, not a yes. */
 export const ET_NOISE = 200
 
+/** Tyler: giving future picks away needs an obvious, clear win. The bar is this much effective
+ *  value, or this share of the picks' own effective value, whichever is more. */
+export const FUTURE_BAR = 500
+export const FUTURE_SHARE = 0.3
+export const pickBar = (picksEff: number) => (picksEff > 0 ? Math.max(FUTURE_BAR, FUTURE_SHARE * picksEff) : 0)
+
 export type Package = { get: Asset[]; verdict: Verdict }
 
 /**
@@ -199,4 +205,65 @@ export function pickValues(inp: PickInputs, season: string, round: number, dist:
     else market += p * m
   })
   return { sheet: sheet * disc, market: haveMarket ? market : null }
+}
+
+// --------------------------------------------------------------------------- vacuum
+/** One lens on a two-sided trade: what each side gets, in effective value, and A − B. */
+export type Lens = { a: number; b: number; diff: number }
+export type Side = 'a' | 'b' | 'even'
+export type VacuumVerdict = {
+  tyler: Lens
+  market: Lens
+  /** who each lens says comes out ahead ('even' = inside the error bar) */
+  tylerWinner: Side
+  marketWinner: Side
+  /** set when Tyler's pick rule decided his lens: the side that gets the picks, because the other
+   *  side's edge was too small to justify paying them */
+  pickRule: Side | null
+  /** assets the market has no price for (valued at Tyler's sheet on both lenses) */
+  unpriced: Asset[]
+}
+
+/**
+ * A trade with no teams: side A gets `a`, side B gets `b`. Scored twice in effective value, on
+ * Tyler's sheet as-is and on the raw market; no demand, no roster spots, no acceptance. When the
+ * lenses disagree, that gap is the arbitrage.
+ */
+export function vacuum(a: Asset[], b: Asset[], gamma: number): VacuumVerdict {
+  const lens = (v: (x: Asset) => number): Lens => {
+    const ta = a.reduce((s, x) => s + eff(v(x), gamma), 0)
+    const tb = b.reduce((s, x) => s + eff(v(x), gamma), 0)
+    return { a: ta, b: tb, diff: ta - tb }
+  }
+  const winner = (l: Lens): Side => (Math.abs(l.diff) <= ET_NOISE ? 'even' : l.diff > 0 ? 'a' : 'b')
+  const tyler = lens(x => x.sheet)
+  const market = lens(x => x.market ?? x.sheet)
+  // Tyler's pick rule on his lens: the side that pays picks must win by the bar, past the error
+  // bar, or the call goes to the side getting them ("if it's fair, take the pick").
+  const picks = (xs: Asset[]) => xs.filter(x => x.kind === 'pick').reduce((s, x) => s + eff(x.sheet, gamma), 0)
+  const pa = picks(a)
+  const pb = picks(b)
+  let tylerWinner = winner(tyler)
+  let pickRule: Side | null = null
+  if (pa !== pb) {
+    const getter: Side = pa > pb ? 'a' : 'b'
+    if (tylerWinner !== getter && Math.abs(tyler.diff) < pickBar(Math.abs(pa - pb)) + ET_NOISE) tylerWinner = pickRule = getter
+  }
+  return { tyler, market, tylerWinner, marketWinner: winner(market), pickRule, unpriced: [...a, ...b].filter(x => x.market == null) }
+}
+
+/** The vacuum verdict in words: a headline, a line under it, and its tone. */
+export function vacuumText(v: VacuumVerdict | null): { title: string; line: string; tone: 'pos' | 'acc' | 'mute' } {
+  if (!v) return { title: 'Add to both sides', line: 'Search any player or pick, then add it to side A or side B.', tone: 'mute' }
+  const who = (s: Side) => (s === 'even' ? 'even' : `side ${s.toUpperCase()}`)
+  const rule = v.pickRule ? ` Tyler’s pick rule decides it: the other side’s edge isn’t big enough to pay picks for, so take the picks.` : ''
+  if (v.tylerWinner === v.marketWinner)
+    return v.tylerWinner === 'even'
+      ? { title: 'Even trade', line: 'Tyler and the market both call it even.', tone: 'mute' }
+      : { title: `${who(v.tylerWinner).replace('side', 'Side')} wins`, line: `Tyler and the market agree: ${who(v.tylerWinner)} comes out ahead.${rule}`, tone: 'pos' }
+  return {
+    title: v.tylerWinner === 'even' ? 'Tyler calls it even' : `Tyler likes ${who(v.tylerWinner)}`,
+    line: `The market says ${who(v.marketWinner)}. That gap is the arbitrage: be the side Tyler likes, and the other manager will think they won.${rule}`,
+    tone: 'acc',
+  }
 }
