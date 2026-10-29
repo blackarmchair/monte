@@ -1,6 +1,6 @@
 // The desktop shell (hybrid 2b): a 248px sidebar with the wordmark, the league switcher, the five
 // sections and Settings; a 72px top bar with the page title and a search that filters Players
-// live; the page; a centred league modal and the toast. Player and Settings push over a section.
+// live; the page; a centred league modal and the toast. Player, Team and Settings push over a section.
 import { useEffect, useState } from 'react'
 import type { LeagueSummary, Settings } from '@shared/types'
 import Onboarding from './Onboarding'
@@ -13,6 +13,8 @@ import Trade from './Trade'
 import Players from './Players'
 import Picks from './Picks'
 import Player from './Player'
+import Team from './Team'
+import { teamLabel } from './names'
 import SettingsPage from './Settings'
 
 const SECTIONS: Array<{ id: Section; label: string; icon: IconName }> = [
@@ -58,13 +60,22 @@ function Shell() {
   const kicker = [context && context.week > 0 ? `wk ${context.week}` : null, me ? `${me.wins}-${me.losses}` : null, league ? formatLabel(league) : null]
     .filter(Boolean)
     .join(' · ')
-  const title = page ? (page.kind === 'player' ? page.name : 'Settings') : SECTIONS.find(s => s.id === section)!.label
+  const title = page
+    ? page.kind === 'player'
+      ? page.name
+      : page.kind === 'team'
+      ? app.hide
+        ? teamLabel(page.rid)
+        : page.name
+      : 'Settings'
+    : SECTIONS.find(s => s.id === section)!.label
 
   let body: React.ReactNode
   if (page?.kind === 'settings') body = <SettingsPage />
   else if (contextError) body = <ErrorBox message={`Could not load league: ${contextError}`} onRetry={loadContext} />
   else if (!context) body = <Loading label={selected ? 'Loading league…' : 'Loading your leagues…'} />
   else if (page?.kind === 'player') body = <Player key={page.id} id={page.id} fallbackName={page.name} />
+  else if (page?.kind === 'team') body = <Team key={page.rid} rid={page.rid} />
   else
     body = {
       league: <League key={context.league.league_id} />,

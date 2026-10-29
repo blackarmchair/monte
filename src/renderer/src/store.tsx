@@ -15,7 +15,7 @@ export type PicksSeg = 'odds' | 'draft'
 export type Forced = Record<number, number[]>
 
 export type Section = 'league' | 'lineup' | 'trade' | 'players' | 'picks'
-export type Page = { kind: 'player'; id: string; name: string } | { kind: 'settings' }
+export type Page = { kind: 'player'; id: string; name: string } | { kind: 'team'; rid: number; name: string } | { kind: 'settings' }
 type Toast = { msg: string; action?: { label: string; onClick: () => void } }
 
 type Runs<T> = Record<string, Run<T>>
@@ -56,13 +56,11 @@ type App = {
   setPicksSeg: (s: PicksSeg) => void
   forced: Forced
   setForced: (f: Forced) => void
-  /** the team shown in League's right-hand panel; null = yours */
-  leagueTeam: number | null
-  setLeagueTeam: (rid: number | null) => void
   section: Section
   page: Page | null
   go: (s: Section) => void
   openPlayer: (id: string, name: string) => void
+  openTeam: (rid: number, name: string) => void
   openSettings: () => void
   back: () => void
   /** the scroll container, so navigation can start a page at the top */
@@ -99,7 +97,6 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
   const [playersUi, setPlayersUiState] = useState<PlayersUi>(PLAYERS_UI)
   const [picksSeg, setPicksSeg] = useState<PicksSeg>('odds')
   const [forced, setForced] = useState<Forced>({})
-  const [leagueTeam, setLeagueTeam] = useState<number | null>(null)
   const [section, setSection] = useState<Section>('league')
   const [stack, setStack] = useState<Page[]>([])
   const [toast, setToast] = useState<Toast | null>(null)
@@ -136,7 +133,8 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
     setContextError(null)
     setTradeState(EMPTY_TRADE)
     setForced({})
-    setLeagueTeam(null)
+    // a team page belongs to the league it was opened in
+    setStack(s => s.filter(p => p.kind !== 'team'))
     void window.monte.leagueContext(selected, settings.userId).then(r => (r.ok ? setContext(r.value) : setContextError(r.error)))
   }, [selected, settings.userId])
   useEffect(() => {
@@ -239,13 +237,15 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
     setPicksSeg,
     forced,
     setForced,
-    leagueTeam,
-    setLeagueTeam,
     section,
     page: stack[stack.length - 1] ?? null,
     go,
     openPlayer(pid, name) {
       setStack(s => [...s.filter(p => !(p.kind === 'player' && p.id === pid)), { kind: 'player', id: pid, name }])
+      top()
+    },
+    openTeam(rid, name) {
+      setStack(s => [...s.filter(p => !(p.kind === 'team' && p.rid === rid)), { kind: 'team', rid, name }])
       top()
     },
     openSettings() {
