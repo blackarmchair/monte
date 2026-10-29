@@ -57,7 +57,7 @@ export type Asset = {
   /** Sleeper injury status (IR, Out, …), null when healthy */
   injury?: string | null
   yearsExp?: number | null
-  /** the market's recent trend as a share of its value (KeepTradeCut only) */
+  /** places gained (+) or lost (−) lately on the market's overall board (KeepTradeCut only) */
   trend?: number | null
   /** this season's positional PPG rank (in season only; null = no games) */
   ppgRank?: number | null

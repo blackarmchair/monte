@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
-import { tepBoardFor, tylerFor, tylerLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
+import { gameTable } from '@monte/core/gameLog'
+import { tepBoardFor, tylerFor, tylerLabel, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from '@/lib/trade'
@@ -230,32 +231,14 @@ function UsageCard({ usage }: { usage: { usagePPG: number | null; sleeperPPG: nu
   )
 }
 
-/** Five columns per position, in Sleeper's stat keys. */
-function columnsFor(pos: string): Array<{ k: string; get: (s: Record<string, number>) => number; low?: boolean }> {
-  const g = (key: string) => (s: Record<string, number>) => Number(s[key] ?? 0)
-  const ppr = { k: 'PPR', get: g('pts_ppr') }
-  if (pos === 'QB') return [ppr, { k: 'YDS', get: g('pass_yd') }, { k: 'TD', get: g('pass_td') }, { k: 'INT', get: g('pass_int'), low: true }, { k: 'RUSH', get: g('rush_yd') }]
-  if (pos === 'RB')
-    return [ppr, { k: 'ATT', get: g('rush_att') }, { k: 'YDS', get: g('rush_yd') }, { k: 'REC', get: g('rec') }, { k: 'TD', get: s => Number(s.rush_td ?? 0) + Number(s.rec_td ?? 0) }]
-  return [ppr, { k: 'TGT', get: g('rec_tgt') }, { k: 'REC', get: g('rec') }, { k: 'YDS', get: g('rec_yd') }, { k: 'TD', get: g('rec_td') }]
-}
-
 function StatsTab({ p, usage, proj }: { p: PlayerInfo; usage: number | null; proj: number | null }) {
   const t = useTheme()
-  const cols = columnsFor(p.pos)
-  const games: GameLog[] = p.games
-  const vals = games.map(gm => cols.map(c => c.get(gm.stats)))
-  const lo = cols.map((_, j) => Math.min(...vals.map(v => v[j])))
-  const hi = cols.map((_, j) => Math.max(...vals.map(v => v[j])))
-  const avg = cols.map((_, j) => (vals.length ? vals.reduce((s, v) => s + v[j], 0) / vals.length : 0))
-  const fmt = (j: number, x: number, mean = false) => (j === 0 ? x.toFixed(1) : mean && x < 10 ? x.toFixed(1) : String(Math.round(x)))
+  const tb = gameTable(p.pos, p.games)
   const cell = { height: 36, borderRadius: 8, alignItems: 'center' as const, justifyContent: 'center' as const }
-  const W = [30, 42]
-  const head = (label: string, i: number) => (
-    <Text key={label + i} style={{ width: W[i], flex: W[i] ? undefined : 1, textAlign: 'center', fontFamily: font.sansSemi, fontSize: 11, letterSpacing: 0.66, color: t.mute }}>
-      {label}
-    </Text>
-  )
+  const CW = 46 // each stat column; the block scrolls sideways past the screen edge
+  const gap = 5
+  const label = { textAlign: 'center' as const, fontFamily: font.sansSemi, fontSize: 11, letterSpacing: 0.66, color: t.mute }
+  const headH = 16
   return (
     <>
       <Row style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -266,55 +249,80 @@ function StatsTab({ p, usage, proj }: { p: PlayerInfo; usage: number | null; pro
           {p.pos} · PPR
         </T>
       </Row>
-      {games.length === 0 ? (
+      {tb.rows.length === 0 ? (
         <T c="mute" size={14}>
           No games yet this season.
         </T>
       ) : (
-        <View style={{ gap: 5 }}>
-          <View style={{ flexDirection: 'row', gap: 5 }}>{['WK', 'OPP', ...cols.map(c => c.k)].map(head)}</View>
-          {games.map((gm, i) => (
-            <View key={gm.week} style={{ flexDirection: 'row', gap: 5 }}>
-              <View style={[cell, { width: 30 }]}>
-                <T v="semi" size={14} c="mute" num>
-                  {gm.week}
-                </T>
-              </View>
-              <View style={[cell, { width: 42 }]}>
-                <T v="medium" size={14} c="ink2">
-                  {gm.opp}
-                </T>
-              </View>
-              {cols.map((c, j) => {
-                const x = vals[i][j]
-                let v = hi[j] === lo[j] ? 0.5 : (x - lo[j]) / (hi[j] - lo[j])
-                if (c.low) v = 1 - v
-                const h = heat(t, v)
-                return (
-                  <View key={c.k} style={[cell, { flex: 1, minWidth: 0, backgroundColor: h.bg }]}>
-                    <Text style={{ fontFamily: j === 0 ? font.sansBold : font.sansSemi, fontSize: 14, color: h.fg, fontVariant: ['tabular-nums'] }}>{fmt(j, x)}</Text>
-                  </View>
-                )
-              })}
+        <View style={{ flexDirection: 'row', gap }}>
+          {/* WK and OPP stay pinned while the stat columns scroll. */}
+          <View style={{ gap }}>
+            <View style={{ height: headH }} />
+            <View style={{ flexDirection: 'row', gap, height: headH }}>
+              <Text style={[label, { width: 30 }]}>WK</Text>
+              <Text style={[label, { width: 46 }]}>OPP</Text>
             </View>
-          ))}
-          <View style={{ flexDirection: 'row', gap: 5 }}>
+            {tb.rows.map(r => (
+              <View key={r.week} style={{ flexDirection: 'row', gap }}>
+                <View style={[cell, { width: 30 }]}>
+                  <T v="semi" size={14} c="mute" num>
+                    {r.week}
+                  </T>
+                </View>
+                <View style={[cell, { width: 46 }]}>
+                  <T v="medium" size={13} c="ink2">
+                    {r.opp}
+                  </T>
+                </View>
+              </View>
+            ))}
             <View style={[cell, { width: 30 }]}>
               <T v="bold" size={13} c="mute">
                 AVG
               </T>
             </View>
-            <View style={{ width: 42 }} />
-            {avg.map((x, j) => (
-              <View key={j} style={[cell, { flex: 1, minWidth: 0, backgroundColor: t.surf }]}>
-                <Text style={{ fontFamily: font.sansBold, fontSize: 14, color: t.ink, fontVariant: ['tabular-nums'] }}>{fmt(j, x, true)}</Text>
-              </View>
-            ))}
           </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+            <View style={{ gap }}>
+              <View style={{ flexDirection: 'row', gap, height: headH }}>
+                {tb.groups.map((g, i) => (
+                  <Text key={i} numberOfLines={1} style={[label, { width: g.span * CW + (g.span - 1) * gap, fontSize: 10, borderBottomWidth: 1, borderColor: t.surf2 }]}>
+                    {g.label.toUpperCase()}
+                  </Text>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', gap, height: headH }}>
+                {tb.cols.map((h, j) => (
+                  <Text key={j} style={[label, { width: CW }]}>
+                    {h}
+                  </Text>
+                ))}
+              </View>
+              {tb.rows.map(r => (
+                <View key={r.week} style={{ flexDirection: 'row', gap }}>
+                  {r.cells.map((c, j) => {
+                    const h = c.heat == null ? { bg: t.surf, fg: t.mute } : heat(t, c.heat)
+                    return (
+                      <View key={j} style={[cell, { width: CW, backgroundColor: h.bg }]}>
+                        <Text style={{ fontFamily: j === 0 ? font.sansBold : font.sansSemi, fontSize: 14, color: h.fg, fontVariant: ['tabular-nums'] }}>{c.text}</Text>
+                      </View>
+                    )
+                  })}
+                </View>
+              ))}
+              <View style={{ flexDirection: 'row', gap }}>
+                {tb.avg.map((x, j) => (
+                  <View key={j} style={[cell, { width: CW, backgroundColor: t.surf }]}>
+                    <Text style={{ fontFamily: font.sansBold, fontSize: 14, color: t.ink, fontVariant: ['tabular-nums'] }}>{x}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
         </View>
       )}
       <T v="small" c="mute">
-        Brighter cells are his best weeks in that stat.
+        Brighter cells are his best weeks in that stat. Swipe for more. RK is his PPR finish at {p.pos} that week; SNP% his share of offensive snaps; FL fumbles lost.
         {usage != null ? ` Usage ${n1(usage)} PPG vs projection ${n1(proj)}.` : ''}
       </T>
     </>

@@ -1,12 +1,13 @@
 // Team (a full page, pushed from League): a team-coloured hero with the verdict and the next move,
-// four heat tiles (value, starters, age, picks), then the roster one position at a time. Tap a
-// player for his page.
+// four heat tiles (value, starters, age, picks), then the roster: all of it or one position, sorted
+// by value, position, age or starters first. Tap a player for his page.
 import { useState } from 'react'
 import { View } from 'react-native'
 import { useLocalSearchParams } from 'expo-router'
 import { useApp } from '@/lib/store'
 import AppHeader from '@/ui/AppHeader'
-import { Btn, ErrorBox, GradCard, Headshot, HeatTiles, Loading, ORD, Pills, Screen, Stack2, T, Tag, TeamAvatar, num } from '@/ui/kit'
+import { Btn, ErrorBox, GradCard, Headshot, HeatTiles, Loading, ORD, Pills, Screen, Seg, Stack2, T, Tag, TeamAvatar, num } from '@/ui/kit'
+import { ROSTER_SORT, ROSTER_SORTS, type RosterSort } from '@monte/core/rosterSort'
 import { grad, nflColor, R, rankHeat, teamColor, useTheme } from '@/ui/theme'
 import { headline, POS, record, statusTag, thinnest, useOverview, verdict, type Pos, type TeamRow } from './overviewLogic'
 
@@ -36,9 +37,10 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
   const team = row.team
   const mine = team.roster_id === context?.myRosterId
   const need = thinnest(row)
-  const [tab, setTab] = useState<Pos | 'Picks'>('QB')
-  const players = tab === 'Picks' ? [] : team.players.filter(x => x.pos === tab).sort((a, b) => b.value - a.value)
-  const room = tab === 'Picks' ? null : row.pos[tab]
+  const [tab, setTab] = useState<Pos | 'All' | 'Picks'>('All')
+  const [sort, setSort] = useState<RosterSort>('value')
+  const players = tab === 'Picks' ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[sort])
+  const room = tab === 'Picks' || tab === 'All' ? null : row.pos[tab]
 
   return (
     <Screen pad={false} gap={18}>
@@ -79,8 +81,13 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
         padX={16}
         value={tab}
         onChange={setTab}
-        options={[...POS.map(p => ({ value: p as Pos | 'Picks', label: `${p} #${row.pos[p].rank}` })), { value: 'Picks' as const, label: `Picks #${row.ranks.picks}` }]}
+        options={[
+          { value: 'All' as const, label: `All ${team.players.length}` },
+          ...POS.map(p => ({ value: p as Pos | 'All' | 'Picks', label: `${p} #${row.pos[p].rank}` })),
+          { value: 'Picks' as const, label: `Picks #${row.ranks.picks}` },
+        ]}
       />
+      {tab !== 'Picks' && <Seg fill value={sort} onChange={setSort} options={ROSTER_SORTS} style={{ marginHorizontal: 16 }} />}
 
       <View style={{ paddingHorizontal: 16, gap: 8 }}>
         {players.map(x => {
@@ -88,7 +95,7 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
           return (
             <GradCard key={x.id} color={nflColor(t, x.team)} onPress={() => openPlayer(x.id, x.name)} accessibilityLabel={x.name}>
               <Headshot id={x.id} name={x.name} />
-              <Stack2 title={x.name} sub={[x.team, x.age, x.starter ? 'Starter' : null].filter(v => v != null && v !== '').join(' · ')} />
+              <Stack2 title={x.name} sub={[tab === 'All' ? x.pos : null, x.team, x.age, x.starter ? 'Starter' : null].filter(v => v != null && v !== '').join(' · ')} />
               {tag && <Tag label={tag.label} tone={tag.tone} />}
               <T v="bold" num>
                 {x.rank ? num(x.value) : '–'}
@@ -113,7 +120,9 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
         <T v="small" c="mute" style={{ paddingTop: 4 }}>
           {room
             ? `${tab} room: ${num(room.value)} total value, avg age ${room.age?.toFixed(1) ?? '—'}.`
-            : `${row.picks.length} pick${row.picks.length === 1 ? '' : 's'}: ${num(row.pickValue)} total value.`}
+            : tab === 'Picks'
+            ? `${row.picks.length} pick${row.picks.length === 1 ? '' : 's'}: ${num(row.pickValue)} total value.`
+            : `${team.players.length} players.`}
         </T>
       </View>
     </Screen>

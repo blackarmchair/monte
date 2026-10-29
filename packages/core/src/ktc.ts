@@ -9,7 +9,7 @@ export type KtcRow = {
   pos: string
   one: number[]
   sf: number[]
-  /** recent trade-value trend as a share of value: 1QB, Superflex */
+  /** places gained (+) or lost (−) lately on KTC's trade-derived overall board: 1QB, Superflex */
   trend: [number, number]
 }
 
@@ -22,7 +22,7 @@ export function parseKtc(html: string): KtcRow[] {
   if (end < 0) throw new Error('KeepTradeCut page has no player data (the page layout changed?)')
   const raw = JSON.parse(html.slice(start, end)) as any[]
   const vals = (f: any) => [f?.vftValue ?? f?.value, ...TIERS.map(t => f?.[t]?.vftValue ?? f?.[t]?.value)].map(v => Number(v) || 0)
-  const trend = (f: any) => (Number(f?.vftValue) > 0 ? (Number(f?.vftOverallTrend) || 0) / Number(f.vftValue) : 0)
+  const trend = (f: any) => Number(f?.vftOverallTrend) || 0
   const rows = raw
     .filter(p => p?.playerName && p?.position)
     .map(p => ({

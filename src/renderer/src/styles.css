@@ -532,3 +532,15 @@ button.gcard:hover:not(:disabled),
   flex-direction: column;
   gap: 16px;
 }
+
+/* Players list: the stat columns between name and value chip; they give way on a narrow window */
+.pstats {
+  display: grid;
+  gap: 12px;
+  flex: none;
+}
+@media (max-width: 1000px) {
+  .pstats {
+    display: none;
+  }
+}

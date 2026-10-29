@@ -5,14 +5,14 @@
 // than another does). Vacuum scores any two sides of players and picks, rostered or not, on Tyler's
 // sheet and on the market, with no teams at all. A verdict bar floats above the tab bar while the trade has anything in it;
 // Review opens the full read and the send.
-import { useMemo, useState } from 'react'
-import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
+import { useMemo, useRef, useState, type RefObject } from 'react'
+import { Linking, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 import { vacuumText, type Asset, type Side } from '@monte/core/tradeMath'
 import { MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from '@/lib/trade'
-import { Btn, Card, Check, ErrorBox, Field, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, Notice, Pills, Row, Section, Seg, Slider, StatTile, Stack2, T, TeamAvatar, num, signed, useTopOnFocus } from '@/ui/kit'
+import { Btn, Card, Check, ErrorBox, Field, GradCard, Headshot, HeatTiles, kfmt, Loading, NeedsSheet, Notice, Pills, Row, Section, Seg, Slider, StatTile, Stack2, T, TeamAvatar, num, signed, useKeyboardHeight, useTopOnFocus } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
 import { font, heat, nflColor, R, teamColor, useTheme, type Palette } from '@/ui/theme'
 import SleeperConnect from './SleeperConnect'
@@ -32,6 +32,9 @@ export default function Trade() {
   const x = useTrade()
   const scroll = useTopOnFocus<ScrollView>()
   const { d, res, partner, give, get, count } = x
+  // With the keyboard up, leave room under the content so a field near the bottom can scroll clear of it.
+  const kb = useKeyboardHeight()
+  const { height: screenH } = useWindowDimensions()
 
   // Ideas first when there is nothing being built.
   const [tab, setTab] = useState<'build' | 'ideas' | 'vacuum'>(count === 0 ? 'ideas' : 'build')
@@ -52,7 +55,11 @@ export default function Trade() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <ScrollView ref={scroll} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: count ? 110 : 28, gap: 20 }}>
+      <ScrollView
+        ref={scroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: (count ? 110 : 28) + (kb ? kb + screenH / 2 : 0), gap: 20 }}
+      >
         {res && !res.ok && <ErrorBox message={res.error} onRetry={x.load} />}
         {!res && <Loading label="Pricing every roster…" />}
 
@@ -69,7 +76,7 @@ export default function Trade() {
           />
         )}
 
-        {d && tab === 'vacuum' && <VacuumView />}
+        {d && tab === 'vacuum' && <VacuumView scroll={scroll} />}
 
         {d && tab === 'ideas' && <IdeasView onOpen={() => setTab('build')} />}
 
@@ -626,10 +633,19 @@ function ChainCard({ ch, onOpen }: { ch: Chain; onOpen: () => void }) {
 }
 
 /** Vacuum: the two lenses on top, both sides, then search any player or pick to add. */
-function VacuumView() {
+function VacuumView({ scroll }: { scroll: RefObject<ScrollView | null> }) {
   const t = useTheme()
   const x = useTrade()
   const [q, setQ] = useState('')
+  // Focusing the search lifts it to the top of the screen, so its results show between it and the keyboard.
+  const addRef = useRef<View>(null)
+  const lift = () => {
+    const sv = scroll.current
+    // The content view, as a ref on the new architecture (untyped) or a node handle on the old.
+    const inner = (sv as any)?.getInnerViewRef?.() ?? sv?.getInnerViewNode()
+    if (!sv || !inner || !addRef.current) return
+    addRef.current.measureLayout(inner as any, (_x, y) => sv.scrollTo({ y: Math.max(0, y - 8), animated: true }))
+  }
   const { vac, vacVerdict: v } = x
   const hits = useMemo(() => {
     const n = q.trim().toLowerCase()
@@ -699,9 +715,9 @@ function VacuumView() {
       ))}
       {v && v.unpriced.length > 0 && <Notice message={`No market price for ${v.unpriced.map(a => a.name).join(', ')}: the market lens uses Tyler’s value for them.`} />}
       {(vac.a.length > 0 || vac.b.length > 0) && <Btn label="Clear" onPress={x.vacClear} />}
-      <View style={{ gap: 8 }}>
+      <View ref={addRef} style={{ gap: 8 }}>
         <Section title="Add" />
-        <Field placeholder="Any player or pick" value={q} onChangeText={setQ} />
+        <Field placeholder="Any player or pick" value={q} onChangeText={setQ} onFocus={() => setTimeout(lift, 250)} />
         {hits.map(a => (
           <GradCard key={a.id} color={assetColor(t, a)} minHeight={60} style={{ paddingVertical: 8, paddingLeft: 12, paddingRight: 8, gap: 8 }}>
             <AssetFace a={a} size={38} />

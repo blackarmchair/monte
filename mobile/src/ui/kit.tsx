@@ -1,9 +1,10 @@
 // Monte's mobile building blocks, to the hybrid handoff (2b, warm): IBM Plex Sans at 15px, meta at
 // 13px, numbers in tabular figures; rounded cards on surf or tinted by team colour, heat chips,
 // fully round pill controls, and no 1px dividers: items sit 8px apart. Colours only from the theme.
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -97,6 +98,24 @@ export function useTopOnFocus<R extends Scrollable>() {
     }, []),
   )
   return ref
+}
+
+/**
+ * The on-screen keyboard's height, 0 when it's down. Android runs edge-to-edge (Expo 57), so the
+ * window no longer shrinks for the keyboard: a scroll view pads its bottom by this to reach fields
+ * and results that would sit under it.
+ */
+export function useKeyboardHeight() {
+  const [h, setH] = useState(0)
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e => setH(e.endCoordinates.height))
+    const hide = Keyboard.addListener('keyboardDidHide', () => setH(0))
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+  }, [])
+  return h
 }
 
 /** A scrolling screen body: 16px gutters, 4px under the header. `bottom` clears a floating bar. */

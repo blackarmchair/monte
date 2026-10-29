@@ -31,7 +31,7 @@ const MUTATION = `mutation lineup($round: Int!, $leg: Int!, $league_id: Snowflak
   update_matchup_leg(round: $round, leg: $leg, league_id: $league_id, roster_id: $roster_id, starters: $starters) { roster_id round leg starters }
 }`
 
-async function gql<T>(query: string, variables: Record<string, unknown>, token: string, fetchFn: typeof fetch): Promise<T> {
+export async function gql<T>(query: string, variables: Record<string, unknown>, token: string, fetchFn: typeof fetch = fetch): Promise<T> {
   const res = await fetchFn(SLEEPER_GRAPHQL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: token.trim(), 'user-agent': 'Monte (dynasty desk)' },

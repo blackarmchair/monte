@@ -3,6 +3,7 @@
 
 import type { LineupWrite } from './sleeperLineup'
 import type { TradeProposal } from './sleeperTrade'
+import type { LeagueTrades, LeagueWeek } from './leagueWeek'
 
 export type Theme = 'light' | 'dark' | 'system'
 
@@ -21,7 +22,7 @@ export type ManualInjury = {
 export type PlayerHit = { id: string; name: string; pos: string; team: string; injury: string }
 
 /** One game from Sleeper's per-player weekly stats (stat keys as Sleeper names them). */
-export type GameLog = { week: number; opp: string; stats: Record<string, number> }
+export type GameLog = { week: number; opp: string; away?: boolean; stats: Record<string, number> }
 
 /** A player's Sleeper record and this season's games, for the player page. */
 /** A player's place on Tyler's overall board: overall rank and rank within his position. */
@@ -504,6 +505,10 @@ export type MonteApi = {
   connectSleeper(token: string): Promise<Result<Settings>>
   disconnectSleeper(): Promise<Settings>
   /** Send a trade offer in Sleeper. `needsConnect` means connect (again) and retry. */
+  /** this week's matchups with Monte's win chance */
+  leagueWeek(leagueId: string): Promise<Result<LeagueWeek>>
+  /** completed trades, and your open offers when Sleeper is connected */
+  leagueTrades(leagueId: string): Promise<Result<LeagueTrades>>
   proposeTrade(p: TradeProposal): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>
   /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */
   setLineup(w: LineupWrite): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>

@@ -1,7 +1,11 @@
-// League: where you stand and Standings on the left; on the right (sticky) the selected team, which
-// is yours until you click another: its verdict, four heat tiles and its roster one position at a
-// time. This panel is the desktop's Team page.
+// League, three tabs. Standings: where you stand and the table on the left; on the right (sticky)
+// the selected team, which is yours until you click another: its verdict, four heat tiles and its
+// roster, all of it or one position, sorted as you like. This panel is the desktop's Team page.
+// Matchups: this week's pairs, yours first and open, with Monte's win chance. Trades: your open
+// offers (Sleeper connected) and the league's completed trades.
 import { useMemo, useState } from 'react'
+import { ROSTER_SORT, ROSTER_SORTS, type RosterSort } from '@shared/rosterSort'
+import { Matchups, Trades } from './LeagueTabs'
 import { useApp } from './store'
 import { Btn, ErrorBox, GradCard, Headshot, HeatChip, HeatTiles, kfmt, Loading, NeedsSheet, nflColor, num, ORD, Pills, RING, RING_SOFT, Seg, Stack2, Tag, TeamAvatar, grad, teamColor, useHeat } from './ui'
 import { headline, POS, record, statusTag, thinnest, useOverview, verdict, type Pos, type TeamRow } from './overviewLogic'
@@ -13,19 +17,35 @@ const SORTS: Array<{ value: Sort; label: string }> = [
   { value: 'record', label: 'Record' },
 ]
 
+type Tab = 'standings' | 'matchups' | 'trades'
+
 export default function League() {
+  const [tab, setTab] = useState<Tab>('standings')
+  return (
+    <div className="page stack" style={{ gap: 20 }}>
+      <Seg
+        lg
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'standings', label: 'Standings' },
+          { value: 'matchups', label: 'Matchups' },
+          { value: 'trades', label: 'Trades' },
+        ]}
+      />
+      {tab === 'standings' ? <Standings /> : tab === 'matchups' ? <Matchups /> : <Trades />}
+    </div>
+  )
+}
+
+function Standings() {
   const { context, sheet, findTargets, leagueTeam, setLeagueTeam } = useApp()
   const { res, data, rows, n, load, simBusy, simError, runBB } = useOverview()
   const { rank } = useHeat()
   const [sort, setSort] = useState<Sort>('overall')
   const ordered = useMemo(() => [...rows].sort((a, b) => (a.ranks[sort] ?? 99) - (b.ranks[sort] ?? 99)), [rows, sort])
 
-  if (!sheet)
-    return (
-      <div className="page">
-        <NeedsSheet />
-      </div>
-    )
+  if (!sheet) return <NeedsSheet />
 
   const me = context?.myRosterId ?? null
   const myRow = rows.find(r => r.team.roster_id === me)
@@ -33,7 +53,7 @@ export default function League() {
   const shown = rows.find(r => r.team.roster_id === (leagueTeam ?? me)) ?? myRow
 
   return (
-    <div className="page" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.1fr)', gap: 24, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.1fr)', gap: 24, alignItems: 'start' }}>
       <div className="stack" style={{ gap: 20 }}>
         {myRow && need && (
           <div className="hero" style={{ padding: 24 }}>
@@ -108,9 +128,10 @@ function TeamPanel({ row, n }: { row: TeamRow; n: number }) {
   const team = row.team
   const mine = team.roster_id === context?.myRosterId
   const need = thinnest(row)
-  const [tab, setTab] = useState<Pos | 'Picks'>('QB')
-  const players = tab === 'Picks' ? [] : team.players.filter(x => x.pos === tab).sort((a, b) => b.value - a.value)
-  const room = tab === 'Picks' ? null : row.pos[tab]
+  const [tab, setTab] = useState<Pos | 'All' | 'Picks'>('All')
+  const [sort, setSort] = useState<RosterSort>('value')
+  const players = tab === 'Picks' ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[sort])
+  const room = tab === 'Picks' || tab === 'All' ? null : row.pos[tab]
 
   return (
     <div className="sticky stack" style={{ gap: 16 }}>
@@ -140,15 +161,25 @@ function TeamPanel({ row, n }: { row: TeamRow; n: number }) {
       <Pills
         value={tab}
         onChange={setTab}
-        options={[...POS.map(p => ({ value: p as Pos | 'Picks', label: `${p} #${row.pos[p].rank}` })), { value: 'Picks' as const, label: `Picks #${row.ranks.picks}` }]}
+        options={[
+          { value: 'All' as const, label: `All ${team.players.length}` },
+          ...POS.map(p => ({ value: p as Pos | 'All' | 'Picks', label: `${p} #${row.pos[p].rank}` })),
+          { value: 'Picks' as const, label: `Picks #${row.ranks.picks}` },
+        ]}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+      {tab !== 'Picks' && (
+        <div className="row" style={{ gap: 10 }}>
+          <span className="small mute">Sort</span>
+          <Seg value={sort} onChange={setSort} options={ROSTER_SORTS} />
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: tab === 'All' ? 6 : 8 }}>
         {players.map(x => {
           const tag = statusTag(x)
           return (
-            <GradCard key={x.id} color={nflColor(x.team)} onClick={() => openPlayer(x.id, x.name)} style={{ padding: '10px 14px' }}>
-              <Headshot id={x.id} name={x.name} size={42} />
-              <Stack2 title={x.name} sub={[x.team, x.age, x.starter ? 'Starter' : null].filter(v => v != null && v !== '').join(' · ')} />
+            <GradCard key={x.id} color={nflColor(x.team)} minHeight={tab === 'All' ? 54 : undefined} onClick={() => openPlayer(x.id, x.name)} style={{ padding: tab === 'All' ? '6px 12px' : '10px 14px' }}>
+              <Headshot id={x.id} name={x.name} size={tab === 'All' ? 36 : 42} />
+              <Stack2 title={x.name} sub={[tab === 'All' ? x.pos : null, x.team, x.age, x.starter ? 'Starter' : null].filter(v => v != null && v !== '').join(' · ')} />
               {tag && <Tag label={tag.label} tone={tag.tone} />}
               <span className="num" style={{ fontWeight: 700, fontSize: 14 }}>
                 {x.rank ? num(x.value) : '–'}

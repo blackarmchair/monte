@@ -10,6 +10,8 @@ import { buildRanks, tylerIndex } from './ranks'
 import { buildStartSit, type SeasonStats } from './startSit'
 import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
 import { ktcTier, parseKtc, type KtcRow } from './ktc'
+import { buildLeagueWeek, fetchPending, normaliseTrade, type LeagueTrades, type LeagueWeek } from './leagueWeek'
+import { SleeperAuthError } from './sleeperTrade'
 import { FC_SCORING } from './tradeMath'
 import type {
   BBResult,
@@ -206,7 +208,7 @@ export function createMonteService(host: Host) {
     const byWeek = ((await res.json()) ?? {}) as Record<string, any>
     const games = Object.values(byWeek)
       .filter(w => w && w.stats && Number(w.stats.gp) > 0)
-      .map(w => ({ week: Number(w.week), opp: String(w.opponent ?? ''), stats: w.stats as Record<string, number> }))
+      .map(w => ({ week: Number(w.week), opp: String(w.opponent ?? ''), away: Boolean(w.is_away_team), stats: w.stats as Record<string, number> }))
       .sort((a, b) => a.week - b.week)
     logMem.set(key, { at: Date.now(), games })
     return games
@@ -255,7 +257,7 @@ export function createMonteService(host: Host) {
    * (and flagged) on a failure. Returns null when there is neither, and the caller falls back.
    */
   async function keepTradeCut(): Promise<{ asOf: string; rows: KtcRow[]; stale: boolean } | null> {
-    const key = 'market_ktc.json'
+    const key = 'market_ktc_v2.json' // v2: trend is rank places, not a share of value
     const cached = await cachedJson<{ asOf: string; rows: KtcRow[] }>(key)
     if (cached && Date.now() - Date.parse(cached.asOf) < 12 * 3600 * 1000) return { ...cached, stale: false }
     try {
@@ -288,6 +290,21 @@ export function createMonteService(host: Host) {
     const rec = Number(league.scoring_settings?.rec ?? 1)
     const fc = await fantasyCalc({ teams, qbs: superflex ? 2 : 1, ppr: rec >= 0.75 ? 1 : rec >= 0.25 ? 0.5 : 0 })
     return { source: 'FantasyCalc', rows: fromFantasyCalc(fc.rows), asOf: fc.asOf, stale: fc.stale, scoring: FC_SCORING }
+  }
+
+  // Sleeper's weekly projections, as stat lines by player. They shift through the week (injury news), so 30 minutes.
+  const projMem = new Map<string, { at: number; lines: Record<string, Record<string, number>> }>()
+  async function weekProjections(season: string, week: number) {
+    const key = `${season}|${week}`
+    const hit = projMem.get(key)
+    if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.lines
+    const pos = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map(p => `position%5B%5D=${p}`).join('&')
+    const res = await fetch(`https://api.sleeper.com/projections/nfl/${season}/${week}?season_type=regular&${pos}`)
+    if (!res.ok) throw new Error(`Sleeper's projections returned ${res.status}`)
+    const lines: Record<string, Record<string, number>> = {}
+    for (const r of (await res.json()) as any[]) if (r?.player_id && r.stats) lines[String(r.player_id)] = r.stats
+    projMem.set(key, { at: Date.now(), lines })
+    return lines
   }
 
   async function league4(leagueId: string, traded = true) {
@@ -511,6 +528,52 @@ export function createMonteService(host: Host) {
         season,
         games: await gameLogs(id, season),
         tyler: tyler ? tyler.get(id) ?? { plain: null, tep: null } : null,
+      }
+    },
+
+    /** This week's head-to-head pairs: scores so far, starters, and Monte's win chance. */
+    async leagueWeek(leagueId: string): Promise<LeagueWeek> {
+      const state = await sleeper<any>('/state/nfl')
+      const season = String(state.league_season || state.season)
+      const week = Number(state.display_week || state.week) || 1
+      const [[league, rosters, users], matchups, projections, schedule, meta] = await Promise.all([
+        league4(leagueId, false),
+        sleeper<any[]>(`/league/${leagueId}/matchups/${week}`),
+        weekProjections(season, week),
+        nflSchedule(season),
+        playersMeta(),
+      ])
+      return buildLeagueWeek({ league, rosters, users, matchups: matchups ?? [], projections, schedule, meta, season, week })
+    },
+
+    /**
+     * The league's completed trades this season (public), and with a session token your open
+     * offers. A refused token or a GraphQL failure only empties `pending`, with a note.
+     */
+    async leagueTrades(leagueId: string, token: string | null): Promise<LeagueTrades> {
+      const state = await sleeper<any>('/state/nfl')
+      const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
+      const legs = Array.from({ length: week }, (_, i) => i + 1)
+      const [[, rosters], meta, byLeg] = await Promise.all([
+        league4(leagueId, false),
+        playersMeta(),
+        Promise.all(legs.map(l => sleeper<any[]>(`/league/${leagueId}/transactions/${l}`).catch(() => [] as any[]))),
+      ])
+      const rosterOf = new Map<string, number>()
+      for (const r of rosters) for (const u of [r.owner_id, ...(r.co_owners ?? [])]) if (u) rosterOf.set(String(u), r.roster_id)
+      const norm = (t: any) => normaliseTrade(t, meta, u => rosterOf.get(u) ?? null)
+      const recent = byLeg
+        .flat()
+        .filter(t => t?.type === 'trade' && t.status === 'complete')
+        .map(norm)
+        .sort((a, b) => b.created - a.created)
+      if (!token) return { pending: null, pendingNote: 'Connect Sleeper in Settings to see your open offers.', recent }
+      try {
+        const pending = (await fetchPending(leagueId, legs, token)).map(norm).sort((a, b) => b.created - a.created)
+        return { pending, pendingNote: null, recent }
+      } catch (e) {
+        const note = e instanceof SleeperAuthError ? 'Sleeper refused the saved token, so open offers are hidden. Connect Sleeper again in Settings.' : `Couldn’t read open offers: ${e instanceof Error ? e.message : String(e)}`
+        return { pending: null, pendingNote: note, recent }
       }
     },
 

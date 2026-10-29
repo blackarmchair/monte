@@ -1,11 +1,12 @@
-// League (the default tab): a hero with where you stand and the one next move, then Standings:
-// one team-coloured card per team with a heat chip for the sorted metric, or the value-vs-starters
-// map. Tap a team for its page.
+// League (the default tab), three tabs. Standings: a hero with where you stand and the one next
+// move, then one team-coloured card per team with a heat chip for the sorted metric, or the
+// value-vs-starters map; tap a team for its page. Matchups and Trades live in LeagueTabs.
 import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { useApp } from '@/lib/store'
 import { Btn, ErrorBox, GradCard, HeatChip, Hero, kfmt, Loading, NeedsSheet, Section, Seg, Stack2, T, TeamAvatar, useTopOnFocus } from '@/ui/kit'
 import { font, R, rankHeat, ring, teamColor, useTheme } from '@/ui/theme'
+import { Matchups, Trades } from './LeagueTabs'
 import { record, thinnest, useOverview, type TeamRow } from './overviewLogic'
 
 type Sort = 'overall' | 'starter' | 'record' | 'map'
@@ -21,6 +22,7 @@ export default function League() {
   const { context, sheet, findTargets, openTeam } = useApp()
   const { res, data, rows, n, load, simBusy, simError, runBB } = useOverview()
   const [sort, setSort] = useState<Sort>('overall')
+  const [tab, setTab] = useState<'standings' | 'matchups' | 'trades'>('standings')
   const scroll = useTopOnFocus<ScrollView>()
   const by = sort === 'map' ? 'overall' : sort
   const ordered = useMemo(() => [...rows].sort((a, b) => (a.ranks[by] ?? 99) - (b.ranks[by] ?? 99)), [rows, by])
@@ -33,7 +35,19 @@ export default function League() {
 
   return (
     <ScrollView ref={scroll} style={{ flex: 1, backgroundColor: t.bg }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 28, gap: 20 }}>
-      {myRow && need && (
+      <Seg
+        fill
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'standings', label: 'Standings' },
+          { value: 'matchups', label: 'Matchups' },
+          { value: 'trades', label: 'Trades' },
+        ]}
+      />
+      {tab === 'matchups' && <Matchups />}
+      {tab === 'trades' && <Trades />}
+      {tab === 'standings' && myRow && need && (
         <Hero>
           <T v="small" c="mute">
             {[context && context.week > 0 ? `Week ${context.week}` : null, record(myRow.team), myRow.tier?.name].filter(Boolean).join(' · ')}
@@ -48,11 +62,11 @@ export default function League() {
         </Hero>
       )}
 
-      {res && !res.ok && <ErrorBox message={res.error} onRetry={load} />}
-      {simError && <ErrorBox message={`Starter ranks need the sim, which failed: ${simError}`} onRetry={() => runBB()} />}
-      {!data && !(res && !res.ok) && <Loading label="Reading your rankings file…" />}
+      {tab === 'standings' && res && !res.ok && <ErrorBox message={res.error} onRetry={load} />}
+      {tab === 'standings' && simError && <ErrorBox message={`Starter ranks need the sim, which failed: ${simError}`} onRetry={() => runBB()} />}
+      {tab === 'standings' && !data && !(res && !res.ok) && <Loading label="Reading your rankings file…" />}
 
-      {data && (
+      {tab === 'standings' && data && (
         <View style={{ gap: 10 }}>
           <Section title="Standings" />
           <Seg fill value={sort} onChange={setSort} options={SORTS} />

@@ -1,9 +1,10 @@
-// Player (pushed from anywhere a player shows): a sticky profile card on the left (NFL-colour hero
-// with his headshot, name, chips and a 3×2 bio), everything else on the right at once. Value: sheet
-// against market. Trade: who has him, the one action and a deal Monte found. Injury: the override
-// every model uses. Stats: this season's games, every cell heat-coloured within its column.
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { tepBoardFor, tylerFor, tylerLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
+// Player (pushed from anywhere a player shows): the profile card (NFL-colour hero with his headshot,
+// name, chips and a 3×2 bio) beside Value (sheet against market), with Injury (the override every
+// model uses) and Trade (who has him, the one action and a deal Monte found) as two cards under it.
+// Stats run the full width below: this season's games, every cell heat-coloured within its column.
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { gameTable } from '@shared/gameLog'
+import { tepBoardFor, tylerFor, tylerLabel, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
 import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Stepper, StatTile, useHeat } from './ui'
@@ -54,8 +55,8 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
   const tylerText = p?.tyler ? tylerLabel(tyler, pos) ?? 'Not on Tyler’s board' : null
 
   return (
-    <div className="page" style={{ display: 'grid', gridTemplateColumns: '360px minmax(0,1fr)', gap: 28, alignItems: 'start' }}>
-      <div className="sticky stack" style={{ gap: 16 }}>
+    <div className="page stack" style={{ gap: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '360px minmax(0,1fr)', gap: 28, alignItems: 'start' }}>
         <div style={{ borderRadius: 22, overflow: 'hidden', background: 'var(--card)' }}>
           <div style={{ position: 'relative', height: 250, background: heroGrad(nflColor(nfl)), display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden' }}>
             <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 72, fontWeight: 700, opacity: 0.18 }}>{initialsOf(name)}</span>
@@ -95,18 +96,18 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
             </div>
           </div>
         </div>
-        <InjuryTab id={id} name={name} pos={pos} team={nfl} sleeperTag={p?.injury ?? ''} />
-      </div>
 
-      <div className="stack" style={{ gap: 28, minWidth: 0 }}>
-        <Section title="Value">
-          <ValueTab id={id} usage={usage} ranks={d?.ranks[id]} />
-        </Section>
-        <Section title="Trade">
-          <TradeTab id={id} name={name} owner={owner} />
-        </Section>
-        {info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab p={info.value} usage={usage} />}
+        <div className="stack" style={{ gap: 20, minWidth: 0 }}>
+          <Section title="Value">
+            <ValueTab id={id} usage={usage} ranks={d?.ranks[id]} />
+          </Section>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, alignItems: 'stretch' }}>
+            <InjuryTab id={id} name={name} pos={pos} team={nfl} sleeperTag={p?.injury ?? ''} />
+            <TradeTab id={id} name={name} owner={owner} />
+          </div>
+        </div>
       </div>
+      {info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab p={info.value} usage={usage} />}
     </div>
   )
 }
@@ -176,61 +177,58 @@ function UsageCard({ usage }: { usage: Usage }) {
   )
 }
 
-/** Five columns per position, in Sleeper's stat keys. */
-function columnsFor(pos: string): Array<{ k: string; get: (s: Record<string, number>) => number; low?: boolean }> {
-  const g = (key: string) => (s: Record<string, number>) => Number(s[key] ?? 0)
-  const ppr = { k: 'PPR', get: g('pts_ppr') }
-  if (pos === 'QB') return [ppr, { k: 'YDS', get: g('pass_yd') }, { k: 'TD', get: g('pass_td') }, { k: 'INT', get: g('pass_int'), low: true }, { k: 'RUSH', get: g('rush_yd') }]
-  if (pos === 'RB') return [ppr, { k: 'ATT', get: g('rush_att') }, { k: 'YDS', get: g('rush_yd') }, { k: 'REC', get: g('rec') }, { k: 'TD', get: s => Number(s.rush_td ?? 0) + Number(s.rec_td ?? 0) }]
-  return [ppr, { k: 'TGT', get: g('rec_tgt') }, { k: 'REC', get: g('rec') }, { k: 'YDS', get: g('rec_yd') }, { k: 'TD', get: g('rec_td') }]
-}
-
 function StatsTab({ p, usage }: { p: PlayerInfo; usage: Usage | undefined }) {
   const { heat } = useHeat()
-  const cols = columnsFor(p.pos)
-  const games: GameLog[] = p.games
-  const vals = games.map(gm => cols.map(c => c.get(gm.stats)))
-  const lo = cols.map((_, j) => Math.min(...vals.map(v => v[j])))
-  const hi = cols.map((_, j) => Math.max(...vals.map(v => v[j])))
-  const avg = cols.map((_, j) => (vals.length ? vals.reduce((s, v) => s + v[j], 0) / vals.length : 0))
-  const fmt = (j: number, x: number, mean = false) => (j === 0 ? x.toFixed(1) : mean && x < 10 ? x.toFixed(1) : String(Math.round(x)))
+  const tb = gameTable(p.pos, p.games)
   const cell = (bg: string, fg: string, fw: number, v: string | number, key: string) => (
     <span key={key} style={{ height: 42, borderRadius: 10, background: bg, color: fg, display: 'grid', placeItems: 'center', fontSize: 15, fontWeight: fw }}>
       {v}
     </span>
   )
+  const head = (h: string, key: string, extra?: CSSProperties) => (
+    <span key={key} style={{ height: 18, fontSize: 12, fontWeight: 600, letterSpacing: '.06em', color: 'var(--mute)', textAlign: 'center', whiteSpace: 'nowrap', ...extra }}>
+      {h}
+    </span>
+  )
+  // WK and OPP stay put; the stat columns scroll sideways when they outgrow the page.
+  const grid = (cols: string) => ({ display: 'grid', gridTemplateColumns: cols, gap: 6, alignItems: 'center' }) as const
   return (
     <section className="stack" style={{ gap: 12, minWidth: 0 }}>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span className="title-l">Stats: {p.season} by week</span>
         <span className="small mute">{p.pos} · PPR</span>
       </div>
-      {games.length === 0 ? (
+      {tb.rows.length === 0 ? (
         <div className="mute">No games yet this season.</div>
       ) : (
-        <div className="num" style={{ display: 'grid', gridTemplateColumns: '44px 56px repeat(5, minmax(0,1fr))', gap: 6, alignItems: 'center' }}>
-          {['WK', 'OPP', ...cols.map(c => c.k)].map(h => (
-            <span key={h} style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.06em', color: 'var(--mute)', textAlign: 'center' }}>
-              {h}
-            </span>
-          ))}
-          {games.flatMap((gm, i) => [
-            cell('transparent', 'var(--mute)', 600, gm.week, `w${i}`),
-            cell('transparent', 'var(--ink2)', 500, gm.opp, `o${i}`),
-            ...cols.map((c, j) => {
-              let v = hi[j] === lo[j] ? 0.5 : (vals[i][j] - lo[j]) / (hi[j] - lo[j])
-              if (c.low) v = 1 - v
-              const h = heat(v)
-              return cell(h.bg, h.fg, j === 0 ? 700 : 600, fmt(j, vals[i][j]), `${i}:${c.k}`)
-            }),
-          ])}
-          {cell('transparent', 'var(--mute)', 700, 'AVG', 'avg')}
-          <span />
-          {avg.map((x, j) => cell('var(--surf)', 'var(--ink)', 700, fmt(j, x, true), `a${j}`))}
+        <div className="num" style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+          <div style={grid('40px 56px')}>
+            {head('', 'g0')}
+            {head('', 'g1')}
+            {head('WK', 'wk')}
+            {head('OPP', 'opp')}
+            {tb.rows.flatMap((r, i) => [cell('transparent', 'var(--mute)', 600, r.week, `w${i}`), cell('transparent', 'var(--ink2)', 500, r.opp, `o${i}`)])}
+            {cell('transparent', 'var(--mute)', 700, 'AVG', 'avg')}
+            <span />
+          </div>
+          <div style={{ ...grid(`repeat(${tb.cols.length}, minmax(52px, 1fr))`), flex: 1, minWidth: 0, overflowX: 'auto', paddingBottom: 4 }}>
+            {tb.groups.map((g, i) =>
+              head(g.label.toUpperCase(), `g${i}`, { gridColumn: `span ${g.span}`, borderBottom: '1px solid var(--surf2)', fontSize: 11 }),
+            )}
+            {tb.cols.map((h, j) => head(h, `h${j}`))}
+            {tb.rows.flatMap((r, i) =>
+              r.cells.map((c, j) => {
+                const h = c.heat == null ? { bg: 'var(--surf)', fg: 'var(--mute)' } : heat(c.heat)
+                return cell(h.bg, h.fg, j === 0 ? 700 : 600, c.text, `${i}:${j}`)
+              }),
+            )}
+            {tb.avg.map((x, j) => cell('var(--surf)', 'var(--ink)', 700, x, `a${j}`))}
+          </div>
         </div>
       )}
       <div className="small mute">
-        Brighter cells are his best weeks in that stat.{usage?.usagePPG != null ? ` Usage ${n1(usage.usagePPG)} PPG vs projection ${n1(usage.sleeperPPG)}.` : ''}
+        Brighter cells are his best weeks in that stat. RK is his PPR finish at {p.pos} that week; SNP% his share of offensive snaps; FL fumbles lost.
+        {usage?.usagePPG != null ? ` Usage ${n1(usage.usagePPG)} PPG vs projection ${n1(usage.sleeperPPG)}.` : ''}
       </div>
     </section>
   )
@@ -258,7 +256,8 @@ function TradeTab({ id, name, owner }: { id: string; name: string; owner: number
       ? `${first} is yours. ${a && marketTag(a).label === 'Sell high' ? 'Now is a good time to shop him.' : 'Hold unless the return is clear.'}`
       : `${name} is on ${x.teamName(owner)}.`
   return (
-    <div className="stack" style={{ gap: 12 }}>
+    <div className="stack" style={{ gap: 12, padding: '20px 22px 22px', borderRadius: 22, background: 'var(--card)' }}>
+      <span className="label">Trade</span>
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.35, textWrap: 'pretty' }}>{line}</div>
       <div>
         {owner != null && a ? (
@@ -274,7 +273,7 @@ function TradeTab({ id, name, owner }: { id: string; name: string; owner: number
             go('trade')
           }}
           className="gcard"
-          style={{ padding: 18, borderRadius: 18, flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}
+          style={{ padding: 16, borderRadius: 16, flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}
         >
           <span className="small mute">Monte found a deal{yours ? '' : ` with ${x.teamName(deal.partner)}`}</span>
           <span style={{ fontSize: 17, fontWeight: 600 }}>

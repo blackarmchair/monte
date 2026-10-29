@@ -1,6 +1,6 @@
 // Players: Tyler's superflex board (Value: a value-rank heat chip and the market read) and the usage
-// board (Usage: PWOPR, heat on the gap between usage and projection) as one card grid. The top
-// bar's search filters it live. Click a card for his page; its button adds him to the trade (or
+// board (Usage: PWOPR, heat on the gap between usage and projection) as one list, a card a row so it
+// reads top to bottom. The top bar's search filters it live. Click a card for his page; its button adds him to the trade (or
 // claims a free agent in Sleeper).
 import { useEffect, useMemo, useState } from 'react'
 import { tepBoardFor, type RanksData, type Result } from '@shared/types'
@@ -8,7 +8,7 @@ import { teamLabel } from './names'
 import { value as rankValue } from '@shared/tradeMath'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade } from './tradeModel'
-import { ErrorBox, GradCard, Headshot, HeatChip, kfmt, Loading, NeedsSheet, nflColor, Pills, Seg, Stack2, useHeat } from './ui'
+import { ErrorBox, GradCard, Headshot, HeatChip, kfmt, Loading, NeedsSheet, nflColor, Pills, Seg, Stack2, Tag, useHeat } from './ui'
 
 /** usage gap (PPG) at which a player reads as Buy or Sell; the desktop's default */
 const SIGNAL = 3
@@ -29,7 +29,13 @@ type Line = {
   tagColor: string
   /** trade asset id, when he can be traded */
   assetId: string | null
+  /** Sleeper injury status, '' when healthy */
+  injury: string
+  /** the card's middle columns: small key over a value */
+  stats: Array<{ k: string; v: string; color?: string }>
 }
+
+const pct = (x: number | null | undefined) => (x == null ? '—' : `${Math.round(x * 100)}%`)
 
 export default function Players() {
   const { context, settings, sheet, hide, dataVersion, playersUi: ui, setPlayersUi, pw, runPW, openPlayer, showToast } = useApp()
@@ -80,19 +86,38 @@ export default function Players() {
           const tag = a ? marketTag(a) : null
           // Free agents aren't trade assets: Tyler's rank through the same value curve.
           const v = a ? mineOf(a) : rankValue(r.rank) * (r.pos === 'TE' ? teAdj : 1)
+          // KTC's move is whole rank places; round anyway so a stray fraction can't overrun the card.
+          const move = a?.trend == null ? null : Math.round(a.trend)
           return {
             key: r.id!,
             id: r.id!,
             name: r.name,
             team: r.team,
             owner: r.owner,
-            meta: [r.team, r.age, ownerName(r.owner)].filter(x => x != null && x !== '').join(' · '),
+            meta: [
+              r.team,
+              r.age != null ? `${r.age} yo` : null,
+              a?.yearsExp == null ? null : a.yearsExp === 0 ? 'Rookie' : `${a.yearsExp} yr${a.yearsExp === 1 ? '' : 's'} exp`,
+              ownerName(r.owner),
+            ]
+              .filter(x => x != null && x !== '')
+              .join(' · '),
             rank: rankOf.get(r.id!) ?? null,
             v: kfmt(v),
             h: 1 - (r.rank - 1) / (last - 1),
             tag: tag && tag.label !== 'No market' ? tag.label : r.owner == null ? 'Free agent' : '',
             tagColor: tag?.tone === 'acc' ? 'var(--acc)' : tag?.tone === 'pos' ? 'var(--pos)' : 'var(--mute)',
             assetId: a ? a.id : null,
+            injury: r.injury || a?.injury || '',
+            stats: [
+              { k: 'Market', v: a?.market == null ? '—' : kfmt(a.val), color: tag?.tone === 'acc' ? 'var(--acc)' : tag?.tone === 'pos' ? 'var(--pos)' : undefined },
+              { k: 'Season PPG', v: a?.ppgRank ? `${r.pos}${a.ppgRank}` : '—' },
+              {
+                k: 'KTC move',
+                v: move == null ? '—' : move > 0 ? `▲ ${move}` : move < 0 ? `▼ ${-move}` : '–',
+                color: move ? (move > 0 ? 'var(--pos)' : 'var(--neg)') : undefined,
+              },
+            ],
           }
         })
     }
@@ -109,13 +134,21 @@ export default function Players() {
           name: r.name,
           team: r.team,
           owner,
-          meta: `${rankOf.has(r.player_id) ? '' : `${r.pos} · `}${r.team} · ${ownerName(owner)} · ${r.usagePPG?.toFixed(1) ?? '—'} → ${r.sleeperPPG?.toFixed(1) ?? '—'} PPG`,
+          meta: `${rankOf.has(r.player_id) ? '' : `${r.pos} · `}${r.team} · ${ownerName(owner)} · ${r.games} games`,
           rank: rankOf.get(r.player_id) ?? null,
           v: `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d).toFixed(1)}`,
           h: 0.5 + d / 16,
           tag: sig,
           tagColor: sig === 'Buy' ? 'var(--pos)' : sig === 'Sell' ? 'var(--acc)' : 'var(--mute)',
           assetId: byId.has(r.player_id) ? r.player_id : null,
+          injury: byId.get(r.player_id)?.injury ?? '',
+          stats: [
+            { k: 'Usage PPG', v: r.usagePPG?.toFixed(1) ?? '—' },
+            { k: 'Projected', v: r.sleeperPPG?.toFixed(1) ?? '—' },
+            { k: 'Targets/g', v: r.tgtPerGame.toFixed(1) },
+            { k: 'Tgt share', v: pct(r.tgtShare) },
+            { k: 'Air share', v: pct(r.airShare) },
+          ],
         }
       })
   }, [ui, ranks, pw.result, byId, ownerOf, me, hide, teamNames, settings?.rankBoard]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -164,26 +197,39 @@ export default function Players() {
       {usage && pw.error && <ErrorBox message={`Usage board failed: ${pw.error}`} onRetry={runPW} />}
       {((!usage && !res) || (usage && !pw.result && pw.busy)) && <Loading label={usage ? 'Building the usage board…' : 'Reading the board…'} />}
       {(usage ? pw.result : ranks) && lines.length === 0 && <div className="mute">No players match{ui.q ? ` “${ui.q}”` : ''}.</div>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 8 }}>
+      <div className="stack" style={{ gap: 8 }}>
         {lines.map(l => (
-          <GradCard key={l.key} div color={nflColor(l.team)} minHeight={68} onClick={() => openPlayer(l.id, l.name)} style={{ padding: '10px 10px 10px 14px' }}>
-            <Headshot id={l.id} name={l.name} />
+          <GradCard key={l.key} div color={nflColor(l.team)} minHeight={84} onClick={() => openPlayer(l.id, l.name)} style={{ padding: '12px 14px 12px 16px', gap: 16 }}>
+            <Headshot id={l.id} name={l.name} size={56} />
             <Stack2
+              size={17}
               title={l.name}
+              right={l.injury ? <Tag label={l.injury} tone={/^(Out|IR|PUP|Sus)/i.test(l.injury) ? 'bad' : 'warn'} /> : undefined}
               sub={
                 <>
                   {l.rank && <b style={{ color: 'var(--acc)' }}>{l.rank} · </b>}
                   {l.meta}
                 </>
               }
+              subStyle={{ fontSize: 14 }}
             />
-            <span className="stack" style={{ alignItems: 'flex-end', gap: 3 }}>
-              <HeatChip label={l.v} colors={heat(l.h)} minWidth={54} height={28} size={14} />
+            <span className="pstats" style={{ gridTemplateColumns: `repeat(${l.stats.length}, 92px)` }}>
+              {l.stats.map(x => (
+                <span key={x.k} className="stack" style={{ gap: 1, minWidth: 0 }}>
+                  <span className="small mute trunc">{x.k}</span>
+                  <span className="num trunc" style={{ fontSize: 16, fontWeight: 700, color: x.color }} title={x.v}>
+                    {x.v}
+                  </span>
+                </span>
+              ))}
+            </span>
+            <span className="stack" style={{ alignItems: 'flex-end', gap: 3, width: 84, flex: 'none' }}>
+              <HeatChip label={l.v} colors={heat(l.h)} minWidth={64} height={32} size={15} />
               {!!l.tag && <span style={{ fontSize: 12, fontWeight: 600, color: l.tagColor }}>{l.tag}</span>}
             </span>
             <button
               className="btn sm"
-              style={{ fontWeight: 700, fontSize: 13 }}
+              style={{ fontWeight: 700, fontSize: 13, width: 92, flex: 'none', justifyContent: 'center' }}
               onClick={e => {
                 e.stopPropagation()
                 act(l)
