@@ -1,8 +1,8 @@
 // Parity: Monte's start/sit engine vs reference/start_sit.py on the same inputs.
 // node --experimental-strip-types scripts/startsit-parity.mts <ranks.xlsx> <players_nfl.json> <stats_prev.json> <leagueId> <userId>
 import { readFileSync } from 'node:fs'
-import { readWorkbook } from '../src/main/xlsx.ts'
-import { buildStartSit } from '../src/main/startSit.ts'
+import { readWorkbook } from '../packages/core/src/xlsx.ts'
+import { buildStartSit } from '../packages/core/src/startSit.ts'
 
 const [xlsx, playersPath, statsPath, leagueId, userId] = process.argv.slice(2)
 const api = (p: string) => fetch(`https://api.sleeper.app/v1${p}`).then(r => r.json())

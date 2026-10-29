@@ -6,10 +6,10 @@
 //   <ranks.xlsx> <players_nfl.json> <draftId> <userId> [draftPunk draftGrade.ts copy with `import type`]
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { readWorkbook } from '../src/main/xlsx.ts'
-import { findBoard, norm } from '../src/main/values.ts'
-import { buildDraft } from '../src/main/draft.ts'
-import { buildPositionalRankIndex, gradePicks } from '../src/shared/draftGrade.ts'
+import { readWorkbook } from '../packages/core/src/xlsx.ts'
+import { findBoard, norm } from '../packages/core/src/values.ts'
+import { buildDraft } from '../packages/core/src/draft.ts'
+import { buildPositionalRankIndex, gradePicks } from '../packages/core/src/draftGrade.ts'
 
 const [xlsx, playersPath, draftId, userId, punkGrade] = process.argv.slice(2)
 const api = (p: string) => fetch(`https://api.sleeper.app/v1${p}`).then(r => r.json())

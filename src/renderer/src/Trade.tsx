@@ -7,7 +7,7 @@
 // of players and picks, rostered or not, on Tyler's sheet and on the market, with no teams at all.
 import { useMemo, useState } from 'react'
 import { vacuumText, type Asset, type Side } from '@shared/tradeMath'
-import { MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
+import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
 import { useApp } from './store'
 import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from './tradeModel'
 import SleeperSend from './SleeperSend'
@@ -92,6 +92,12 @@ export default function Trade() {
               { value: 'vacuum', label: 'Vacuum' },
             ]}
           />
+        </div>
+      )}
+
+      {d && deadlineNote(d.deadline) && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Notice message={deadlineNote(d.deadline)!} tone={d.deadline.closed ? 'warn' : 'acc'} />
         </div>
       )}
 
@@ -201,8 +207,14 @@ export default function Trade() {
                     kind="primary"
                     size="lg"
                     label="Send in Sleeper"
-                    disabled={!v || x.me == null || partner == null}
-                    title={settings.sleeperLink ? 'Review and send this offer in Sleeper' : 'Connect Sleeper, then review and send this offer'}
+                    disabled={!v || x.me == null || partner == null || d.deadline.closed}
+                    title={
+                      d.deadline.closed
+                        ? `Trades closed after week ${d.deadline.week}`
+                        : settings.sleeperLink
+                          ? 'Review and send this offer in Sleeper'
+                          : 'Connect Sleeper, then review and send this offer'
+                    }
                     onClick={() => setSending(true)}
                     style={{ flex: 1 }}
                   />

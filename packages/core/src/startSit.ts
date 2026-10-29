@@ -375,8 +375,11 @@ export function buildStartSit(o: {
   const bench = [...all.values()].filter(p => !curIds.has(p.id)).sort((a, b) => Number(b.startable) - Number(a.startable) || b.proj - a.proj)
 
   // Opponent's projection from the lineup they actually have set, priced the same way.
+  // No matchup_id is no game this week (a playoff bye, or out of the playoffs). It must not pair
+  // with the other rosters that have none.
   let opponent: StartSitData['opponent'] = null
-  const theirs = mine && o.matchups.find(m => m.matchup_id === mine.matchup_id && m.roster_id !== me.roster_id)
+  const theirs = mine?.matchup_id != null && o.matchups.find(m => m.matchup_id === mine.matchup_id && m.roster_id !== me.roster_id)
+  if (mine && mine.matchup_id == null) warnings.push('You have no game this week (a playoff bye, or out of the playoffs), so there’s no opponent to beat.')
   if (theirs) {
     const r = o.rosters.find(x => x.roster_id === theirs.roster_id)
     const u = o.users.find(x => x.user_id === r?.owner_id)

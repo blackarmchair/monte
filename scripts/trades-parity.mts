@@ -1,8 +1,9 @@
 // Parity: Monte's trade values (sheet / market-blended val) vs dynasty_model.pinfo().
 // node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/trades-parity.mts <xlsx> <players.json> <py_dump.json> <leagueId> <userId>
 import { readFileSync } from 'node:fs'
-import { readWorkbook } from '../src/main/xlsx.ts'
-import { buildTrades } from '../src/main/trades.ts'
+import { readWorkbook } from '../packages/core/src/xlsx.ts'
+import { buildTrades, fromFantasyCalc } from '../packages/core/src/trades.ts'
+import { FC_SCORING } from '../packages/core/src/tradeMath.ts'
 
 const [xlsx, playersPath, pyPath, leagueId, userId] = process.argv.slice(2)
 const api = (p: string) => fetch(`https://api.sleeper.app/v1${p}`).then(r => r.json())
@@ -24,7 +25,7 @@ const d = buildTrades({
   users,
   traded,
   meta: JSON.parse(readFileSync(playersPath, 'utf8')),
-  fc: { rows: fcRows, asOf: null, stale: false },
+  market: { source: 'FantasyCalc', rows: fromFantasyCalc(fcRows), asOf: null, stale: false, scoring: FC_SCORING },
   beta: py.beta,
   userId,
 })

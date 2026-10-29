@@ -58,10 +58,10 @@ export function Matchups() {
 
   return (
     <div className="stack" style={{ gap: 12, maxWidth: 980 }}>
-      <TabHead title={lw ? `Week ${lw.week} matchups` : 'Matchups'} sub={updated} busy={busy} onRefresh={load} />
+      <TabHead title={lw ? `Week ${lw.week} ${lw.playoffs ? 'playoffs' : 'matchups'}` : 'Matchups'} sub={updated} busy={busy} onRefresh={load} />
       {res && !res.ok && <ErrorBox message={res.error} onRetry={load} />}
       {!res && <Loading label="Reading this week’s matchups…" />}
-      {lw && pairs.length === 0 && <div className="mute">No head-to-head matchups this week.</div>}
+      {lw && pairs.length === 0 && <div className="mute">{lw.playoffs ? 'No playoff games this week: the bracket is done.' : 'No head-to-head matchups this week.'}</div>}
       {pairs.map(m => {
         const [a, b] = m.sides
         const isOpen = shownOpen === m.id

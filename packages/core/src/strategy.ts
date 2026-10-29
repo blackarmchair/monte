@@ -105,6 +105,29 @@ const mineOf = (a: Asset) => a.mine ?? a.sheet
 
 export const MODE_LABEL: Record<Mode, string> = { contend: 'Contend', middle: 'In between', rebuild: 'Rebuild' }
 /** What the calendar means for trades right now. */
+/**
+ * Sleeper's `trade_deadline` is the last week trades go through (99 means none), so trades close
+ * once the NFL week moves past it, and stay closed through the playoffs until the league rolls over.
+ */
+export type TradeDeadline = { week: number | null; closed: boolean; weeksLeft: number | null }
+
+export function tradeDeadline(league: any, nflWeek: number | null): TradeDeadline {
+  const dl = Number(league?.settings?.trade_deadline)
+  if (!Number.isFinite(dl) || dl <= 0 || dl >= 99) return { week: null, closed: false, weeksLeft: null }
+  const live = league?.status === 'in_season' || league?.status === 'post_season'
+  if (!live || nflWeek == null) return { week: dl, closed: false, weeksLeft: null }
+  return { week: dl, closed: nflWeek > dl, weeksLeft: Math.max(0, dl - nflWeek) }
+}
+
+/** One line for the Trade screens, or null when the deadline is nowhere near. */
+export function deadlineNote(d: TradeDeadline): string | null {
+  if (d.week == null) return null
+  if (d.closed) return `Trades are closed: the deadline was week ${d.week}. Ideas still show, for planning the offseason.`
+  if (d.weeksLeft === 0) return `Trade deadline is this week (week ${d.week}).`
+  if (d.weeksLeft != null && d.weeksLeft <= 3) return `Trade deadline: week ${d.week}, ${d.weeksLeft} week${d.weeksLeft === 1 ? '' : 's'} away.`
+  return null
+}
+
 export const PHASE_LINE: Record<Phase, string> = {
   inSeason: 'In season: buy picks ahead of the rookie draft, sell into contenders’ temporary holes, and don’t panic.',
   drafting: 'Rookie draft: sell picks into rookie fever, and trade out for veterans while they’re cheapest.',

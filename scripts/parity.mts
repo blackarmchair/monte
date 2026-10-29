@@ -1,8 +1,8 @@
 // Parity: Monte's sheet values vs the Dynasty Daddy upload (which uses the same transform).
 // node --experimental-strip-types scripts/parity.mts <ranks.xlsx> <players_nfl.json> <leagueId>
 import { readFileSync } from 'node:fs'
-import { readWorkbook } from '../src/main/xlsx.ts'
-import { findBoard, matchBoard, UNRANKED } from '../src/main/values.ts'
+import { readWorkbook } from '../packages/core/src/xlsx.ts'
+import { findBoard, matchBoard, UNRANKED } from '../packages/core/src/values.ts'
 
 const [xlsx, playersPath, leagueId] = process.argv.slice(2)
 const wb = readWorkbook(new Uint8Array(readFileSync(xlsx)))

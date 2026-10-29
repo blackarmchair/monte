@@ -355,6 +355,7 @@ export type TradeData = {
   teams: TradeTeam[]
   myRosterId: number | null
   phase: import('./strategy').Phase
+  deadline: import('./strategy').TradeDeadline
   /** in-season positional PPG rank a weekly starter clears, per position */
   starterLine: Record<string, number>
   gamma: number

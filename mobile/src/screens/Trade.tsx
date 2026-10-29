@@ -8,7 +8,7 @@
 import { useMemo, useRef, useState, type RefObject } from 'react'
 import { Linking, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 import { vacuumText, type Asset, type Side } from '@monte/core/tradeMath'
-import { MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
+import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from '@/lib/trade'
@@ -75,6 +75,8 @@ export default function Trade() {
             ]}
           />
         )}
+
+        {d && deadlineNote(d.deadline) && <Notice message={deadlineNote(d.deadline)!} tone={d.deadline.closed ? 'warn' : 'acc'} />}
 
         {d && tab === 'vacuum' && <VacuumView scroll={scroll} />}
 
@@ -273,7 +275,7 @@ function TradeSheet() {
   const [mismatch, setMismatch] = useState<string | null>(null)
   const v = x.verdict
   const partnerName = x.teamName(x.partner)
-  const canSend = !!v && x.partner != null && x.me != null && !!context
+  const canSend = !!v && x.partner != null && x.me != null && !!context && !x.d?.deadline.closed
 
   const send = async () => {
     if (!canSend) return

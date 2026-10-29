@@ -63,12 +63,12 @@ export function Matchups() {
 
   return (
     <View style={{ gap: 12 }}>
-      <Head title={lw ? `Week ${lw.week} matchups` : 'Matchups'} busy={busy} onRefresh={load} />
+      <Head title={lw ? `Week ${lw.week} ${lw.playoffs ? 'playoffs' : 'matchups'}` : 'Matchups'} busy={busy} onRefresh={load} />
       {res && !res.ok && <ErrorBox message={res.error} onRetry={load} />}
       {!res && <Loading label="Reading this week’s matchups…" />}
       {lw && pairs.length === 0 && (
         <T c="mute" size={14}>
-          No head-to-head matchups this week.
+          {lw.playoffs ? 'No playoff games this week: the bracket is done.' : 'No head-to-head matchups this week.'}
         </T>
       )}
       {pairs.map(m => {

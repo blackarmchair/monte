@@ -14,7 +14,7 @@ import {
   type PickInputs,
 } from './tradeMath'
 import type { TradeData } from './types'
-import { starterLine, type Phase } from './strategy'
+import { starterLine, tradeDeadline, type Phase } from './strategy'
 
 const SKILL = ['QB', 'RB', 'WR', 'TE']
 /** A starter with one of these statuses leaves his team a hole this week. */
@@ -112,6 +112,8 @@ export function buildTrades(o: {
   stats?: Record<string, Record<string, number>>
   beta: number
   userId: string
+  /** the NFL week now (Sleeper's state), for the trade deadline */
+  nflWeek?: number | null
 }): TradeData {
   const scoring = o.league.scoring_settings ?? {}
   const lg = { te: Number(scoring.bonus_rec_te ?? 0), passTd: Number(scoring.pass_td ?? 4) }
@@ -249,6 +251,7 @@ export function buildTrades(o: {
     }),
     myRosterId: me?.roster_id ?? null,
     phase,
+    deadline: tradeDeadline(o.league, o.nflWeek ?? null),
     starterLine: starterLine(positions, o.rosters.length),
     gamma: gammaFor(shape),
     spotCost: spotCostFor(shape),

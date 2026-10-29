@@ -72,8 +72,21 @@ export async function toResult<T>(fn: () => Promise<T>): Promise<Result<T>> {
   }
 }
 
-async function sleeper<T = any>(path: string): Promise<T> {
-  const res = await fetch(SLEEPER + path)
+/**
+ * Every read gets a deadline: a hung request otherwise leaves its screen loading forever (phones on
+ * a bad signal). Writes to Sleeper don't come through here: a timed-out write may still have landed.
+ */
+async function get(url: string, init?: RequestInit, ms = 20_000): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(ms) })
+  } catch (e) {
+    if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw new Error(`${url.split('/')[2]} didn't answer within ${ms / 1000}s.`)
+    throw e
+  }
+}
+
+async function sleeper<T = any>(path: string, ms?: number): Promise<T> {
+  const res = await get(SLEEPER + path, undefined, ms)
   if (!res.ok) throw new Error(`Sleeper ${path} returned ${res.status}`)
   return res.json() as Promise<T>
 }
@@ -155,7 +168,15 @@ export function createMonteService(host: Host) {
       metaMem = { at: Date.parse(cached.fetchedAt), players: cached.players }
       return cached.players
     }
-    const players = await sleeper<Record<string, any>>('/players/nfl')
+    let players: Record<string, any>
+    try {
+      players = await sleeper<Record<string, any>>('/players/nfl', 90_000)
+    } catch (e) {
+      // An old table beats no screens at all; try again in ten minutes.
+      if (!cached) throw e
+      metaMem = { at: Date.now() - PLAYERS_TTL_MS + 10 * 60 * 1000, players: cached.players }
+      return cached.players
+    }
     await host.cacheWrite('players_nfl.json', JSON.stringify({ fetchedAt: new Date().toISOString(), players }))
     metaMem = { at: Date.now(), players }
     return players
@@ -203,7 +224,7 @@ export function createMonteService(host: Host) {
     const key = `${id}|${season}`
     const hit = logMem.get(key)
     if (hit && Date.now() - hit.at < 3600 * 1000) return hit.games
-    const res = await fetch(`https://api.sleeper.com/stats/nfl/player/${id}?season_type=regular&season=${season}&grouping=week`)
+    const res = await get(`https://api.sleeper.com/stats/nfl/player/${id}?season_type=regular&season=${season}&grouping=week`)
     if (!res.ok) throw new Error(`Sleeper's weekly stats returned ${res.status}`)
     const byWeek = ((await res.json()) ?? {}) as Record<string, any>
     const games = Object.values(byWeek)
@@ -218,7 +239,7 @@ export function createMonteService(host: Host) {
   let schedCache: { season: string; at: number; games: Record<string, Record<number, string>> } | null = null
   async function nflSchedule(season: string) {
     if (schedCache && schedCache.season === season && Date.now() - schedCache.at < 5 * 60 * 1000) return schedCache.games
-    const res = await fetch(`https://api.sleeper.app/schedule/nfl/regular/${season}`)
+    const res = await get(`https://api.sleeper.app/schedule/nfl/regular/${season}`)
     if (!res.ok) throw new Error(`NFL schedule unavailable (${res.status}); byes can't be guessed, so no lineup.`)
     const games: Record<string, Record<number, string>> = {}
     for (const g of (await res.json()) as any[]) {
@@ -239,7 +260,7 @@ export function createMonteService(host: Host) {
     if (cached && Date.now() - Date.parse(cached.asOf) < 12 * 3600 * 1000) return { ...cached, stale: false }
     const url = `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=${o.qbs}&ppr=${o.ppr}&numTeams=${o.teams}&includePicks=true`
     try {
-      const res = await fetch(url)
+      const res = await get(url)
       if (!res.ok) throw new Error(`FantasyCalc returned ${res.status}`)
       const fresh = { asOf: new Date().toISOString(), rows: (await res.json()) as FcRow[] }
       await host.cacheWrite(key, JSON.stringify(fresh))
@@ -261,7 +282,7 @@ export function createMonteService(host: Host) {
     const cached = await cachedJson<{ asOf: string; rows: KtcRow[] }>(key)
     if (cached && Date.now() - Date.parse(cached.asOf) < 12 * 3600 * 1000) return { ...cached, stale: false }
     try {
-      const res = await fetch('https://keeptradecut.com/dynasty-rankings', { headers: { 'User-Agent': 'Mozilla/5.0 (Monte)' } })
+      const res = await get('https://keeptradecut.com/dynasty-rankings', { headers: { 'User-Agent': 'Mozilla/5.0 (Monte)' } })
       if (!res.ok) throw new Error(`KeepTradeCut returned ${res.status}`)
       const fresh = { asOf: new Date().toISOString(), rows: parseKtc(await res.text()) }
       await host.cacheWrite(key, JSON.stringify(fresh))
@@ -299,7 +320,7 @@ export function createMonteService(host: Host) {
     const hit = projMem.get(key)
     if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.lines
     const pos = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map(p => `position%5B%5D=${p}`).join('&')
-    const res = await fetch(`https://api.sleeper.com/projections/nfl/${season}/${week}?season_type=regular&${pos}`)
+    const res = await get(`https://api.sleeper.com/projections/nfl/${season}/${week}?season_type=regular&${pos}`)
     if (!res.ok) throw new Error(`Sleeper's projections returned ${res.status}`)
     const lines: Record<string, Record<string, number>> = {}
     for (const r of (await res.json()) as any[]) if (r?.player_id && r.stats) lines[String(r.player_id)] = r.stats
@@ -428,7 +449,12 @@ export function createMonteService(host: Host) {
     },
 
     async trades(leagueId: string, userId: string): Promise<TradeData> {
-      const [[league, rosters, users, traded], meta, settings] = await Promise.all([league4(leagueId), playersMeta(), host.settings()])
+      const [[league, rosters, users, traded], meta, settings, state] = await Promise.all([
+        league4(leagueId),
+        playersMeta(),
+        host.settings(),
+        sleeper<any>('/state/nfl').catch(() => null),
+      ])
       const [book, mk, stats] = await Promise.all([
         host.loadBook(),
         market(league, rosters.length),
@@ -447,6 +473,7 @@ export function createMonteService(host: Host) {
         stats,
         beta: settings.marketBeta?.[leagueId] ?? 1,
         userId,
+        nflWeek: state?.season_type === 'regular' || state?.season_type === 'post' ? Number(state.week) || null : null,
       })
     },
 

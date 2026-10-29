@@ -30,7 +30,8 @@ export type MatchSide = {
 
 export type Matchup = { id: number; sides: [MatchSide, MatchSide] }
 
-export type LeagueWeek = { season: string; week: number; matchups: Matchup[]; builtAt: string }
+/** `playoffs`: the week is at or past the league's playoff start, where only bracket games pair up. */
+export type LeagueWeek = { season: string; week: number; playoffs: boolean; matchups: Matchup[]; builtAt: string }
 
 export type TradeAssetMove = { id: string; name: string; pos: string; team: string }
 export type TradePickMove = { season: string; round: number; /** roster the pick originally belonged to */ orig: number }
@@ -151,7 +152,8 @@ export function buildLeagueWeek(o: {
     b.side.winPct = 1 - pa
     matchups.push({ id, sides: [a.side, b.side] })
   }
-  return { season: o.season, week: o.week, matchups, builtAt: new Date().toISOString() }
+  const poStart = Number(o.league.settings?.playoff_week_start) || 0
+  return { season: o.season, week: o.week, playoffs: poStart > 0 && o.week >= poStart, matchups, builtAt: new Date().toISOString() }
 }
 
 /** One Sleeper trade (REST or GraphQL shape) as what each roster receives. */
