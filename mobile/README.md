@@ -73,7 +73,7 @@ Phones have no folder Monte can watch, so the sheet is picked rather than synced
    Monte reads it with expo-file-system's own picker; expo-document-picker's cached copy can't be
    read inside Expo Go ("Missing 'READ' permission").
 
-Pick it again whenever Tyler updates it. Monte keeps a copy, so the original can be deleted.
+Pick it again whenever the sheet updates. Monte keeps a copy, so the original can be deleted.
 
 ## Layout
 

@@ -37,7 +37,7 @@ function ppgRanks(stats: Record<string, Record<string, number>>, meta: Meta): Ma
 }
 
 /** One market row, from either source. `sleeperId` when the source has it (FantasyCalc);
- *  KeepTradeCut rows are matched to Sleeper by name, the same way as Tyler's board. */
+ *  KeepTradeCut rows are matched to Sleeper by name, the same way as the board. */
 export type MarketRow = { name: string; pos: string; value: number; sleeperId?: string; trend?: number }
 export type Market = { source: 'KeepTradeCut' | 'FantasyCalc'; rows: MarketRow[]; asOf: string | null; stale: boolean; scoring: { te: number; passTd: number } }
 
@@ -175,7 +175,7 @@ export function buildTrades(o: {
       const a = toAsset(id, r.roster_id)
       if (a) assets.push(a)
     }
-  // Everyone else Tyler or the market prices, for the Vacuum tab: owner 0, on no roster.
+  // Everyone else the sheet or the market prices, for the Vacuum tab: owner 0, on no roster.
   const freeAgents = [...new Set([...values.keys(), ...mkPlayers.keys()])]
     .filter(id => !rostered.has(id))
     .map(id => toAsset(id, 0))
@@ -207,9 +207,9 @@ export function buildTrades(o: {
       .map(([id, v]) => scoringAdj(o.meta[id]?.position ?? '', value(v.rank), SHEET_SCORING, lg))
       .sort((a, b) => b - a),
     // Index 0 is the NEXT draft, in season too: a 2027 pick during the 2026 season is worth its class,
-    // not a year-out discount of it. Backtested against Tyler's #dynasty-trade-questions answers
+    // not a year-out discount of it. Backtested against expert #dynasty-trade-questions answers
     // (2026-08..10): discounting it to 0.72 was the largest single source of misses, all of them
-    // Tyler taking the pick side.
+    // the expert taking the pick side.
     discount: FUTURE_DISCOUNT.concat(Array(3).fill(FUTURE_DISCOUNT[FUTURE_DISCOUNT.length - 1])),
     market,
   }

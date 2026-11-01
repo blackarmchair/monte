@@ -1,10 +1,10 @@
 // Trade: three tabs. Build is three columns: your roster on the left and theirs on the right (the
 // team list until you pick a partner), each row with a +/✓ toggle; in the middle (sticky) the
 // verdict card with both sides, your roster after, Market influence and Send in Sleeper. Ideas is
-// Tyler's strategy against the market: your direction, then what to sell and what to buy, each with
+// The strategy against the market: your direction, then what to sell and what to buy, each with
 // the rule behind it and an ask / settle deal that opens in Build, then chains (two linked trades
 // through a team that values the middle player less than another does). Vacuum scores any two sides
-// of players and picks, rostered or not, on Tyler's sheet and on the market, with no teams at all.
+// of players and picks, rostered or not, on the sheet and on the market, with no teams at all.
 import { useMemo, useState } from 'react'
 import { vacuumText, type Asset, type Side } from '@shared/tradeMath'
 import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
@@ -192,7 +192,7 @@ export default function Trade() {
                 </div>
                 <div
                   style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 44px', gap: 10, alignItems: 'center' }}
-                  title={`How much your league trades like the market (${d.market.source}) versus Tyler. Their side of every trade is judged on this blend.`}
+                  title={`How much your league trades like the market (${d.market.source}) versus the sheet. Their side of every trade is judged on this blend.`}
                 >
                   <span className="sub" style={{ fontSize: 14 }}>
                     Market influence
@@ -222,7 +222,7 @@ export default function Trade() {
                 </div>
               </div>
             <span className="small mute" style={{ paddingTop: 8 }}>
-              Your side is Tyler's sheet; theirs is the market, blended by Market influence. Verdicts use effective value: one star beats a bundle of the same raw total.
+              Your side is the sheet; theirs is the market, blended by Market influence. Verdicts use effective value: one star beats a bundle of the same raw total.
               {d.market.stale ? ` Market values are a stale copy: ${d.market.source} did not answer.` : ''}
             </span>
           </div>
@@ -298,7 +298,7 @@ function IdeasView({ onOpen }: { onOpen: () => void }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
         {(
           [
-            ['Sell', ideas.sells, 'Nothing to sell right now: no asset of yours where the market pays more, or Tyler says move on, and a partner says yes.'],
+            ['Sell', ideas.sells, 'Nothing to sell right now: no asset of yours where the market pays more, or the strategy says move on, and a partner says yes.'],
             ['Buy', ideas.buys, 'Nothing to buy right now that a partner would sell for a deal you win.'],
           ] as const
         ).map(([title, list, empty]) => (
@@ -322,7 +322,7 @@ function IdeasView({ onOpen }: { onOpen: () => void }) {
         {ideas.chains.length > 0 && <span className="small mute">A chain is two ordinary trades: send the first, and only once it’s accepted offer the second. Step one is a win on its own, so you’re fine holding the middle player if the second falls through.</span>}
       </div>
       <span className="small mute">
-        Ideas follow Tyler’s strategy doc: values stay his board and the market, the rules pick what to shop, what to chase and who to aim at. Picks he says to hold never appear.
+        Ideas follow the strategy rules: values stay the board and the market, the rules pick what to shop, what to chase and who to aim at. Picks the rules say to hold never appear.
         Ask is the most you can take while they still say yes; Settle is what they clearly say yes to. Greed is good: open with the ask.
       </span>
     </div>
@@ -459,7 +459,7 @@ function VacuumView() {
           <input autoFocus placeholder="Any player or pick" value={q} onChange={e => setQ(e.target.value)} />
         </label>
         <span className="small mute" style={{ padding: '0 4px' }}>
-          Tyler’s value over the market’s. Add to the side that gets him.
+          the sheet’s value over the market’s. Add to the side that gets him.
         </span>
         {hits.map(a => (
           <GradCard key={a.id} color={assetColor(a)} minHeight={56} style={{ gap: 10, padding: '6px 8px 6px 10px', borderRadius: 14 }}>
@@ -480,7 +480,7 @@ function VacuumView() {
         </div>
         {v && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {lensTile('Tyler’s sheet', v.tyler, v.tylerWinner)}
+            {lensTile('Sheet', v.sheet, v.sheetWinner)}
             {lensTile('Market', v.market, v.marketWinner)}
           </div>
         )}
@@ -506,10 +506,10 @@ function VacuumView() {
           </div>
         ))}
         {v && v.unpriced.length > 0 && (
-          <Notice bg="var(--surf2)" message={`No market price for ${v.unpriced.map(a => a.name).join(', ')}: the market lens uses Tyler’s value for them.`} />
+          <Notice bg="var(--surf2)" message={`No market price for ${v.unpriced.map(a => a.name).join(', ')}: the market lens uses the sheet’s value for them.`} />
         )}
         {(vac.a.length > 0 || vac.b.length > 0) && <Btn size="lg" label="Clear" onClick={x.vacClear} />}
-        <span className="small mute">Vacuum ignores teams: no partner, no demand, no roster spots. Tyler’s lens is his sheet as-is, the market’s is KeepTradeCut’s price, both in this league’s scoring and in effective value (one star beats a bundle).</span>
+        <span className="small mute">Vacuum ignores teams: no partner, no demand, no roster spots. The sheet’s lens is the sheet as-is, the market’s is KeepTradeCut’s price, both in this league’s scoring and in effective value (one star beats a bundle).</span>
       </div>
     </div>
   )

@@ -1,12 +1,15 @@
-// Lineup: this week's lineup off Tyler's weekly boards. A projection card and the best swap on
+// Lineup: this week's lineup off the sheet's weekly boards. A projection card and the best swap on
 // top, then starters (NFL-colour cards) beside the bench (surf cards). Click a player to select
 // him, then a highlighted slot or player to swap; click him again to cancel. Set in Sleeper sends
 // the lineup on screen.
 import { useEffect, useMemo, useState } from 'react'
+import type { LeagueWeek } from '@shared/leagueWeek'
+import { basisLabel, compareBases } from '@shared/projBasis'
 import type { Result, SSPlayer, StartSitData } from '@shared/types'
 import { anonStartSit } from './names'
 import { useApp } from './store'
 import { ConnectModal } from './SleeperSend'
+import { BasisLine, ProjCompare } from './ProjCompare'
 import { Btn, ErrorBox, GradCard, Headshot, Link, Loading, NeedsSheet, nflColor, Notice, num, RING, RING_THIN, Tag } from './ui'
 import { benchOnly, ELIG, eligible, normCdf, tagOf, WIN_SD, type Swap } from './startsit.logic'
 
@@ -39,6 +42,12 @@ export default function Lineup() {
   const [sent, setSent] = useState<Sent | null>(null)
   const [push, setPush] = useState<{ busy: boolean; error: string | null; note: string | null }>({ busy: false, error: null, note: null })
   const [connect, setConnect] = useState<{ error: string | null } | null>(null)
+  // Matchups' read of the same game, fetched when the comparison opens.
+  const [cmpOpen, setCmpOpen] = useState(false)
+  const [lw, setLw] = useState<Result<LeagueWeek> | null>(null)
+  useEffect(() => {
+    if (cmpOpen && !lw && leagueId) void window.monte.leagueWeek(leagueId).then(setLw)
+  }, [cmpOpen, lw, leagueId])
 
   const load = () => {
     if (!leagueId || !settings.userId || !sheet) return
@@ -47,6 +56,7 @@ export default function Lineup() {
       setRes(r)
       setBusy(false)
       setSel(null)
+      setLw(null)
       if (r.ok) {
         setLineup(r.value.slots.map(s => s.current?.id ?? null))
         setSimOut({})
@@ -80,6 +90,19 @@ export default function Lineup() {
   const winP = opp ? normCdf((total - opp.total) / WIN_SD) : null
   const differs = lineup.some((id, i) => id !== sleeperLineup[i])
   const changed = differs || Object.values(simOut).some(Boolean)
+  // What's set in Sleeper, before any change on screen: the "current" in current → proposed.
+  const subTotal = sleeperLineup.reduce((sum, id) => {
+    const p = id ? players.get(id) : null
+    return sum + (p && p.startable ? p.proj : 0)
+  }, 0)
+  const subWin = opp ? normCdf((subTotal - opp.total) / WIN_SD) : null
+  const cmp = useMemo(() => {
+    if (!d || !lw) return null
+    const m = lw.ok ? lw.value.matchups.find(x => x.sides.some(s => s.rosterId === d.rosterId)) : undefined
+    const me = m?.sides.find(s => s.rosterId === d.rosterId) ?? null
+    const them = m?.sides.find(s => s.rosterId !== d.rosterId) ?? null
+    return compareBases({ me, opp: them, d, win: x => normCdf(x / WIN_SD), submitted: subTotal, proposed: changed ? { you: total, win: winP } : null })
+  }, [d, lw, subTotal, changed, total, winP])
   useEffect(() => setSim({ busy: false, text: null }), [total])
 
   // Best single swap: a bench player into slot i, directly or by moving slot j's starter to i.
@@ -231,7 +254,23 @@ export default function Lineup() {
                 <span className="num" style={{ fontSize: 52, fontWeight: 700, lineHeight: 1, letterSpacing: '-.02em' }}>
                   {total.toFixed(1)}
                 </span>
-                <span className="sub">projected{opp ? ` · opp ${opp.total.toFixed(1)}` : ''}</span>
+                <span className="sub">
+                  projected{opp ? ` · opp ${opp.total.toFixed(1)}` : ''}
+                  {changed && (
+                    <span className="num">
+                      {' '}
+                      · in Sleeper {subTotal.toFixed(1)}
+                      {subWin != null ? ` (${Math.round(subWin * 100)}%)` : ''} → {total.toFixed(1)}
+                      {winP != null ? ` (${Math.round(winP * 100)}%)` : ''}
+                    </span>
+                  )}
+                </span>
+                <BasisLine
+                  label={basisLabel({ lineup: changed ? 'proposed' : 'submitted', source: 'monte', you: total, opp: opp?.total ?? null, win: winP, played: 0 })}
+                  open={cmpOpen}
+                  onToggle={() => setCmpOpen(o => !o)}
+                  other="Matchups"
+                />
               </div>
               <div className="stack" style={{ alignItems: 'flex-end', gap: 8 }}>
                 {winP != null && (
@@ -266,6 +305,13 @@ export default function Lineup() {
               </div>
             </div>
           </div>
+          {cmpOpen && (
+            <ProjCompare
+              here="lineup"
+              c={cmp}
+              note={lw && !lw.ok ? `Couldn’t read Matchups: ${lw.error}` : null}
+            />
+          )}
           {push.error && <ErrorBox message={push.error} onRetry={sendLineup} />}
           {push.note && <Notice message={push.note} />}
           {d.warnings.map(w => (
@@ -327,7 +373,7 @@ export default function Lineup() {
 
           <div className="row" style={{ gap: 16, alignItems: 'flex-start' }}>
             <span className="small mute" style={{ flex: 1, maxWidth: 820 }}>
-              Ranks from {d.sheet.name} › Week {d.boardWeek ?? '?'}. Proj is Tyler's rank mapped to the points per game that rank scored last season in this league's
+              Ranks from {d.sheet.name} › Week {d.boardWeek ?? '?'}. Proj is the sheet's rank mapped to the points per game that rank scored last season in this league's
               scoring. The order is the signal; totals are approximate.
             </span>
             <Btn size="sm" label={busy ? 'Refreshing…' : 'Refresh'} disabled={busy} onClick={load} bg="var(--surf)" />

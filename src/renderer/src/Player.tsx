@@ -4,7 +4,7 @@
 // Stats run the full width below: this season's games, every cell heat-coloured within its column.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { gameTable } from '@shared/gameLog'
-import { tepBoardFor, tylerFor, tylerLabel, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
+import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
 import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Stepper, StatTile, useHeat } from './ui'
@@ -50,9 +50,9 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
     ['Value', asset ? kfmt(mineOf(asset)) : '–'],
   ]
   const usage = pw.result?.rows.find(r => r.player_id === id)
-  // Tyler's rank, on the board that matches the league (or the one Settings picks).
-  const tyler = tylerFor(p?.tyler, tepBoardFor(settings?.rankBoard, context?.league.tePremium ?? 0))
-  const tylerText = p?.tyler ? tylerLabel(tyler, pos) ?? 'Not on Tyler’s board' : null
+  // The sheet's rank, on the board that matches the league (or the one Settings picks).
+  const board = boardRankFor(p?.board, tepBoardFor(settings?.rankBoard, context?.league.tePremium ?? 0))
+  const boardText = p?.board ? boardRankLabel(board, pos) ?? 'Not on the board' : null
 
   return (
     <div className="page stack" style={{ gap: 28 }}>
@@ -76,12 +76,12 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
               <span style={{ fontWeight: 700 }}>{pos}</span>
               {exp && <span className="sub">{exp}</span>}
             </div>
-            {tylerText && (
+            {boardText && (
               <span
                 className="num"
-                style={{ alignSelf: 'flex-start', padding: '5px 12px', borderRadius: 12, fontWeight: 700, fontSize: 15, background: tyler ? 'var(--acc)' : 'var(--surf2)', color: tyler ? 'var(--acc-ink)' : 'var(--mute)' }}
+                style={{ alignSelf: 'flex-start', padding: '5px 12px', borderRadius: 12, fontWeight: 700, fontSize: 15, background: board ? 'var(--acc)' : 'var(--surf2)', color: board ? 'var(--acc-ink)' : 'var(--mute)' }}
               >
-                {tylerText}
+                {boardText}
               </span>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 10px', paddingTop: 4 }}>
@@ -128,7 +128,7 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: Usage | undefined; 
   if (!a)
     return (
       <>
-        {head("Not in the trade pool: he isn't on a roster in this league, or not on Tyler's sheet.")}
+        {head("Not in the trade pool: he isn't on a roster in this league, or not on the sheet.")}
         {usage && <UsageCard usage={usage} />}
       </>
     )
@@ -137,9 +137,9 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: Usage | undefined; 
   const gap = mine > 0 ? Math.round(Math.abs(a.val / mine - 1) * 100) : 0
   const line =
     tag.label === 'Sell high'
-      ? `Sell high. The market pays ${gap}% more than Tyler's sheet.`
+      ? `Sell high. The market pays ${gap}% more than the sheet.`
       : tag.label === 'Undervalued'
-      ? `Undervalued. The market is ${gap}% below Tyler's sheet.`
+      ? `Undervalued. The market is ${gap}% below the sheet.`
       : tag.label === 'No market'
       ? "No market price: the market source doesn't list him."
       : 'Fairly priced. Market and sheet are within 10%.'
@@ -147,9 +147,9 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: Usage | undefined; 
     <>
       {head(line)}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-        <StatTile k="Tyler's sheet" v={num(mine)} size={26} />
+        <StatTile k="Sheet value" v={num(mine)} size={26} />
         <StatTile k="Market" v={a.market == null ? '—' : num(a.val)} size={26} color={tag.tone === 'acc' ? 'var(--acc)' : tag.tone === 'pos' ? 'var(--pos)' : undefined} />
-        <StatTile k="Tyler, overall" v={ranks?.sheetRank ? `#${ranks.sheetRank}` : '—'} size={26} />
+        <StatTile k="Sheet, overall" v={ranks?.sheetRank ? `#${ranks.sheetRank}` : '—'} size={26} />
         <StatTile k="Market, overall" v={ranks?.marketRank ? `#${Math.round(ranks.marketRank)}` : '—'} size={26} />
       </div>
       {usage && <UsageCard usage={usage} />}

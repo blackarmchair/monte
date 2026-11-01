@@ -7,7 +7,7 @@ import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
 import { gameTable } from '@monte/core/gameLog'
-import { tepBoardFor, tylerFor, tylerLabel, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
+import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from '@/lib/trade'
@@ -66,9 +66,9 @@ function PlayerBody({ id, fallbackName }: { id: string; fallbackName: string }) 
     ['Value', asset ? kfmt(mineOf(asset)) : '–'],
   ]
   const usage = pw.result?.rows.find(r => r.player_id === id)
-  // Tyler's rank, on the board that matches the league (or the one Settings picks).
-  const tyler = tylerFor(p?.tyler, tepBoardFor(settings?.rankBoard, context?.league.tePremium ?? 0))
-  const tylerText = p?.tyler ? tylerLabel(tyler, pos) ?? 'Not on Tyler’s board' : null
+  // The sheet's rank, on the board that matches the league (or the one Settings picks).
+  const board = boardRankFor(p?.board, tepBoardFor(settings?.rankBoard, context?.league.tePremium ?? 0))
+  const boardText = p?.board ? boardRankLabel(board, pos) ?? 'Not on the board' : null
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: t.bg }} contentContainerStyle={{ paddingBottom: 28 }} stickyHeaderIndices={[1]} keyboardShouldPersistTaps="handled">
@@ -91,9 +91,9 @@ function PlayerBody({ id, fallbackName }: { id: string; fallbackName: string }) 
               </T>
             )}
           </Row>
-          {!!tylerText && (
-            <View style={{ alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, backgroundColor: tyler ? t.acc : t.surf2 }}>
-              <Text style={{ fontFamily: font.sansBold, fontSize: 15, color: tyler ? t.accInk : t.mute }}>{tylerText}</Text>
+          {!!boardText && (
+            <View style={{ alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, backgroundColor: board ? t.acc : t.surf2 }}>
+              <Text style={{ fontFamily: font.sansBold, fontSize: 15, color: board ? t.accInk : t.mute }}>{boardText}</Text>
             </View>
           )}
         </View>
@@ -169,7 +169,7 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: { usagePPG: number 
     return (
       <>
         <T v="bold" size={19}>
-          Not in the trade pool: he isn't on a roster in this league, or not on Tyler's sheet.
+          Not in the trade pool: he isn't on a roster in this league, or not on the sheet.
         </T>
         {usage && <UsageCard usage={usage} />}
       </>
@@ -179,9 +179,9 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: { usagePPG: number 
   const gap = mine > 0 ? Math.round(Math.abs(a.val / mine - 1) * 100) : 0
   const line =
     tag.label === 'Sell high'
-      ? `Sell high. The market pays ${gap}% more than Tyler's sheet.`
+      ? `Sell high. The market pays ${gap}% more than the sheet.`
       : tag.label === 'Undervalued'
-      ? `Undervalued. The market is ${gap}% below Tyler's sheet.`
+      ? `Undervalued. The market is ${gap}% below the sheet.`
       : tag.label === 'No market'
       ? "No market price: the market source doesn't list him."
       : 'Fairly priced. Market and sheet are within 10%.'
@@ -191,7 +191,7 @@ function ValueTab({ id, usage, ranks }: { id: string; usage: { usagePPG: number 
         {line}
       </T>
       <Row gap={8}>
-        <StatTile k="Tyler's sheet" v={num(mine)} sub={ranks?.sheetRank ? `#${ranks.sheetRank} overall` : undefined} />
+        <StatTile k="Sheet value" v={num(mine)} sub={ranks?.sheetRank ? `#${ranks.sheetRank} overall` : undefined} />
         <StatTile
           k="Market"
           v={a.market == null ? '—' : num(a.val)}

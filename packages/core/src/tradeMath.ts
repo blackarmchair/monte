@@ -1,11 +1,11 @@
 // Trade math, a port of dynasty_model.py without the user-specific conviction layer.
 //
 // Two valuations of every asset:
-//   sheet   Tyler's rank -> value curve, translated into this league's scoring. What YOU judge on.
+//   sheet   the sheet's rank -> value curve, translated into this league's scoring. What YOU judge on.
 //   val     what this league's managers pay: sheet + beta·(market − sheet), where market is
 //           the market's (KeepTradeCut's trade-derived) rank through the SAME curve (so no scale calibration is
 //           assumed). What THEY judge on, and therefore what drives acceptance.
-// gap = sheet − val. Positive: the room underprices him relative to Tyler — a buy. Negative: the
+// gap = sheet − val. Positive: the room underprices him relative to the sheet — a buy. Negative: the
 // room overpays — a sell.
 //
 // A trade is scored in EFFECTIVE space, where "four quarters don't equal a dollar": eff() is
@@ -23,7 +23,7 @@ export function scoringAdj(pos: string, v: number, src: { te: number; passTd: nu
   if (pos === 'QB') return v * (1 + 0.04 * (lg.passTd - src.passTd)) // QB_SENS
   return v
 }
-export const SHEET_SCORING = { te: 0.75, passTd: 4 } // Tyler's TE-prem column, standard pass TD
+export const SHEET_SCORING = { te: 0.75, passTd: 4 } // the sheet's TE-prem column, standard pass TD
 /** FantasyCalc publishes plain PPR; KeepTradeCut's scoring depends on the TE-premium tier read. */
 export const FC_SCORING = { te: 0, passTd: 4 }
 
@@ -111,7 +111,7 @@ export function evaluate(give: Asset[], get: Asset[], p: EvalParams): Verdict {
 /** Their side under ~200 effective is inside the model's error bar: a coin flip, not a yes. */
 export const ET_NOISE = 200
 
-/** Tyler: giving future picks away needs an obvious, clear win. The bar is this much effective
+/** Strategy: giving future picks away needs an obvious, clear win. The bar is this much effective
  *  value, or this share of the picks' own effective value, whichever is more. */
 export const FUTURE_BAR = 500
 export const FUTURE_SHARE = 0.3
@@ -148,7 +148,7 @@ export function findPackages(
  * (Hamilton wk6: market/sheet median QB 0.85, WR 0.85, TE 1.10, RB 1.22 — 25 of 30 QBs read as a
  * buy). That is a real arbitrage, but it buries player-specific mispricing and ignores demand.
  * This returns, per position group, the median val/sheet ratio, so YOUR side can be rescaled to
- * the market's level for the position: you keep Tyler's order within a position and accept the
+ * the market's level for the position: you keep the sheet's order within a position and accept the
  * market's price for it. Their side stays on the real market — what they will actually pay.
  */
 export function positionRatios(assets: Asset[], minSheet = 1000): Record<string, number> {
@@ -212,21 +212,21 @@ export function pickValues(inp: PickInputs, season: string, round: number, dist:
 export type Lens = { a: number; b: number; diff: number }
 export type Side = 'a' | 'b' | 'even'
 export type VacuumVerdict = {
-  tyler: Lens
+  sheet: Lens
   market: Lens
   /** who each lens says comes out ahead ('even' = inside the error bar) */
-  tylerWinner: Side
+  sheetWinner: Side
   marketWinner: Side
-  /** set when Tyler's pick rule decided his lens: the side that gets the picks, because the other
+  /** set when the pick rule decided the sheet's lens: the side that gets the picks, because the other
    *  side's edge was too small to justify paying them */
   pickRule: Side | null
-  /** assets the market has no price for (valued at Tyler's sheet on both lenses) */
+  /** assets the market has no price for (valued at the sheet on both lenses) */
   unpriced: Asset[]
 }
 
 /**
  * A trade with no teams: side A gets `a`, side B gets `b`. Scored twice in effective value, on
- * Tyler's sheet as-is and on the raw market; no demand, no roster spots, no acceptance. When the
+ * the sheet as-is and on the raw market; no demand, no roster spots, no acceptance. When the
  * lenses disagree, that gap is the arbitrage.
  */
 export function vacuum(a: Asset[], b: Asset[], gamma: number): VacuumVerdict {
@@ -236,34 +236,34 @@ export function vacuum(a: Asset[], b: Asset[], gamma: number): VacuumVerdict {
     return { a: ta, b: tb, diff: ta - tb }
   }
   const winner = (l: Lens): Side => (Math.abs(l.diff) <= ET_NOISE ? 'even' : l.diff > 0 ? 'a' : 'b')
-  const tyler = lens(x => x.sheet)
+  const sheet = lens(x => x.sheet)
   const market = lens(x => x.market ?? x.sheet)
-  // Tyler's pick rule on his lens: the side that pays picks must win by the bar, past the error
+  // The pick rule on the sheet's lens: the side that pays picks must win by the bar, past the error
   // bar, or the call goes to the side getting them ("if it's fair, take the pick").
   const picks = (xs: Asset[]) => xs.filter(x => x.kind === 'pick').reduce((s, x) => s + eff(x.sheet, gamma), 0)
   const pa = picks(a)
   const pb = picks(b)
-  let tylerWinner = winner(tyler)
+  let sheetWinner = winner(sheet)
   let pickRule: Side | null = null
   if (pa !== pb) {
     const getter: Side = pa > pb ? 'a' : 'b'
-    if (tylerWinner !== getter && Math.abs(tyler.diff) < pickBar(Math.abs(pa - pb)) + ET_NOISE) tylerWinner = pickRule = getter
+    if (sheetWinner !== getter && Math.abs(sheet.diff) < pickBar(Math.abs(pa - pb)) + ET_NOISE) sheetWinner = pickRule = getter
   }
-  return { tyler, market, tylerWinner, marketWinner: winner(market), pickRule, unpriced: [...a, ...b].filter(x => x.market == null) }
+  return { sheet, market, sheetWinner, marketWinner: winner(market), pickRule, unpriced: [...a, ...b].filter(x => x.market == null) }
 }
 
 /** The vacuum verdict in words: a headline, a line under it, and its tone. */
 export function vacuumText(v: VacuumVerdict | null): { title: string; line: string; tone: 'pos' | 'acc' | 'mute' } {
   if (!v) return { title: 'Add to both sides', line: 'Search any player or pick, then add it to side A or side B.', tone: 'mute' }
   const who = (s: Side) => (s === 'even' ? 'even' : `side ${s.toUpperCase()}`)
-  const rule = v.pickRule ? ` Tyler’s pick rule decides it: the other side’s edge isn’t big enough to pay picks for, so take the picks.` : ''
-  if (v.tylerWinner === v.marketWinner)
-    return v.tylerWinner === 'even'
-      ? { title: 'Even trade', line: 'Tyler and the market both call it even.', tone: 'mute' }
-      : { title: `${who(v.tylerWinner).replace('side', 'Side')} wins`, line: `Tyler and the market agree: ${who(v.tylerWinner)} comes out ahead.${rule}`, tone: 'pos' }
+  const rule = v.pickRule ? ` The pick rule decides it: the other side’s edge isn’t big enough to pay picks for, so take the picks.` : ''
+  if (v.sheetWinner === v.marketWinner)
+    return v.sheetWinner === 'even'
+      ? { title: 'Even trade', line: 'The sheet and the market both call it even.', tone: 'mute' }
+      : { title: `${who(v.sheetWinner).replace('side', 'Side')} wins`, line: `The sheet and the market agree: ${who(v.sheetWinner)} comes out ahead.${rule}`, tone: 'pos' }
   return {
-    title: v.tylerWinner === 'even' ? 'Tyler calls it even' : `Tyler likes ${who(v.tylerWinner)}`,
-    line: `The market says ${who(v.marketWinner)}. That gap is the arbitrage: be the side Tyler likes, and the other manager will think they won.${rule}`,
+    title: v.sheetWinner === 'even' ? 'The sheet calls it even' : `The sheet likes ${who(v.sheetWinner)}`,
+    line: `The market says ${who(v.marketWinner)}. That gap is the arbitrage: be the side the sheet likes, and the other manager will think they won.${rule}`,
     tone: 'acc',
   }
 }

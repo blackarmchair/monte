@@ -1,9 +1,9 @@
-// The Ranks tab: Tyler's superflex boards shown as he ranks them, each row matched to Sleeper so
+// The Ranks tab: the sheet's superflex boards shown as the sheet ranks them, each row matched to Sleeper so
 // the view can show team, age and who rosters the player in this league. No values or model.
 import { fileName } from './paths'
 import type { Book } from './xlsx'
 import { boardIsTep, findBoards, rowMatcher, userAvatar, type Meta } from './values'
-import type { RankRow, RanksData, TylerRank } from './types'
+import type { RankRow, RanksData, BoardRank } from './types'
 import type { Workbook } from './xlsx'
 
 export async function buildRanks(opts: {
@@ -62,12 +62,12 @@ export async function buildRanks(opts: {
 }
 
 /**
- * Every player's place on Tyler's overall board, by Sleeper id: overall and positional rank on the
+ * Every player's place on the sheet's overall board, by Sleeper id: overall and positional rank on the
  * no-TE-prem block and on the TE-prem block. Matched the same way as the Ranks/Players view.
  */
-export function tylerIndex(wb: Workbook, meta: Meta): Map<string, { plain: TylerRank | null; tep: TylerRank | null }> {
+export function boardIndex(wb: Workbook, meta: Meta): Map<string, { plain: BoardRank | null; tep: BoardRank | null }> {
   const idFor = rowMatcher(meta, new Set())
-  const out = new Map<string, { plain: TylerRank | null; tep: TylerRank | null }>()
+  const out = new Map<string, { plain: BoardRank | null; tep: BoardRank | null }>()
   for (const b of findBoards(wb)) {
     const key = boardIsTep(b) ? 'tep' : 'plain'
     const seen = new Map<string, number>()

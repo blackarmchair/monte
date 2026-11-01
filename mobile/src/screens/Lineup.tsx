@@ -1,15 +1,18 @@
-// Lineup: this week's lineup off Tyler's weekly boards. A hero with the projection and win odds,
+// Lineup: this week's lineup off the sheet's weekly boards. A hero with the projection and win odds,
 // the best swap, then starter cards (NFL colour) and bench cards (surf). Tap a player to select
 // him, then tap a highlighted slot or player to swap; tap him again to cancel. Set in Sleeper
 // sends the lineup.
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, Text, View } from 'react-native'
+import type { LeagueWeek } from '@monte/core/leagueWeek'
+import { basisLabel, compareBases } from '@monte/core/projBasis'
 import type { Result, SSPlayer, StartSitData } from '@monte/core/types'
 import { anonStartSit } from '@monte/core/names'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { useOverlay } from '@/ui/overlay'
 import SleeperConnect from './SleeperConnect'
+import { BasisLine, ProjCompare } from './ProjCompare'
 import { Btn, ErrorBox, GradCard, Headshot, Hero, Loading, NeedsSheet, Notice, Row, Section, T, Tag, num, useTopOnFocus } from '@/ui/kit'
 import { font, nflColor, useTheme } from '@/ui/theme'
 import { benchOnly, ELIG, eligible, normCdf, tagOf, WIN_SD, type Swap } from './startsit.logic'
@@ -42,6 +45,12 @@ export default function Lineup() {
   /** what was last set in Sleeper from here: the baseline until the next load (REST is cached) */
   const [sent, setSent] = useState<{ lineup: Array<string | null>; starters: string[] } | null>(null)
   const [push, setPush] = useState<{ busy: boolean; error: string | null; note: string | null }>({ busy: false, error: null, note: null })
+  // Matchups' read of the same game, fetched when the comparison opens.
+  const [cmpOpen, setCmpOpen] = useState(false)
+  const [lw, setLw] = useState<Result<LeagueWeek> | null>(null)
+  useEffect(() => {
+    if (cmpOpen && !lw && leagueId) void monte.leagueWeek(leagueId).then(setLw)
+  }, [cmpOpen, lw, leagueId])
 
   const load = () => {
     if (!leagueId || !settings?.userId || !sheet) return
@@ -50,6 +59,7 @@ export default function Lineup() {
       setRes(r)
       setBusy(false)
       setSel(null)
+      setLw(null)
       if (r.ok) {
         setLineup(r.value.slots.map(s => s.current?.id ?? null))
         setSimOut({})
@@ -83,6 +93,19 @@ export default function Lineup() {
   const winP = opp ? normCdf((total - opp.total) / WIN_SD) : null
   const differs = lineup.some((id, i) => id !== sleeperLineup[i])
   const changed = differs || Object.values(simOut).some(Boolean)
+  // What's set in Sleeper, before any change on screen: the "current" in current → proposed.
+  const subTotal = sleeperLineup.reduce((sum, id) => {
+    const p = id ? players.get(id) : null
+    return sum + (p && p.startable ? p.proj : 0)
+  }, 0)
+  const subWin = opp ? normCdf((subTotal - opp.total) / WIN_SD) : null
+  const cmp = useMemo(() => {
+    if (!d || !lw) return null
+    const m = lw.ok ? lw.value.matchups.find(x => x.sides.some(s => s.rosterId === d.rosterId)) : undefined
+    const me = m?.sides.find(s => s.rosterId === d.rosterId) ?? null
+    const them = m?.sides.find(s => s.rosterId !== d.rosterId) ?? null
+    return compareBases({ me, opp: them, d, win: x => normCdf(x / WIN_SD), submitted: subTotal, proposed: changed ? { you: total, win: winP } : null })
+  }, [d, lw, subTotal, changed, total, winP])
   useEffect(() => setSim({ busy: false, text: null }), [total])
 
   // Best single swap: a bench player into slot i, directly or by moving slot j's starter to i.
@@ -240,6 +263,20 @@ export default function Lineup() {
                 </View>
               )}
             </Row>
+            {changed && (
+              <T v="small" c="ink2" num>
+                In Sleeper {subTotal.toFixed(1)}
+                {subWin != null ? ` (${Math.round(subWin * 100)}%)` : ''} → proposed {total.toFixed(1)}
+                {winP != null ? ` (${Math.round(winP * 100)}%)` : ''}
+              </T>
+            )}
+            <BasisLine
+              label={basisLabel({ lineup: changed ? 'proposed' : 'submitted', source: 'monte', you: total, opp: opp?.total ?? null, win: winP, played: 0 })}
+              open={cmpOpen}
+              onToggle={() => setCmpOpen(o => !o)}
+              other="Matchups"
+            />
+            {cmpOpen && <ProjCompare here="lineup" c={cmp} note={lw && !lw.ok ? `Couldn’t read Matchups: ${lw.error}` : null} />}
             <Row gap={8} style={{ marginTop: 6 }}>
               {opp && <Btn size="sm" label={sim.busy ? 'Simulating…' : sim.text ?? `Run ${num(settings?.sims ?? 1000)} sims`} onPress={runSim} />}
               <View style={{ flex: 1 }} />
@@ -325,7 +362,7 @@ export default function Lineup() {
           })}
 
           <T v="small" c="mute" style={{ paddingTop: 8 }}>
-            Ranks from {d.sheet.name} › Week {d.boardWeek ?? '?'}. Proj is Tyler's rank mapped to the points per game that rank scored last season in this league's
+            Ranks from {d.sheet.name} › Week {d.boardWeek ?? '?'}. Proj is the sheet's rank mapped to the points per game that rank scored last season in this league's
             scoring. The order is the signal; totals are approximate.
           </T>
           <Btn label={busy ? 'Refreshing…' : 'Refresh'} disabled={busy} onPress={load} bg={t.surf} />

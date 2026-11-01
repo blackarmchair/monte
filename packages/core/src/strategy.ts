@@ -1,4 +1,4 @@
-// Tyler's dynasty strategy as trade ideas. The board already holds his player opinions, so nothing
+// A dynasty strategy as trade ideas. The board already holds the player opinions, so nothing
 // here changes a value: these rules decide which assets are worth shopping or chasing, which
 // assets never move, which partners to aim at, and how high the bar is. Every idea carries the
 // rule behind it.
@@ -14,7 +14,7 @@ import { ET_NOISE, eff, evaluate, findPackages, pickBar, type Asset, type EvalPa
 export type Phase = 'offseason' | 'drafting' | 'inSeason'
 export type Mode = 'contend' | 'rebuild' | 'middle'
 
-/** Tyler's one dated rule: no 1st of this draft leaves without clearing it with him. */
+/** The one dated rule: no 1st of this draft leaves without an obvious win. */
 export const HOLD_FIRST_SEASON = '2027'
 /** Past these ages a sliding player is a falling knife. RB efficiency dies at 29. */
 export const CLIFF: Record<string, number> = { QB: 34, RB: 28, WR: 30, TE: 30 }
@@ -153,9 +153,9 @@ export function teamMode(t: { wins: number; losses: number; playoffPct: number |
 /** Why this pick never leaves in an idea (and draws a warning in the builder), or null. */
 export function heldPick(a: Asset, me: number, nextSeason: string): string | null {
   if (a.kind !== 'pick' || a.round !== 1) return null
-  if (a.season === HOLD_FIRST_SEASON) return `Tyler: no ${HOLD_FIRST_SEASON} 1st leaves without clearing it with him.`
-  if (a.originalOwner === me) return 'Tyler: never trade your own future 1st without clearing it with him.'
-  if (Number(a.season) > Number(nextSeason)) return 'Tyler: 1sts this far out almost never return fair value. He doesn’t try.'
+  if (a.season === HOLD_FIRST_SEASON) return `Hold: no ${HOLD_FIRST_SEASON} 1st leaves without an obvious win.`
+  if (a.originalOwner === me) return 'Hold: never trade your own future 1st without an obvious win.'
+  if (Number(a.season) > Number(nextSeason)) return 'Hold: 1sts this far out almost never return fair value.'
   return null
 }
 
@@ -168,7 +168,7 @@ export function futureBar(give: Asset[], gamma: number): number {
 export function giveWarnings(give: Asset[], me: number, nextSeason: string): string[] {
   const out = give.map(a => heldPick(a, me, nextSeason)).filter((w): w is string => !!w)
   if (give.some(a => a.kind === 'pick' && !heldPick(a, me, nextSeason)))
-    out.push('Future picks out: Tyler wants an obvious, clear win for these, not “meh” or “just okay.”')
+    out.push('Future picks out: it takes an obvious, clear win for these, not “meh” or “just okay.”')
   return [...new Set(out)]
 }
 
@@ -187,7 +187,7 @@ export function sellReasons(a: Asset, c: StrategyCtx): Reason[] {
   const out: Reason[] = []
   const m = mineOf(a)
   if (a.market != null && gapOf(a.val, m))
-    out.push({ rule: 'Sell high', text: `The market pays ${Math.round((a.val / Math.max(m, 1) - 1) * 100)}% more than Tyler’s value.` })
+    out.push({ rule: 'Sell high', text: `The market pays ${Math.round((a.val / Math.max(m, 1) - 1) * 100)}% more than the sheet’s value.` })
   if (a.kind === 'player') {
     const knife = avoid(a, 'middle')
     if (knife && a.market != null) out.push({ rule: 'Someone else’s problem', text: knife.replace(': don’t catch a falling knife.', '. Sell before it falls further.') })
@@ -205,7 +205,7 @@ export function buyReasons(a: Asset, c: StrategyCtx): Reason[] {
   const out: Reason[] = []
   const m = mineOf(a)
   if (a.market != null && gapOf(m, a.val))
-    out.push({ rule: 'Undervalued', text: `The market is ${Math.round((1 - a.val / Math.max(m, 1)) * 100)}% below Tyler’s value.` })
+    out.push({ rule: 'Undervalued', text: `The market is ${Math.round((1 - a.val / Math.max(m, 1)) * 100)}% below the sheet’s value.` })
   if (a.kind === 'pick') {
     if (c.phase !== 'drafting' && m >= 0.9 * a.val) {
       out.push(
@@ -415,7 +415,7 @@ export function starterLine(positions: string[], teams: number): Record<string, 
 
 /**
  * Chains: X (yours) to B for Y, then Y to C for Z. Both steps must be a clear yes (two managers have
- * to agree, so no coin flips); step one alone must not lose you value on Tyler's sheet, so being
+ * to agree, so no coin flips); step one alone must not lose you value on the sheet, so being
  * stuck holding Y is fine; and the whole must beat selling X directly by CHAIN_EDGE.
  */
 function buildChains(
@@ -445,7 +445,7 @@ function buildChains(
     let best: Chain | null = null
     for (const b of partners) {
       for (const y of poolOf.get(b.roster_id)!) {
-        // You hold Y between the steps, so it must be a pick Tyler lets you flip.
+        // You hold Y between the steps, so it must be a pick the rules let you flip.
         if (heldPick({ ...y, owner: c.me }, c.me, c.nextSeason)) continue
         const dB = demand(y, b.roster_id).mult
         const buyers = partners.filter(t => t.roster_id !== b.roster_id && demand(y, t.roster_id).mult >= dB * CHAIN_SPREAD)

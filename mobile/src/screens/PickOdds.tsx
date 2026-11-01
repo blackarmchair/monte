@@ -4,9 +4,11 @@
 // in-process, so the old result stays on screen, dimmed, while a new one computes.
 import { useEffect, useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
+import type { LeagueWeek } from '@monte/core/leagueWeek'
 import type { BBResult, BBTeam, LeagueContext } from '@monte/core/types'
 import { newSeed, sameRunParams } from '@monte/core/seed'
 import { projectedSlots } from '@monte/core/slots'
+import { monte } from '@/lib/monte'
 import { useApp, type Forced } from '@/lib/store'
 import { useOverlay } from '@/ui/overlay'
 import { Btn, Empty, ErrorBox, GradCard, Hero, Histogram, Loading, Row, Section, Seg, Slider, T, num, pad2 } from '@/ui/kit'
@@ -212,11 +214,23 @@ function WhatIfSheet() {
   const { context, bb: run } = useApp()
   const o = useOddsRun()
   const [err, setErr] = useState(o.err)
+  /** Matchups' win chances for this week, shown on the buttons when it's the what-if week */
+  const [week, setWeek] = useState<LeagueWeek | null>(null)
   const result = run.result
   const whatIf = result?.whatIf ?? run.base?.whatIf ?? null
+  useEffect(() => {
+    const id = context?.league.league_id
+    if (!id) return
+    let live = true
+    void monte.leagueWeek(id).then(r => live && r.ok && setWeek(r.value))
+    return () => {
+      live = false
+    }
+  }, [context?.league.league_id])
   if (!context) return null
   const winners = whatIf ? o.forced[whatIf.week] ?? [] : []
   const nameOf = new Map(context.rosters.map(r => [r.roster_id, r.display_name]))
+  const winPct = new Map(week && whatIf && week.week === whatIf.week ? week.matchups.flatMap(m => m.sides.map(s => [s.rosterId, s.winPct] as const)) : [])
   const { lead, slot } = leadFirst(context, result)
 
   const pickWinner = (rid: number, opp: number) => {
@@ -259,15 +273,21 @@ function WhatIfSheet() {
               {[a, b].map((rid, i) => {
                 const on = winners.includes(rid)
                 const off = !on && winners.includes(i === 0 ? b : a)
+                const pct = winPct.get(rid)
                 return (
                   <Pressable
                     key={rid}
                     onPress={() => pickWinner(rid, i === 0 ? b : a)}
-                    style={{ flex: 1, minWidth: 0, minHeight: 48, paddingHorizontal: 12, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.acc : t.surf }}
+                    style={{ flex: 1, minWidth: 0, minHeight: 48, paddingHorizontal: 10, borderRadius: 14, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.acc : t.surf }}
                   >
-                    <Text numberOfLines={1} style={{ fontFamily: font.sansSemi, fontSize: 14, color: on ? t.accInk : off ? t.mute : t.ink }}>
+                    <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: font.sansSemi, fontSize: 14, color: on ? t.accInk : off ? t.mute : t.ink }}>
                       {nameOf.get(rid) ?? `Roster ${rid}`}
                     </Text>
+                    {pct != null && (
+                      <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: on ? alpha(t.accInk, 0.18) : t.surf2 }}>
+                        <Text style={{ fontFamily: font.sansBold, fontSize: 11, color: on ? t.accInk : pct >= 0.5 ? t.pos : t.mute }}>{Math.round(pct * 100)}%</Text>
+                      </View>
+                    )}
                   </Pressable>
                 )
               })}

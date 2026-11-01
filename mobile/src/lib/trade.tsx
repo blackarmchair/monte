@@ -1,6 +1,6 @@
 // The trade being built, valued: shared by the Trade tab, its sticky verdict bar and review sheet,
 // the tab badge, and every "add to trade" elsewhere (Players long-press, team and player sheets).
-// Same valuation as the desktop TradesView: your side on Tyler's sheet (raw or within position),
+// Same valuation as the desktop TradesView: your side on the sheet (raw or within position),
 // their side on the market blended by Market influence, picks priced over the sim's slot odds.
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Result, TradeData } from '@monte/core/types'
@@ -77,7 +77,7 @@ type Trade = {
   /** your direction for trade ideas: the override if set, else worked out from record and odds */
   direction: { mode: Mode; auto: { mode: Mode; why: string }; override: Mode | null }
   setMode: (m: Mode | null) => void
-  /** Tyler's-strategy ideas at the current values (not memoised: call it from a useMemo) */
+  /** Strategy ideas at the current values (not memoised: call it from a useMemo) */
   getIdeas: () => Ideas
   /** Vacuum: any player (rostered or not) or pick, two sides, no teams. Its own trade. */
   vacuumPool: Asset[]
@@ -148,13 +148,13 @@ export function TradeProvider({ children }: { children: ReactNode }) {
       }
     })
     const base = [...d.assets.map(a => ({ ...a, val: blend(a.sheet, a.market) })), ...picks]
-    // Within position: keep Tyler's order inside a position, at the market's level for it.
+    // Within position: keep the sheet's order inside a position, at the market's level for it.
     const ratios = positionRatios(base)
     return base.map(a => ({ ...a, mine: mode === 'relative' ? a.sheet * (ratios[a.pos] ?? 1) : a.sheet }))
   }, [d, bb.result, names, mode, beta])
   const byId = useMemo(() => new Map(assets.map(a => [a.id, a])), [assets])
 
-  // Vacuum: this league's assets plus every free agent Tyler or the market prices. Kept apart from
+  // Vacuum: this league's assets plus every free agent the sheet or the market prices. Kept apart from
   // the trade being built, and cleared with the league (pick ids belong to it).
   const vacuumPool = useMemo(() => [...assets, ...(d?.freeAgents ?? [])], [assets, d])
   const vacById = useMemo(() => new Map(vacuumPool.map(a => [a.id, a])), [vacuumPool])
@@ -225,7 +225,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     !d || me == null
       ? { mode: direction.mode, sells: [], buys: [], chains: [] }
       : buildIdeas({
-          // Always Tyler's sheet as-is: within-position mode would hand the market its view of
+          // Always the sheet as-is: within-position mode would hand the market its view of
           // whole positions (TEs over WRs), the very gap the ideas are meant to exploit.
           assets: assets.map(a => ({ ...a, mine: a.sheet })),
           me,
@@ -250,7 +250,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
 
   const findDeals = (gv: Asset[], perTeam: number, limit: number): Deal[] => {
     if (!d || me == null) return []
-    // Shopping never offers a pick Tyler says to hold.
+    // Shopping never offers a pick the strategy says to hold.
     const gives = gv.length ? [gv] : mine.filter(a => mineOf(a) > 0 && !heldPick(a, me, d.pickInputs.season)).slice(0, SHOP_TOP).map(a => [a])
     const out: Deal[] = []
     for (const g of gives)

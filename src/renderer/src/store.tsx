@@ -10,11 +10,10 @@ export type TradeState = { give: string[]; get: string[]; partner: number | null
 export const EMPTY_TRADE: TradeState = { give: [], get: [], partner: null }
 export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string }
 export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', q: '' }
-export type PicksSeg = 'odds' | 'draft'
 /** Pick odds what-if: NFL week -> roster ids the user picked to win that week. */
 export type Forced = Record<number, number[]>
 
-export type Section = 'league' | 'lineup' | 'trade' | 'players' | 'picks'
+export type Section = 'league' | 'lineup' | 'trade' | 'players' | 'picks' | 'draft'
 export type Page = { kind: 'player'; id: string; name: string } | { kind: 'team'; rid: number; name: string } | { kind: 'settings' }
 type Toast = { msg: string; action?: { label: string; onClick: () => void } }
 
@@ -52,8 +51,6 @@ type App = {
   setTrade: (f: (t: TradeState) => TradeState) => void
   playersUi: PlayersUi
   setPlayersUi: (f: (u: PlayersUi) => PlayersUi) => void
-  picksSeg: PicksSeg
-  setPicksSeg: (s: PicksSeg) => void
   forced: Forced
   setForced: (f: Forced) => void
   section: Section
@@ -95,7 +92,6 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
   const [sheetError, setSheetError] = useState<string | null>(null)
   const [trade, setTradeState] = useState<TradeState>(EMPTY_TRADE)
   const [playersUi, setPlayersUiState] = useState<PlayersUi>(PLAYERS_UI)
-  const [picksSeg, setPicksSeg] = useState<PicksSeg>('odds')
   const [forced, setForced] = useState<Forced>({})
   const [section, setSection] = useState<Section>('league')
   const [stack, setStack] = useState<Page[]>([])
@@ -233,8 +229,6 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
     setTrade: f => setTradeState(f),
     playersUi,
     setPlayersUi: f => setPlayersUiState(f),
-    picksSeg,
-    setPicksSeg,
     forced,
     setForced,
     section,

@@ -1,4 +1,4 @@
-// The desktop shell (hybrid 2b): a 248px sidebar with the wordmark, the league switcher, the five
+// The desktop shell (hybrid 2b): a 248px sidebar with the wordmark, the league switcher, the six
 // sections and Settings; a 72px top bar with the page title and a search that filters Players
 // live; the page; a centred league modal and the toast. Player, Team and Settings push over a section.
 import { useEffect, useState } from 'react'
@@ -12,6 +12,7 @@ import Lineup from './Lineup'
 import Trade from './Trade'
 import Players from './Players'
 import Picks from './Picks'
+import Draft from './Draft'
 import Player from './Player'
 import Team from './Team'
 import { teamLabel } from './names'
@@ -23,6 +24,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: IconName }> = [
   { id: 'trade', label: 'Trade', icon: 'trade' },
   { id: 'players', label: 'Players', icon: 'players' },
   { id: 'picks', label: 'Picks', icon: 'picks' },
+  { id: 'draft', label: 'Draft', icon: 'draft' },
 ]
 
 export function formatLabel(l: LeagueSummary): string {
@@ -83,6 +85,7 @@ function Shell() {
       trade: <Trade key={context.league.league_id} />,
       players: <Players key={context.league.league_id} />,
       picks: <Picks key={context.league.league_id} />,
+      draft: <Draft key={context.league.league_id} />,
     }[section]
 
   return (

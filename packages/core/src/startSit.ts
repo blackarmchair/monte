@@ -1,15 +1,15 @@
-// Weekly start/sit, a port of reference/start_sit.py. It reads Tyler's weekly position boards
+// Weekly start/sit, a port of reference/start_sit.py. It reads the sheet's weekly position boards
 // from the user's workbook and optimizes the user's actual Sleeper roster.
 //
-// Dynasty value is a price, not a forecast, so nothing here touches it. Tyler's boards rank
+// Dynasty value is a price, not a forecast, so nothing here touches it. The sheet's boards rank
 // within a position; a FLEX or SUPER_FLEX slot asks a cross-position question ordinals cannot
 // answer, so each positional rank is mapped to the PPG the Nth-best player at that position
 // posted LAST season, rescored into this league's rules. That curve is the shape of positional
 // scarcity, not a forecast of a named player: ordering is the signal, totals are approximate.
 //
-// The property everything rests on: Tyler OMITS players who cannot play. The board is the
+// The property everything rests on: the sheet omits players who cannot play. The board is the
 // availability list, so no injury multiplier is invented. Sleeper's tag is kept only to
-// CONTRADICT him (news that landed after he published), and a contradiction is surfaced, not
+// CONTRADICT it (news that landed after the board was published), and a contradiction is surfaced, not
 // silently resolved.
 import { fileName } from './paths'
 import type { Workbook } from './xlsx'
@@ -59,7 +59,7 @@ function variantCols(pos: string, banner: string[], passTd: number, rec: number)
     if (passTd <= 4.5) return { cols: [four], note: '4pt pass TD' }
     if (passTd >= 5.5) return { cols: [six], note: '6pt pass TD' }
     // A 5pt league sits between the two published columns. Averaging interpolates; it is not
-    // a rank Tyler published, and the screen says so.
+    // a rank the sheet published, and the screen says so.
     return { cols: [four, six], note: 'average of 4pt and 6pt (this league is 5pt; neither column fits)' }
   }
   const half = find(/half\s*ppr/i)
@@ -82,7 +82,7 @@ function readBoards(wb: Workbook, passTd: number, rec: number) {
       if (!pos || ![...SKILL, 'FLEX'].includes(pos)) continue
       const week = Number(/week\s*(\d+)/i.exec(tab)?.[1]) || null
       const prev = boards.get(pos)
-      if (prev && (prev.week ?? 0) >= (week ?? 0)) break // keep the newest week if Tyler left an old tab
+      if (prev && (prev.week ?? 0) >= (week ?? 0)) break // keep the newest week if the sheet kept an old tab
       // The banner (scoring variant names) sits on the first non-empty row above the header.
       let banner: string[] = []
       for (let b = h - 1; b >= 0; b--) if ((g[b] ?? []).some(c => c.trim())) { banner = (g[b] ?? []).map(c => c ?? ''); break }
@@ -120,7 +120,7 @@ function readBoards(wb: Workbook, passTd: number, rec: number) {
   }
   const missing = SKILL.filter(p => !boards.has(p) || boards.get(p)!.ranks.size === 0)
   if (missing.length)
-    throw new Error(`No weekly ${missing.join(' / ')} board found in the workbook. Re-download Tyler’s sheet as .xlsx.`)
+    throw new Error(`No weekly ${missing.join(' / ')} board found in the workbook. Re-download the sheet as .xlsx.`)
   return { boards, injured }
 }
 
@@ -237,12 +237,12 @@ export function buildStartSit(o: {
   if (boardWeek != null && boardWeek !== o.week)
     warnings.push(
       boardWeek < o.week
-        ? `Tyler’s boards in this file are for week ${boardWeek}, but it is week ${o.week}. Re-download the sheet for this week’s ranks.`
-        : `Tyler’s boards are already for week ${boardWeek}; Sleeper still shows week ${o.week}.`,
+        ? `The sheet’s boards in this file are for week ${boardWeek}, but it is week ${o.week}. Re-download the sheet for this week’s ranks.`
+        : `The sheet’s boards are already for week ${boardWeek}; Sleeper still shows week ${o.week}.`,
     )
   if (!curves.size) warnings.push('Last season’s stats were unavailable, so projections are flat and only rank order is meaningful.')
   const flex = boards.get('FLEX')
-  if (!flex || flex.ranks.size === 0) warnings.push('Tyler hasn’t filled this week’s Flex board yet; FLEX ordering rests on the curve alone.')
+  if (!flex || flex.ranks.size === 0) warnings.push('The sheet’s Flex board isn’t filled for this week yet; FLEX ordering rests on the curve alone.')
   // Byes and locks always follow Sleeper's week; a stale board is a warning, not a different week.
   const week = o.week
 
@@ -258,26 +258,26 @@ export function buildStartSit(o: {
     const depth = board?.ranks.size ?? 0
     const status = o.schedule[team]?.[week]
     const locked = !!status && status !== 'pre_game'
-    const tyler = injured.get(k)
+    const listed = injured.get(k)
     const sleeperTag = String(m.injury_status ?? '')
     const sleeperOut = /^(out|ir|pup|sus|doubtful|na)$/i.test(sleeperTag)
 
     let startable = true
     let flag = ''
     let conflict: string | null = null
-    if (!SKILL.includes(pos)) [startable, flag] = [false, 'not ranked by Tyler']
+    if (!SKILL.includes(pos)) [startable, flag] = [false, 'not ranked on the sheet']
     else if (where === 'taxi') [startable, flag] = [false, 'Taxi']
     else if (where === 'ir') [startable, flag] = [false, 'IR']
     else if (!team) [startable, flag] = [false, 'No NFL team']
     else if (!o.schedule[team]?.[week]) [startable, flag] = [false, 'Bye']
-    // A manual override is the user's own newer information, so it outranks Tyler's board.
+    // A manual override is the user's own newer information, so it outranks the board.
     else if (o.overrides[id] != null && week < o.overrides[id])
       [startable, flag] = [false, o.overrides[id] >= 99 ? 'Out for season (manual)' : `Out until wk ${o.overrides[id]} (manual)`]
-    else if (tyler && rank == null) [startable, flag] = [false, `${tyler.status || 'Out'} — ${tyler.reason || 'injury'} (Tyler)`]
-    else if (tyler) flag = `${tyler.status || 'Listed'} — ${tyler.reason || 'injury'} (Tyler)`
-    else if (rank == null) conflict = sleeperTag ? `Sleeper tags him ${sleeperTag} and he isn’t on Tyler’s board` : null
+    else if (listed && rank == null) [startable, flag] = [false, `${listed.status || 'Out'} — ${listed.reason || 'injury'} (sheet)`]
+    else if (listed) flag = `${listed.status || 'Listed'} — ${listed.reason || 'injury'} (sheet)`
+    else if (rank == null) conflict = sleeperTag ? `Sleeper tags him ${sleeperTag} and he isn’t on the board` : null
     else if (sleeperOut)
-      conflict = `Tyler ranks him ${pos}${Math.round(rank)}, but Sleeper now tags him ${sleeperTag}. A tag that landed after the board was published is the newer fact — check it.`
+      conflict = `The sheet ranks him ${pos}${Math.round(rank)}, but Sleeper now tags him ${sleeperTag}. A tag that landed after the board was published is the newer fact — check it.`
     else if (sleeperTag) flag = sleeperTag
 
     return {
@@ -390,8 +390,8 @@ export function buildStartSit(o: {
     opponent = { name: (u?.metadata?.team_name || u?.display_name || `Roster ${theirs.roster_id}`).trim(), total, rosterId: theirs.roster_id }
   }
 
-  // A Tyler/Sleeper disagreement only matters for someone who is, or would be, in the lineup;
-  // deep-bench noise ("Sleeper tags him Q and Tyler doesn't rank him") is left on the row.
+  // A sheet/Sleeper disagreement only matters for someone who is, or would be, in the lineup;
+  // deep-bench noise ("Sleeper tags him Q and the sheet doesn't rank him") is left on the row.
   const relevant = new Set([...curIds, ...bestIds])
   const conflicts = [...all.values()].filter(p => p.conflict && relevant.has(p.id))
   if (conflicts.length) warnings.push(...conflicts.map(p => `${p.name}: ${p.conflict}`))

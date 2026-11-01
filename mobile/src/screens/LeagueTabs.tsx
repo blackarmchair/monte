@@ -6,12 +6,15 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Linking, Pressable, View } from 'react-native'
 import type { LeagueTrades, LeagueWeek, MatchPlayer, MatchSide, TradeTx } from '@monte/core/leagueWeek'
 import { teamLabel } from '@monte/core/names'
-import type { Result } from '@monte/core/types'
+import { basisLabel, compareBases, matchupBasis } from '@monte/core/projBasis'
+import type { Result, StartSitData } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { mineOf, useTrade } from '@/lib/trade'
 import { Card, ErrorBox, GradCard, Headshot, kfmt, Loading, ORD, Row, Section, Stack2, T, TeamAvatar } from '@/ui/kit'
 import { nflColor, R, ring, teamColor, useTheme } from '@/ui/theme'
+import { BasisLine, ProjCompare } from './ProjCompare'
+import { normCdf, WIN_SD } from './startsit.logic'
 
 /** Load once per league, with a manual refresh. */
 function useLoad<T>(fetcher: (leagueId: string) => Promise<Result<T>>) {
@@ -46,9 +49,18 @@ function Head({ title, busy, onRefresh }: { title: string; busy: boolean; onRefr
 
 export function Matchups() {
   const t = useTheme()
-  const { context, hide } = useApp()
+  const { context, hide, settings, sheet } = useApp()
   const { res, busy, load } = useLoad(id => monte.leagueWeek(id))
   const me = context?.myRosterId ?? null
+  // Lineup's read, fetched only when the comparison opens: it needs the sheet.
+  const [cmpOpen, setCmpOpen] = useState(false)
+  const [ss, setSs] = useState<Result<StartSitData> | null>(null)
+  useEffect(() => setSs(null), [res])
+  useEffect(() => {
+    const leagueId = context?.league.league_id
+    if (!cmpOpen || ss || !sheet || !leagueId || !settings?.userId) return
+    void monte.startSit(leagueId, settings.userId).then(setSs)
+  }, [cmpOpen, ss, sheet, context, settings?.userId])
   const lw: LeagueWeek | null = res?.ok ? res.value : null
   // Yours first; within each pair, yours on top.
   const pairs = useMemo(() => {
@@ -81,6 +93,18 @@ export function Matchups() {
               <SideRow s={b} name={label(b)} lead={b.winPct > a.winPct} />
               <WinBar a={a} b={b} />
             </Pressable>
+            {a.rosterId === me && (
+              <View style={{ gap: 10, paddingHorizontal: 14, paddingBottom: 12 }}>
+                <BasisLine label={basisLabel(matchupBasis(a, b))} open={cmpOpen} onToggle={() => setCmpOpen(o => !o)} other="Lineup" />
+                {cmpOpen && (
+                  <ProjCompare
+                    here="matchups"
+                    c={!sheet || ss ? compareBases({ me: a, opp: b, d: ss?.ok ? ss.value : null, win: x => normCdf(x / WIN_SD) }) : null}
+                    note={!sheet ? 'Lineup needs the sheet, so only this screen’s numbers are shown.' : ss && !ss.ok ? `Couldn’t read Lineup: ${ss.error}` : null}
+                  />
+                )}
+              </View>
+            )}
             {isOpen && <StarterRows a={a} b={b} />}
           </View>
         )

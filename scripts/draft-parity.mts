@@ -34,7 +34,7 @@ const labelBad = made.filter(p => d.order.find(s => s.pickNo === p.pickNo)?.labe
 check(labelBad.length === 0, `pick labels agree between order and picks (${made.length})`)
 
 // A pick missing from the board is only a failure if the sheet DOES list him (a matching miss).
-// Players Tyler doesn't rank (kickers, retirees, deep rookies) are ungraded by design.
+// Players the sheet doesn't rank (kickers, retirees, deep rookies) are ungraded by design.
 const ids = new Set(d.players.map(p => p.id))
 const sheetNames = new Set(findBoard(wb).rows.map(r => norm(r.name)))
 const off = made.filter(p => !ids.has(p.playerId))
@@ -57,7 +57,7 @@ if (punkGrade) {
     const a = mine.get(p.pickNo)!, b = theirs.get(p.pickNo)!
     return a.graded !== b.graded || (a.graded && (a.letter !== b.letter || Math.abs(a.score - b.score) > 1e-9 || a.posPick !== b.posPick || a.userRank !== b.userRank))
   })
-  // Known, expected diff: names only Monte's ALIAS resolves (Tyler's "Kenny Gainwell") are
+  // Known, expected diff: names only Monte's ALIAS resolves (the sheet's "Kenny Gainwell") are
   // ungraded in draftPunk, which matched by name with no such entry. Shown, not hidden.
   const show = (g: any) => (g.graded ? `${g.letter} ${g.position}${g.posPick}/sheet ${g.userRank}` : g.reason)
   check(diff.length === 0, `grades vs draftPunk: ${made.length - diff.length}/${made.length} identical (letter, score, positional run, sheet rank)`)

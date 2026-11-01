@@ -1,8 +1,8 @@
 // Trade: three tabs. Build is who you're trading with (tap to change), then You give and You get as
-// asset cards, each with an "Add from …" picker. Ideas is Tyler's strategy against the market: your
+// asset cards, each with an "Add from …" picker. Ideas is the strategy against the market: your
 // direction, then what to sell and what to buy, each with its rule and an ask / settle deal that
 // opens in Build, then chains (two linked trades through a team that values the middle player less
-// than another does). Vacuum scores any two sides of players and picks, rostered or not, on Tyler's
+// than another does). Vacuum scores any two sides of players and picks, rostered or not, on the sheet's
 // sheet and on the market, with no teams at all. A verdict bar floats above the tab bar while the trade has anything in it;
 // Review opens the full read and the send.
 import { useMemo, useRef, useState, type RefObject } from 'react'
@@ -122,7 +122,7 @@ export default function Trade() {
               </View>
             ))}
             <T v="small" c="mute">
-              Your side is Tyler's sheet; theirs is the market, blended by Market influence (in Review). Verdicts use effective value: one star beats a bundle of the
+              Your side is the sheet; theirs is the market, blended by Market influence (in Review). Verdicts use effective value: one star beats a bundle of the
               same raw total.
             </T>
           </>
@@ -418,7 +418,7 @@ function TradeSheet() {
         </T>
       </Row>
       <T v="small" c="mute">
-        Their side is the market ({x.d?.market.source ?? 'KeepTradeCut'}), blended toward Tyler's sheet as you lower this: how much your league trades like the market.
+        Their side is the market ({x.d?.market.source ?? 'KeepTradeCut'}), blended toward the sheet as you lower this: how much your league trades like the market.
       </T>
       <Row gap={8}>
         <Btn
@@ -475,7 +475,7 @@ function IdeasView({ onOpen }: { onOpen: () => void }) {
       </Card>
       {(
         [
-          ['Sell', ideas.sells, 'Nothing to sell right now: no asset of yours where the market pays more, or Tyler says move on, and a partner says yes.'],
+          ['Sell', ideas.sells, 'Nothing to sell right now: no asset of yours where the market pays more, or the strategy says move on, and a partner says yes.'],
           ['Buy', ideas.buys, 'Nothing to buy right now that a partner would sell for a deal you win.'],
         ] as const
       ).map(([title, list, empty]) => (
@@ -512,7 +512,7 @@ function IdeasView({ onOpen }: { onOpen: () => void }) {
         )}
       </View>
       <T v="small" c="mute">
-        Ideas follow Tyler’s strategy doc: values stay his board and the market, the rules pick what to shop, what to chase and who to aim at. Picks he says to hold never
+        Ideas follow the strategy rules: values stay the board and the market, the rules pick what to shop, what to chase and who to aim at. Picks the rules say to hold never
         appear. Ask is the most you can take while they still say yes; Settle is what they clearly say yes to. Greed is good: open with the ask.
       </T>
     </View>
@@ -683,7 +683,7 @@ function VacuumView({ scroll }: { scroll: RefObject<ScrollView | null> }) {
         </T>
         {v && (
           <Row gap={8}>
-            {lensTile('Tyler’s sheet', v.tyler, v.tylerWinner)}
+            {lensTile('Sheet', v.sheet, v.sheetWinner)}
             {lensTile('Market', v.market, v.marketWinner)}
           </Row>
         )}
@@ -715,7 +715,7 @@ function VacuumView({ scroll }: { scroll: RefObject<ScrollView | null> }) {
           )}
         </View>
       ))}
-      {v && v.unpriced.length > 0 && <Notice message={`No market price for ${v.unpriced.map(a => a.name).join(', ')}: the market lens uses Tyler’s value for them.`} />}
+      {v && v.unpriced.length > 0 && <Notice message={`No market price for ${v.unpriced.map(a => a.name).join(', ')}: the market lens uses the sheet’s value for them.`} />}
       {(vac.a.length > 0 || vac.b.length > 0) && <Btn label="Clear" onPress={x.vacClear} />}
       <View ref={addRef} style={{ gap: 8 }}>
         <Section title="Add" />
@@ -731,7 +731,7 @@ function VacuumView({ scroll }: { scroll: RefObject<ScrollView | null> }) {
         ))}
       </View>
       <T v="small" c="mute">
-        Vacuum ignores teams: no partner, no demand, no roster spots. Tyler’s lens is his sheet as-is, the market’s is KeepTradeCut’s price, both in this league’s scoring and in effective value (one star beats a bundle).
+        Vacuum ignores teams: no partner, no demand, no roster spots. The sheet’s lens is the sheet as-is, the market’s is KeepTradeCut’s price, both in this league’s scoring and in effective value (one star beats a bundle).
       </T>
     </View>
   )

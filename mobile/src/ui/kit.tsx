@@ -664,8 +664,8 @@ export function NeedsSheet({ inset = true }: { inset?: boolean }) {
       <Hero>
         <T v="head">Pick your rankings sheet</T>
         <T c="ink2">
-          Download Tyler's sheet as Excel (Google Sheets: File → Download → Microsoft Excel), save it to Files or Drive, then pick it here. Pick it again whenever he
-          updates it.
+          Download the sheet as Excel (Google Sheets: File → Download → Microsoft Excel), save it to Files or Drive, then pick it here. Pick it again whenever the
+          sheet updates.
         </T>
         {sheetError && <ErrorBox message={sheetError} />}
         <Btn label={sheetBusy ? 'Reading the sheet…' : 'Pick the .xlsx'} kind="primary" onPress={pickSheet} disabled={sheetBusy} style={{ marginTop: 6 }} />

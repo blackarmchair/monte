@@ -1,12 +1,13 @@
-// Players: search and the usage board in one tab. Value = Tyler's superflex board for this league,
+// Players: search and the usage board in one tab. Value = the sheet's superflex board for this league,
 // each player with a value-rank heat chip and his market read; Usage = PWOPR, heat on the usage
-// gap. Swipe a card left for its action, long-press to drop him straight into the trade, tap for
+// gap, a sample-strength mark and a label framed by who holds him. Swipe a card left for its action, long-press to drop him straight into the trade, tap for
 // his page.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Animated, FlatList, Linking, PanResponder, Pressable, ScrollView, Text, View } from 'react-native'
 import { tepBoardFor, type RanksData, type Result } from '@monte/core/types'
 import { teamLabel } from '@monte/core/names'
 import { value as rankValue } from '@monte/core/tradeMath'
+import { moveOf, sampleDots, usageRead } from '@monte/core/usageRead'
 import { monte } from '@/lib/monte'
 import { useApp, type PlayersUi } from '@/lib/store'
 import { marketTag, mineOf, useAddToTrade, useTrade } from '@/lib/trade'
@@ -15,8 +16,6 @@ import { ErrorBox, Field, Headshot, HeatChip, kfmt, Loading, NeedsSheet, Pills, 
 import { useOverlay } from '@/ui/overlay'
 import { font, grad, nflColor, R, useTheme } from '@/ui/theme'
 
-/** usage gap (PPG) at which a player reads as Buy or Sell; the desktop's default */
-const SIGNAL = 3
 const ACTION_W = 112
 
 type Line = {
@@ -27,13 +26,15 @@ type Line = {
   team: string
   owner: number | null
   meta: string
-  /** Tyler's board: "#12 · WR4", null when he isn't on it */
+  /** the board: "#12 · WR4", null when he isn't on it */
   rank: string | null
   v: string
   /** heat position, 0 … 1 */
   h: number
   tag: string
   tagColor: string
+  /** Usage: sample strength under the tag, "●●○ 4g" */
+  note?: string
   /** trade asset id, when he can be traded */
   assetId: string | null
 }
@@ -78,7 +79,7 @@ export default function Players() {
   const lines = useMemo((): Line[] => {
     const q = ui.q.trim().toLowerCase()
     // The board that matches the league (TE-premium leagues get the TE-prem block), unless Settings
-    // picks one. Usage rows take their Tyler rank from it too.
+    // picks one. Usage rows take their board rank from it too.
     const board = ranks ? ranks.boards[Math.max(0, ranks.boards.findIndex(b => b.tep === tepBoardFor(settings?.rankBoard, ranks.tePremium)))] : null
     const rankOf = new Map((board?.rows ?? []).filter(r => r.id).map(r => [r.id!, `#${r.rank} · ${r.pos}${r.posRank}`]))
     if (ui.mode === 'value') {
@@ -91,7 +92,7 @@ export default function Players() {
         .map(r => {
           const a = byId.get(r.id!)
           const tag = a ? marketTag(a) : null
-          // Free agents aren't trade assets: Tyler's rank through the same value curve.
+          // Free agents aren't trade assets: the sheet's rank through the same value curve.
           const v = a ? mineOf(a) : rankValue(r.rank) * (r.pos === 'TE' ? teAdj : 1)
           return {
             key: r.id!,
@@ -117,7 +118,19 @@ export default function Players() {
       .map(r => {
         const owner = ownerOf.get(r.player_id) ?? null
         const d = r.delta!
-        const sig = d >= SIGNAL ? 'Buy' : d <= -SIGNAL ? 'Sell' : 'Hold'
+        const read = usageRead(r, owner == null ? 'fa' : owner === me ? 'mine' : 'theirs')
+        // Target and snap share over the last 3 games, ▲/▼ against the season.
+        const same = !r.season || !r.recent || r.season.games <= r.recent.games
+        const arrow = (rec: number | null | undefined, szn: number | null | undefined, step: number) => {
+          const m = same ? null : moveOf(rec, szn, step)
+          return m === 1 ? '▲' : m === -1 ? '▼' : ''
+        }
+        const share = r.recent
+          ? [
+              `Tgt ${Math.round(r.recent.tgtShare * 100)}%${arrow(r.recent.tgtShare, r.season?.tgtShare, 0.03)}`,
+              r.recent.snapShare == null ? null : `Snap ${Math.round(r.recent.snapShare * 100)}%${arrow(r.recent.snapShare, r.season?.snapShare, 0.08)}`,
+            ]
+          : []
         return {
           key: r.player_id,
           id: r.player_id,
@@ -125,12 +138,13 @@ export default function Players() {
           pos: r.pos,
           team: r.team,
           owner,
-          meta: `${rankOf.has(r.player_id) ? '' : `${r.pos} · `}${r.team} · ${r.usagePPG?.toFixed(1) ?? '—'} → ${r.sleeperPPG?.toFixed(1) ?? '—'} PPG`,
+          meta: [rankOf.has(r.player_id) ? null : r.pos, r.team, `${r.usagePPG?.toFixed(1) ?? '—'} → ${r.sleeperPPG?.toFixed(1) ?? '—'}`, ...share].filter(Boolean).join(' · '),
           rank: rankOf.get(r.player_id) ?? null,
           v: `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d).toFixed(1)}`,
-          h: 0.5 + d / 16,
-          tag: sig,
-          tagColor: sig === 'Buy' ? t.pos : sig === 'Sell' ? t.acc : t.mute,
+          h: read.heat,
+          tag: read.tag,
+          tagColor: t[read.tone],
+          note: `${sampleDots(read.sample)} ${r.games}g`,
           assetId: byId.has(r.player_id) ? r.player_id : null,
         }
       })
@@ -150,7 +164,7 @@ export default function Players() {
   const usage = ui.mode === 'usage'
   const note = usage
     ? pw.result
-      ? `${lines.length} players · usage PPG weeks ${pw.result.usageWeeks[0]}–${pw.result.usageWeeks[pw.result.usageWeeks.length - 1]} vs Sleeper projection`
+      ? `${lines.length} players · usage PPG → Sleeper's week ${pw.result.targetWeek} projection. Usage PPG is what his role is worth per game: every game this season (weeks ${pw.result.usageWeeks[0]}–${pw.result.usageWeeks[pw.result.usageWeeks.length - 1]}), weighted toward recent ones; the projection is that one week. Shares are the last 3 games, ▲▼ against the season. Snap share shown; route data unavailable. Sample size: ●○○ under 3 games, ●●● 5+.`
       : ''
     : ranks
     ? `${lines.length} players · values from ${ranks.sheet.name}`
@@ -240,6 +254,7 @@ export default function Players() {
             <View style={{ alignItems: 'flex-end', gap: 3 }}>
               <HeatChip label={l.v} v={l.h} minWidth={52} height={28} size={14} />
               {!!l.tag && <Text style={{ fontFamily: font.sansSemi, fontSize: 12, color: l.tagColor }}>{l.tag}</Text>}
+              {!!l.note && <Text style={{ fontFamily: font.sans, fontSize: 11, color: t.mute }}>{l.note}</Text>}
             </View>
           </SwipeCard>
         )}

@@ -104,7 +104,7 @@ export default function Settings() {
           value={settings.tradeDelta ?? 'raw'}
           onChange={tradeDelta => void setSettings({ tradeDelta })}
           options={[
-            { value: 'raw', label: 'Tyler’s sheet' },
+            { value: 'raw', label: 'Sheet' },
             { value: 'relative', label: 'Within position' },
           ]}
         />
@@ -112,7 +112,7 @@ export default function Settings() {
       <div style={line}>
         <span className="stack" style={{ flex: 1 }}>
           <span style={{ fontWeight: 600 }}>Rank board</span>
-          <span className="small mute">Which of Tyler's boards the ranks on Players and player pages use</span>
+          <span className="small mute">Which of the sheet's boards the ranks on Players and player pages use</span>
         </span>
         <Seg<'league' | 'tep' | 'plain'>
           onSurf

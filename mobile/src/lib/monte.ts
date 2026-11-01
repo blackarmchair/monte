@@ -156,7 +156,7 @@ export const monte = {
       try {
         readWorkbook(picked.bytes)
       } catch {
-        throw new Error(`${picked.name} isn't an Excel workbook Monte can read. Download Tyler's sheet as .xlsx and pick that.`)
+        throw new Error(`${picked.name} isn't an Excel workbook Monte can read. Download the sheet as .xlsx and pick that.`)
       }
       const uri = await storage.storeSheet(picked.bytes)
       book = null

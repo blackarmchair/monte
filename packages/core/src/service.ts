@@ -6,7 +6,7 @@ import { Config } from 'sleeper-standings/dist/config.js'
 import { buildDraft, buildPoll, defaultDraft, summariseDraft } from './draft'
 import type { EngineJob } from './engine'
 import { buildOverview } from './overview'
-import { buildRanks, tylerIndex } from './ranks'
+import { buildRanks, boardIndex } from './ranks'
 import { buildStartSit, type SeasonStats } from './startSit'
 import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
 import { ktcTier, parseKtc, type KtcRow } from './ktc'
@@ -205,14 +205,14 @@ export function createMonteService(host: Host) {
     }
   }
 
-  // Tyler's board by Sleeper id, rebuilt only when the sheet file changes. No sheet: null.
-  let tylerMem: { key: string; index: ReturnType<typeof tylerIndex> } | null = null
-  async function tylerRanks() {
+  // the board by Sleeper id, rebuilt only when the sheet file changes. No sheet: null.
+  let boardMem: { key: string; index: ReturnType<typeof boardIndex> } | null = null
+  async function boardRanks() {
     try {
       const [book, meta] = await Promise.all([host.loadBook(), playersMeta()])
       const key = `${book.path}|${book.modifiedAt}`
-      if (tylerMem?.key !== key) tylerMem = { key, index: tylerIndex(book.wb, meta) }
-      return tylerMem.index
+      if (boardMem?.key !== key) boardMem = { key, index: boardIndex(book.wb, meta) }
+      return boardMem.index
     } catch {
       return null
     }
@@ -489,7 +489,10 @@ export function createMonteService(host: Host) {
       if (!draft?.draft_id) throw new Error(`No Sleeper draft with id ${id}`)
       // A mock (or another league's draft) brings its own league, or none at all.
       const draftLeague = draft.league_id ? String(draft.league_id) : null
-      const [league, rosters, users] = draftLeague ? await league4(draftLeague, false) : [null, [], []]
+      // A mock has no league: name its seats from the users in its draft order (bots have none).
+      const [league, rosters, users] = draftLeague
+        ? await league4(draftLeague, false)
+        : [null, [], await Promise.all(Object.keys(draft.draft_order ?? {}).map(u => sleeper<any>(`/user/${u}`).catch(() => null))).then(us => us.filter(Boolean))]
       const book = await host.loadBook()
       return buildDraft({
         wb: book.wb,
@@ -536,7 +539,7 @@ export function createMonteService(host: Host) {
     /** Bio from the cached player table, and this season's games from Sleeper's per-player weekly
      *  stats (an undocumented endpoint Sleeper's own player pages use). Games are cached an hour. */
     async playerInfo(id: string): Promise<PlayerInfo> {
-      const [meta, state, tyler] = await Promise.all([playersMeta(), sleeper<any>('/state/nfl'), tylerRanks()])
+      const [meta, state, board] = await Promise.all([playersMeta(), sleeper<any>('/state/nfl'), boardRanks()])
       const p = meta[id]
       if (!p) throw new Error(`Sleeper has no player ${id}.`)
       const season = String(state.league_season || state.season)
@@ -554,7 +557,7 @@ export function createMonteService(host: Host) {
         injury: p.injury_status ?? '',
         season,
         games: await gameLogs(id, season),
-        tyler: tyler ? tyler.get(id) ?? { plain: null, tep: null } : null,
+        board: board ? board.get(id) ?? { plain: null, tep: null } : null,
       }
     },
 

@@ -47,7 +47,7 @@ export default function Settings() {
               {sheet.name}
             </T>
             <T size={14} c="ink2">
-              Picked {sheet.pickedAt ? ago(sheet.pickedAt) : '—'}. Pick it again whenever Tyler updates it.
+              Picked {sheet.pickedAt ? ago(sheet.pickedAt) : '—'}. Pick it again whenever the sheet updates.
             </T>
             {stale && (
               <T v="semi" size={14} c="warn">
@@ -130,7 +130,7 @@ export default function Settings() {
           value={settings.tradeDelta ?? 'raw'}
           onChange={tradeDelta => setSettings({ tradeDelta })}
           options={[
-            { value: 'raw', label: 'Tyler' },
+            { value: 'raw', label: 'Sheet' },
             { value: 'relative', label: 'By pos' },
           ]}
         />
@@ -139,7 +139,7 @@ export default function Settings() {
         <View style={{ flex: 1 }}>
           <T v="semi">Rank board</T>
           <T v="small" c="mute">
-            Which of Tyler's boards the ranks use
+            Which of the sheet's boards the ranks use
           </T>
         </View>
         <Seg<'league' | 'tep' | 'plain'>

@@ -1,4 +1,4 @@
-// Tyler's dynasty board -> per-player values, matched to Sleeper ids.
+// The sheet's dynasty board -> per-player values, matched to Sleeper ids.
 //
 // Pure sheet, the same transform as reference/dynasty_daddy_export.py so Monte's numbers agree
 // with the Dynasty Daddy upload: the .75 TE-prem column (always the right-hand block), value =
@@ -33,7 +33,7 @@ const isTep = (banner: string) => /te prem/i.test(banner) && !/no te prem/i.test
 
 /**
  * Every block on the dynasty overall board, left to right, found by layout rather than tab name:
- * a header row holding Rank / Player / Pos (twice on Tyler's sheet: no-TE-prem on the left, .75
+ * a header row holding Rank / Player / Pos (twice on the sheet: no-TE-prem on the left, .75
  * TE-prem on the right). `column` is the block's banner text. Refuses rather than guesses.
  */
 export function findBoards(wb: Workbook): Board[] {
@@ -68,7 +68,7 @@ export function findBoards(wb: Workbook): Board[] {
   throw new Error(
     problems.length
       ? `No usable dynasty board: ${problems.join('; ')}.`
-      : 'No dynasty overall board found (a tab with Rank / Player / Pos columns). Is this Tyler’s sheet?',
+      : 'No dynasty overall board found (a tab with Rank / Player / Pos columns). Is this the sheet?',
   )
 }
 

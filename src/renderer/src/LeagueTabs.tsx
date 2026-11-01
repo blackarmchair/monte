@@ -3,8 +3,11 @@
 // connected, then the league's completed trades this season, newest first.
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { LeagueTrades, LeagueWeek, MatchPlayer, MatchSide, TradeTx } from '@shared/leagueWeek'
-import type { Result } from '@shared/types'
+import { basisLabel, compareBases, matchupBasis } from '@shared/projBasis'
+import type { Result, StartSitData } from '@shared/types'
 import { teamLabel } from './names'
+import { BasisLine, ProjCompare } from './ProjCompare'
+import { normCdf, WIN_SD } from './startsit.logic'
 import { useApp } from './store'
 import { mineOf, useTrade } from './tradeModel'
 import { ErrorBox, GradCard, Headshot, kfmt, Link, Loading, nflColor, ORD, RING_SOFT, Stack2, TeamAvatar, teamColor } from './ui'
@@ -40,9 +43,18 @@ function TabHead({ title, sub, busy, onRefresh }: { title: string; sub?: string;
 }
 
 export function Matchups() {
-  const { context, hide } = useApp()
+  const { context, hide, settings, sheet } = useApp()
   const { res, busy, load } = useLoad(id => window.monte.leagueWeek(id))
   const me = context?.myRosterId ?? null
+  // Lineup's read, fetched only when the comparison opens: it needs the sheet.
+  const [cmpOpen, setCmpOpen] = useState(false)
+  const [ss, setSs] = useState<Result<StartSitData> | null>(null)
+  useEffect(() => setSs(null), [res])
+  useEffect(() => {
+    const leagueId = context?.league.league_id
+    if (!cmpOpen || ss || !sheet || !leagueId || !settings.userId) return
+    void window.monte.startSit(leagueId, settings.userId).then(setSs)
+  }, [cmpOpen, ss, sheet, context, settings.userId])
   const lw: LeagueWeek | null = res?.ok ? res.value : null
   // Yours first; within each pair, yours on the left.
   const pairs = useMemo(() => {
@@ -79,6 +91,18 @@ export function Matchups() {
               </div>
               <WinBar a={a} b={b} />
             </button>
+            {a.rosterId === me && (
+              <div className="stack" style={{ gap: 10, padding: '0 18px 12px' }}>
+                <BasisLine label={basisLabel(matchupBasis(a, b))} open={cmpOpen} onToggle={() => setCmpOpen(o => !o)} other="Lineup" />
+                {cmpOpen && (
+                  <ProjCompare
+                    here="matchups"
+                    c={!sheet || ss ? compareBases({ me: a, opp: b, d: ss?.ok ? ss.value : null, win: x => normCdf(x / WIN_SD) }) : null}
+                    note={!sheet ? 'Lineup needs the sheet, so only this screen’s numbers are shown.' : ss && !ss.ok ? `Couldn’t read Lineup: ${ss.error}` : null}
+                  />
+                )}
+              </div>
+            )}
             {isOpen && <StarterRows a={a} b={b} />}
           </div>
         )

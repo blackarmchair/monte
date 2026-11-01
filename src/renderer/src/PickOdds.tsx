@@ -3,6 +3,7 @@
 // what-if (click winners, projection error, model, seed). Every control reruns the sim (what-if
 // clicks debounced); the old result stays on screen, dimmed, while a new one computes.
 import { useEffect, useState } from 'react'
+import type { LeagueWeek } from '@shared/leagueWeek'
 import type { BBResult, LeagueContext } from '@shared/types'
 import { newSeed, sameRunParams } from '@shared/seed'
 import { projectedSlots } from '@shared/slots'
@@ -49,6 +50,8 @@ export default function PickOdds() {
   /** the selected team (its distribution shows on the right), and which of your pick cards was clicked */
   const [sel, setSel] = useState<number | null>(null)
   const [selCard, setSelCard] = useState<string | null>(null)
+  /** Matchups' win chances for this week, shown on the what-if buttons when it's the what-if week */
+  const [week, setWeek] = useState<LeagueWeek | null>(null)
 
   const runNow = (o: RunOpts) => {
     window.clearTimeout(timer)
@@ -64,6 +67,16 @@ export default function PickOdds() {
     // A run made with what-ifs before this screen mounted: show them as set.
     if (result?.forced && Object.values(result.forced).some(w => w.length) && !Object.keys(forced).length) setForced(result.forced)
   }, [context?.league.league_id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const id = context?.league.league_id
+    setWeek(null)
+    if (!id) return
+    let live = true
+    void window.monte.leagueWeek(id).then(r => live && r.ok && setWeek(r.value))
+    return () => {
+      live = false
+    }
+  }, [context?.league.league_id])
   // A sims change in Settings reruns once the run on screen used a different count.
   useEffect(() => {
     if (result && result.simulations !== sims && !run.busy) runNow({})
@@ -82,6 +95,7 @@ export default function PickOdds() {
   const whatIf = result?.whatIf ?? base?.whatIf ?? null
   const winners = whatIf ? forced[whatIf.week] ?? [] : []
   const nameOf = new Map(context.rosters.map(r => [r.roster_id, r.display_name]))
+  const winPct = new Map(week && whatIf && week.week === whatIf.week ? week.matchups.flatMap(m => m.sides.map(s => [s.rosterId, s.winPct] as const)) : [])
   const me = context.myRosterId
 
   const { lead, team: leadTeam, slot: leadSlot } = leadFirst(context, result)
@@ -257,14 +271,20 @@ export default function PickOdds() {
                   {[a, b].map((rid, i) => {
                     const won = winners.includes(rid)
                     const lost = !won && winners.includes(i === 0 ? b : a)
+                    const pct = winPct.get(rid)
                     return (
                       <button
                         key={rid}
-                        className="trunc"
                         onClick={() => pickWinner(rid, i === 0 ? b : a)}
-                        style={{ minHeight: 42, padding: '0 12px', borderRadius: 12, background: won ? 'var(--acc)' : 'var(--surf2)', color: won ? 'var(--acc-ink)' : lost ? 'var(--mute)' : 'var(--ink)', fontSize: 13, fontWeight: 600, textAlign: 'center' }}
+                        title={pct != null ? `${Math.round(pct * 100)}% to win (Matchups)` : undefined}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minWidth: 0, minHeight: 42, padding: '0 10px', borderRadius: 12, background: won ? 'var(--acc)' : 'var(--surf2)', color: won ? 'var(--acc-ink)' : lost ? 'var(--mute)' : 'var(--ink)', fontSize: 13, fontWeight: 600 }}
                       >
-                        {nameOf.get(rid) ?? `Roster ${rid}`}
+                        <span className="trunc">{nameOf.get(rid) ?? `Roster ${rid}`}</span>
+                        {pct != null && (
+                          <span className="num" style={{ flex: 'none', padding: '1px 6px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: won ? 'color-mix(in oklab, var(--acc-ink) 18%, transparent)' : 'var(--card)', color: won ? 'var(--acc-ink)' : pct >= 0.5 ? 'var(--pos)' : 'var(--mute)' }}>
+                            {Math.round(pct * 100)}%
+                          </span>
+                        )}
                       </button>
                     )
                   })}

@@ -63,6 +63,7 @@ const PATHS = {
   trade: 'M4 8h15l-4-4M20 16H5l4 4',
   players: 'M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 0 0 0-13zM20 20l-4.8-4.8',
   picks: 'M4 20h16M7 20v-6M12 20V8M17 20V11',
+  draft: 'M5 4h14v16H5zM5 9.5h14M5 14.5h14M12 4v16',
   back: 'M15 5l-7 7 7 7',
   chevronDown: 'M6 9l6 6 6-6',
   search: 'M11 4.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 0 0 0-13zM20 20l-4.2-4.2',
@@ -282,9 +283,9 @@ export function GradCard(props: {
 }
 
 /** Name over a meta line, truncating: the middle of almost every card. */
-export function Stack2(props: { title: ReactNode; sub?: ReactNode; size?: number; right?: ReactNode; titleStyle?: CSSProperties; subStyle?: CSSProperties }) {
+export function Stack2(props: { title: ReactNode; sub?: ReactNode; size?: number; right?: ReactNode; titleStyle?: CSSProperties; subStyle?: CSSProperties; style?: CSSProperties }) {
   return (
-    <span className="stack" style={{ flex: 1, minWidth: 0 }}>
+    <span className="stack" style={{ flex: 1, minWidth: 0, ...props.style }}>
       <span className="row" style={{ gap: 8, minWidth: 0 }}>
         <span className="trunc" style={{ fontWeight: 700, fontSize: props.size ?? 15, ...props.titleStyle }}>
           {props.title}
@@ -436,7 +437,7 @@ export function NeedsSheet() {
     <div className="hero" style={{ maxWidth: 640 }}>
       <div style={{ fontSize: 26, fontWeight: 700 }}>Choose your rankings sheet</div>
       <div className="sub" style={{ fontSize: 15 }}>
-        Download Tyler's sheet as Excel (Google Sheets: File → Download → Microsoft Excel) and choose the file. Monte watches it and reloads whenever you download a
+        Download the sheet as Excel (Google Sheets: File → Download → Microsoft Excel) and choose the file. Monte watches it and reloads whenever you download a
         newer copy.
       </div>
       {sheetError && <div style={{ color: 'var(--neg)', fontSize: 14 }}>{sheetError}</div>}

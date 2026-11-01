@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import type { DraftData, DraftPickRow, DraftPlayer, DraftPool, DraftPoll, DraftStatus, Result } from '@monte/core/types'
-import { provisionalOrder } from '@monte/core/draft'
+import { provisionalOrder, withMarks } from '@monte/core/draft'
 import { projectedSlots } from '@monte/core/slots'
 import { buildPositionalRankIndex, gradePicks, gradeTeam, type GradeLetter, type PickGrade } from '@monte/core/draftGrade'
 import { teamLabel } from '@monte/core/names'
@@ -18,7 +18,7 @@ import { heat, nflColor, teamColor, useTheme } from '@/ui/theme'
 import { quantileSlot } from './PickOdds'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
-/** A new tier starts where 12+ players sit between two pool players on Tyler's overall board. */
+/** A new tier starts where 12+ players sit between two pool players on the sheet's overall board. */
 const TIER_GAP = 12
 /** How often Sleeper is asked for picks, by draft status. A finished draft is not polled. */
 const POLL_MS: Record<DraftStatus, number | null> = { drafting: 5000, paused: 15000, pre_draft: 30000, complete: null }
@@ -36,7 +36,7 @@ function whyOf(g: PickGrade): string {
 
 export default function DraftPanel() {
   const t = useTheme()
-  const { context, settings, hide, dataVersion, sheet, bb, runBB, setPicksSeg } = useApp()
+  const { context, settings, hide, dataVersion, sheet, bb, runBB, setPicksSeg, setSettings } = useApp()
   const { openSheet } = useOverlay()
   const leagueId = context?.league.league_id
   const userId = settings?.userId
@@ -53,6 +53,7 @@ export default function DraftPanel() {
   const [pos, setPos] = useState<'All' | (typeof POSITIONS)[number]>('All')
   const [limit, setLimit] = useState(PAGE)
   // Players marked taken by hand: drafts held off Sleeper, or a pick Sleeper hasn't shown yet.
+  // Saved per draft in settings, so leaving the screen (a player's page) or restarting keeps them.
   const [manual, setManual] = useState<Set<string>>(new Set())
 
   const load = (id = draftId) => {
@@ -65,13 +66,14 @@ export default function DraftPanel() {
         setPoll(r.value.initial)
         setPollError(null)
         setPool(r.value.defaultPool)
-        setManual(new Set())
       }
     })
   }
   useEffect(load, [leagueId, userId, draftId, dataVersion, !!sheet]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const d = res?.ok ? res.value : null
+  const draftKey = d?.draft.draft_id
+  useEffect(() => setManual(new Set(draftKey ? settings?.draftMarks?.[draftKey] ?? [] : [])), [draftKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const status = poll?.status ?? d?.draft.status ?? 'complete'
 
   // Poll while the draft can still change; a status change reloads everything.
@@ -273,13 +275,14 @@ export default function DraftPanel() {
   const openTeam = (x: (typeof teamGrades)[number]) =>
     openSheet(<TeamPicks name={teamName(x.rid)} rid={x.rid} letter={x.grade.letter} picks={x.picks} grades={grades} onPick={openPick} />)
 
-  const toggleManual = (id: string) =>
-    setManual(m => {
-      const n = new Set(m)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
-    })
+  const toggleManual = (id: string) => {
+    if (!draftKey) return
+    const n = new Set(manual)
+    if (n.has(id)) n.delete(id)
+    else n.add(id)
+    setManual(n)
+    void setSettings({ draftMarks: withMarks(settings?.draftMarks, draftKey, [...n]) })
+  }
 
   return (
     <>

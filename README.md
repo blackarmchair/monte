@@ -9,7 +9,7 @@
 
 <p align="center"><em>A dynasty fantasy football desk for Sleeper leagues.</em></p>
 
-Monte reads your Sleeper leagues, values every roster against TylerFFCreator's dynasty rankings
+Monte reads your Sleeper leagues, values every roster against a dynasty rankings
 sheet and the FantasyCalc trade market, and simulates the rest of the season to tell you where
 your picks land. It runs as an Electron desktop app (built and used on Windows) and an Expo phone
 app (built for Android), both on the same shared core. There is no server: everything runs on your machine or phone.
@@ -22,12 +22,12 @@ sections: League, Lineup, Trade, Players and Picks, plus a page for every player
 - **League.** Every team ranked by total value, starter strength and record, with contender
   tiers and each roster in detail (a side panel on desktop, its own page on the phone). The phone
   also has the value-vs-starters map.
-- **Lineup.** This week's lineup off Tyler's weekly boards, the best swap, a win probability
+- **Lineup.** This week's lineup off the sheet's weekly boards, the best swap, a win probability
   against your opponent, and Set in Sleeper.
-- **Trade.** Your side valued on Tyler's sheet, theirs on the market at an adjustable blend.
+- **Trade.** Your side valued on the sheet, theirs on the market at an adjustable blend.
   Verdicts on effective value (one star beats a bundle of the same raw total), deals Monte found
   where both sides win, roster value by position after the trade, and Send in Sleeper.
-- **Players.** Tyler's superflex board matched to who rosters each player (Value), and usage vs
+- **Players.** The sheet's superflex board matched to who rosters each player (Value), and usage vs
   projection, PWOPR (Usage): who is out-earning or under-earning his role.
 - **Player.** Sheet against market, this season's games from Sleeper, trade actions, and his
   injury override.
@@ -62,7 +62,7 @@ your-folder/
 cd sleeperStandings && npm install && npm run build && cd ..
 ```
 
-You also need TylerFFCreator's dynasty rankings sheet, downloaded as Excel (.xlsx). It isn't in
+You also need a dynasty rankings sheet, downloaded as Excel (.xlsx). It isn't in
 this repo.
 
 ### Desktop
@@ -95,9 +95,9 @@ Sleeper to send trades are all covered in [mobile/README.md](mobile/README.md).
 
 ## Credits
 
-- Rankings: TylerFFCreator's dynasty rankings (Patreon).
+- Rankings: a dynasty rankings sheet you supply (.xlsx).
 - League data: the [Sleeper API](https://docs.sleeper.com/).
 - Market values: [FantasyCalc](https://www.fantasycalc.com/).
 
-Monte is a personal project and isn't affiliated with Sleeper, FantasyCalc or TylerFFCreator.
+Monte is a personal project and isn't affiliated with Sleeper, FantasyCalc or any rankings provider.
 Sending trades uses Sleeper's undocumented API, which can change without notice.

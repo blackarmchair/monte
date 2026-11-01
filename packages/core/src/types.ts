@@ -25,16 +25,16 @@ export type PlayerHit = { id: string; name: string; pos: string; team: string; i
 export type GameLog = { week: number; opp: string; away?: boolean; stats: Record<string, number> }
 
 /** A player's Sleeper record and this season's games, for the player page. */
-/** A player's place on Tyler's overall board: overall rank and rank within his position. */
-export type TylerRank = { rank: number; posRank: number }
+/** A player's place on the sheet's overall board: overall rank and rank within his position. */
+export type BoardRank = { rank: number; posRank: number }
 
-/** Which of Tyler's two board blocks to show: the setting, or by default the league's own TE
+/** Which of the sheet's two board blocks to show: the setting, or by default the league's own TE
  *  bonus (the .75 TE-prem block when it has one). */
 export const tepBoardFor = (pref: Settings['rankBoard'], tePremium: number) => (pref === 'tep' ? true : pref === 'plain' ? false : tePremium > 0)
-export const tylerFor = (t: { plain: TylerRank | null; tep: TylerRank | null } | null | undefined, tep: boolean) =>
+export const boardRankFor = (t: { plain: BoardRank | null; tep: BoardRank | null } | null | undefined, tep: boolean) =>
   t ? (tep ? t.tep ?? t.plain : t.plain ?? t.tep) : null
-/** "Tyler #12 · WR4", or null when he isn't on the board. */
-export const tylerLabel = (r: TylerRank | null, pos: string) => (r ? `Tyler #${r.rank} · ${pos}${r.posRank}` : null)
+/** "Board #12 · WR4", or null when he isn't on the board. */
+export const boardRankLabel = (r: BoardRank | null, pos: string) => (r ? `Board #${r.rank} · ${pos}${r.posRank}` : null)
 
 export type PlayerInfo = {
   id: string
@@ -52,8 +52,8 @@ export type PlayerInfo = {
   injury: string
   season: string
   games: GameLog[]
-  /** Tyler's rank on each board block (no TE prem / TE prem); null when there's no sheet */
-  tyler: { plain: TylerRank | null; tep: TylerRank | null } | null
+  /** The sheet's rank on each board block (no TE prem / TE prem); null when there's no sheet */
+  board: { plain: BoardRank | null; tep: BoardRank | null } | null
 }
 
 export type Settings = {
@@ -77,9 +77,9 @@ export type Settings = {
   injuries?: ManualInjury[]
   /** replace usernames and team names with "Team #n" everywhere */
   hideNames?: boolean
-  /** trade builder: 'raw' = Tyler's sheet as-is (default), 'relative' = within position. Ideas always use raw. */
+  /** trade builder: 'raw' = the sheet as-is (default), 'relative' = within position. Ideas always use raw. */
   tradeDelta?: 'relative' | 'raw'
-  /** Tyler board for ranks shown on Players and player pages: 'league' (default) follows the
+  /** Sheet board for ranks shown on Players and player pages: 'league' (default) follows the
    *  league's TE bonus; 'tep' / 'plain' force the TE-prem or no-TE-prem block */
   rankBoard?: 'league' | 'tep' | 'plain'
   /** per league: your direction for trade ideas; unset = worked out from record and pick odds */
@@ -91,6 +91,8 @@ export type Settings = {
   /** Sleeper connected for sending trade offers (the token itself is in secure storage — the
    *  phone's Keychain/Keystore, the desktop's OS-encrypted file — never here) */
   sleeperLink?: { name: string; expiresAt: number | null; connectedAt: string }
+  /** players marked taken by hand on a draft's Board, by draft id (the few most recent drafts) */
+  draftMarks?: Record<string, string[]>
 }
 
 export type LeagueSummary = {
@@ -193,6 +195,16 @@ export type PickOddsOpts = {
 
 export type Signal = 'Over (Strong)' | 'Over' | 'Neutral' | 'Under' | 'Under (Strong)'
 
+/** plain means over a run of played games */
+export type UsageWindow = {
+  games: number
+  tgtShare: number
+  airShare: number
+  tgtPerGame: number
+  /** offensive snap share: Sleeper has no routes, so this stands in for route participation */
+  snapShare: number | null
+}
+
 export type PWOPRRow = {
   player_id: string
   name: string
@@ -204,6 +216,9 @@ export type PWOPRRow = {
   airShare: number
   wopr: number
   expTargets: number
+  /** the last few played games (3) and the whole season; absent from runs made before they existed */
+  recent?: UsageWindow | null
+  season?: UsageWindow | null
   usagePPG: number | null
   sleeperPPG: number | null
   priorPPG: number | null
@@ -241,7 +256,7 @@ export type OvPlayer = {
   pos: 'QB' | 'RB' | 'WR' | 'TE'
   team: string
   age: number | null
-  /** Tyler overall rank on the TE-prem board; null = unranked */
+  /** Sheet overall rank on the TE-prem board; null = unranked */
   rank: number | null
   value: number
   starter: boolean
@@ -284,20 +299,20 @@ export type SSPlayer = {
   name: string
   pos: string
   team: string
-  /** opponent text from Tyler's board, e.g. "at LV" */
+  /** opponent text from the board, e.g. "at LV" */
   matchup: string
   /** positional rank on this week's board; null = not on the board */
   rank: number | null
   /** "WR24", or "WR—" when unranked */
   rankLabel: string
-  /** rank on Tyler's Flex board, when he has filled it */
+  /** rank on the sheet's Flex board, when it is filled */
   flexRank: number | null
   /** rank mapped to last season's PPG at that positional rank, in this league's scoring */
   proj: number
   startable: boolean
-  /** why he is or isn't startable, in Tyler's words where Tyler gave them */
+  /** why he is or isn't startable, in the sheet's words where it gave them */
   flag: string
-  /** Tyler and Sleeper disagree about him */
+  /** The sheet and Sleeper disagree about him */
   conflict: string | null
   /** his game has kicked off: Sleeper will not let him move */
   locked: boolean
@@ -314,7 +329,7 @@ export type StartSitData = {
   rosterId: number
   /** Sleeper's starters as read, slot order ("0" = empty), including slots Monte doesn't rank */
   starters: string[]
-  /** week number in Tyler's tab names */
+  /** week number in the sheet's tab names */
   boardWeek: number | null
   sheet: { name: string; modifiedAt: string }
   /** which scoring column was read per position, and why */
@@ -347,7 +362,7 @@ export type TradeTeam = {
 export type TradeData = {
   /** every rostered player; picks are priced in the renderer from `picks` + `pickInputs` */
   assets: import('./tradeMath').Asset[]
-  /** players on no roster here that Tyler or the market prices (owner 0): the Vacuum tab's extra pool */
+  /** players on no roster here that the sheet or the market prices (owner 0): the Vacuum tab's extra pool */
   freeAgents: import('./tradeMath').Asset[]
   ranks: Record<string, { sheetRank: number | null; marketRank: number | null }>
   picks: Array<{ season: string; round: number; originalOwner: number; owner: number }>
@@ -415,7 +430,7 @@ export type DraftPlayer = {
   pos: 'QB' | 'RB' | 'WR' | 'TE'
   team: string
   age: number | null
-  /** Tyler overall rank, TE-prem board */
+  /** Sheet overall rank, TE-prem board */
   rank: number
   value: number
   /** in his first season as of this draft */
@@ -445,7 +460,7 @@ export type DraftData = {
   builtAt: string
 }
 
-/** One row of a superflex board, as Tyler ranks it, matched to Sleeper where possible. */
+/** One row of a superflex board, as the sheet ranks it, matched to Sleeper where possible. */
 export type RankRow = {
   rank: number
   name: string
@@ -493,7 +508,7 @@ export type MonteApi = {
   /** draftId omitted = the league's most relevant draft; a draft id from another league works (mocks) */
   draft(leagueId: string, userId: string, draftId?: string): Promise<Result<DraftData>>
   draftPicks(draftId: string): Promise<Result<DraftPoll>>
-  /** Tyler's superflex boards, matched to this league's rosters */
+  /** The sheet's superflex boards, matched to this league's rosters */
   ranks(leagueId: string, userId: string): Promise<Result<RanksData>>
   searchPlayers(query: string): Promise<Result<PlayerHit[]>>
   /** Sleeper bio and this season's weekly games, for the player page */

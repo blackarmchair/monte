@@ -92,8 +92,11 @@ export function provisionalOrder(slots: number[], rounds: number, type: string, 
   return pickOrder(draft, [], traded)
 }
 
-/** Sleeper's picks, trimmed to what the board needs. */
-export function normalisePicks(picks: any[], teams: number): DraftPickRow[] {
+/**
+ * Sleeper's picks, trimmed to what the board needs. A mock has no rosters, so its teams are the
+ * draft slots (`bySlot`): the slot stands in for the roster id everywhere downstream.
+ */
+export function normalisePicks(picks: any[], teams: number, bySlot = false): DraftPickRow[] {
   return [...(picks ?? [])]
     .sort((a, b) => a.pick_no - b.pick_no)
     .map(p => {
@@ -104,7 +107,7 @@ export function normalisePicks(picks: any[], teams: number): DraftPickRow[] {
         round: p.round,
         label: pickLabel(p.round, inRound),
         slot: p.draft_slot ?? null,
-        rosterId: p.roster_id != null ? Number(p.roster_id) : null,
+        rosterId: bySlot ? (p.draft_slot != null ? Number(p.draft_slot) : null) : p.roster_id != null ? Number(p.roster_id) : null,
         playerId: String(p.player_id ?? ''),
         name: `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim() || m.player_name || 'Unknown',
         pos: String(m.position ?? '').toUpperCase(),
@@ -115,7 +118,7 @@ export function normalisePicks(picks: any[], teams: number): DraftPickRow[] {
 
 export function buildPoll(draft: any, picks: any[]): DraftPoll {
   const d = summariseDraft(draft)
-  return { status: d.status, picks: normalisePicks(picks, d.teams), polledAt: new Date().toISOString() }
+  return { status: d.status, picks: normalisePicks(picks, d.teams, !d.leagueId), polledAt: new Date().toISOString() }
 }
 
 /**
@@ -131,6 +134,12 @@ function starterDepth(rosterPositions: string[]): Record<string, number> {
     WR: n('WR') + (flex ? 1 : 0),
     TE: Math.max(1, n('TE')),
   }
+}
+
+/** A mock's starting slots from its settings (slots_qb, slots_super_flex, ...), as roster positions. */
+function rosterSlotsOf(settings: Record<string, any>): string[] {
+  const map: Record<string, string> = { slots_qb: 'QB', slots_rb: 'RB', slots_wr: 'WR', slots_te: 'TE', slots_flex: 'FLEX', slots_super_flex: 'SUPER_FLEX' }
+  return Object.entries(map).flatMap(([k, pos]) => Array(Number(settings[k]) || 0).fill(pos))
 }
 
 export function buildDraft(opts: {
@@ -184,6 +193,29 @@ export function buildDraft(opts: {
   players.sort((a, b) => a.rank - b.rank)
 
   const userOf = new Map(users.map(u => [String(u.user_id), u]))
+  // A mock: one team per draft slot, named for whoever sits there (bots and empty seats by number).
+  if (!league) {
+    const order: Record<string, number> = draft.draft_order ?? {}
+    const userAt = new Map(Object.entries(order).map(([u, slot]) => [Number(slot), userOf.get(u)]))
+    const slots = Array.from({ length: summary.teams }, (_, i) => i + 1)
+    return {
+      draft: summary,
+      drafts: opts.drafts.map(summariseDraft).sort((a, b) => Number(b.season) - Number(a.season)),
+      leagueName: null,
+      order: pickOrder({ ...draft, slot_to_roster_id: Object.fromEntries(slots.map(s => [s, s])) }, [], []),
+      teams: slots.map(slot => {
+        const u = userAt.get(slot)
+        return { roster_id: slot, name: u?.display_name ?? `Team ${slot}`, owner: u?.display_name ?? '', avatar: userAvatar(u) }
+      }),
+      myRosterId: order[opts.userId] != null ? Number(order[opts.userId]) : null,
+      players,
+      starterDepth: starterDepth(draft.settings ? rosterSlotsOf(draft.settings) : []),
+      defaultPool: 'all',
+      sheet: { name: fileName(opts.sheetPath), modifiedAt: opts.modifiedAt, unmatched: unmatched.length },
+      initial: buildPoll(draft, opts.picks),
+      builtAt: new Date().toISOString(),
+    }
+  }
   const mine = rosters.find(r => String(r.owner_id) === opts.userId || (r.co_owners ?? []).map(String).includes(opts.userId))
   const teams = rosters.map(r => {
     const u = userOf.get(String(r.owner_id))
@@ -212,4 +244,14 @@ export function buildDraft(opts: {
     initial: buildPoll(draft, opts.picks),
     builtAt: new Date().toISOString(),
   }
+}
+
+/**
+ * A draft's hand-marked players set into the saved marks: this draft moves to the newest, an empty
+ * list drops it, and only the `keep` most recent drafts are kept so old mocks don't pile up.
+ */
+export function withMarks(marks: Record<string, string[]> | undefined, draftId: string, ids: string[], keep = 5): Record<string, string[]> {
+  const rest = Object.entries(marks ?? {}).filter(([k]) => k !== draftId)
+  const next = ids.length ? [...rest, [draftId, ids] as [string, string[]]] : rest
+  return Object.fromEntries(next.slice(-keep))
 }

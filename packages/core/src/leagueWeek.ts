@@ -71,6 +71,13 @@ export function leagueScore(stats: Stats | undefined, scoring: Record<string, nu
   return Math.round(t * 100) / 100
 }
 
+/** What a starter counts for in the expected final: banked, banked plus half the rest, or projection. */
+export function expectedOf(s: MatchPlayer): number {
+  if (s.state === 'done' || s.state === 'bye' || s.state === 'empty') return s.points
+  if (s.state === 'live') return s.points + 0.5 * Math.max(0, s.proj - s.points)
+  return s.proj
+}
+
 // Abramowitz–Stegun erf, good to 1.5e-7: plenty for a percentage.
 function phi(z: number) {
   const x = Math.abs(z) / Math.SQRT2
@@ -124,14 +131,9 @@ export function buildLeagueWeek(o: {
     let mean = 0
     let v = 0
     for (const s of starters) {
-      if (s.state === 'done' || s.state === 'bye' || s.state === 'empty') mean += s.points
-      else if (s.state === 'live') {
-        mean += s.points + 0.5 * Math.max(0, s.proj - s.points)
-        v += (0.275 * s.proj) ** 2
-      } else {
-        mean += s.proj
-        v += (0.55 * s.proj) ** 2
-      }
+      mean += expectedOf(s)
+      if (s.state === 'live') v += (0.275 * s.proj) ** 2
+      else if (s.state === 'pre') v += (0.55 * s.proj) ** 2
     }
     const n = names.get(m.roster_id)
     return {
