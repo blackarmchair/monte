@@ -11,6 +11,7 @@ import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradePropos
 import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
 import { readRanksFile, watchRanksFile } from './ranksFile'
 import { loadWorkbook } from './workbook'
+import { createUpdater } from './updater'
 import type { RanksFileInfo, Result, Settings } from '@monte/core/types'
 
 const dataDir = () => app.getPath('userData')
@@ -237,6 +238,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('sleeper:disconnect', () => disconnectSleeper())
   ipcMain.handle('sleeper:propose', (_e, p: TradeProposal) => sendTrade(p))
   ipcMain.handle('sleeper:lineup', (_e, w: LineupWrite) => sendLineup(w))
+  const updater = createUpdater(state => broadcast('update:changed', state))
+  ipcMain.handle('update:state', () => updater.state())
+  ipcMain.handle('update:check', () => updater.check())
+  ipcMain.handle('update:download', () => updater.download())
+  ipcMain.handle('update:install', () => updater.install())
 
   createWindow()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())

@@ -3,13 +3,14 @@
 // verdict card with both sides, your roster after, Market influence and Send in Sleeper. Ideas is
 // The strategy against the market: your direction, then what to sell and what to buy, each with
 // the rule behind it and an ask / settle deal that opens in Build, then chains (two linked trades
-// through a team that values the middle player less than another does). Vacuum scores any two sides
+// through a team that values the middle player less than another does). With one side of a Build
+// filled, the column for the other side opens with options for it. Vacuum scores any two sides
 // of players and picks, rostered or not, on the sheet and on the market, with no teams at all.
 import { useMemo, useState } from 'react'
 import { vacuumText, type Asset, type Side } from '@shared/tradeMath'
 import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
 import { useApp } from './store'
-import { assetMeta, marketTag, mineOf, useTrade, type VerdictTone } from './tradeModel'
+import { assetMeta, marketTag, mineOf, useTrade, verdictText, type Deal, type VerdictTone } from './tradeModel'
 import SleeperSend from './SleeperSend'
 import { Btn, Check, ErrorBox, GradCard, grad, Headshot, Icon, HeatTiles, kfmt, Loading, NeedsSheet, nflColor, Notice, num, RING, Seg, signed, Stack2, StatTile, TeamAvatar, teamColor, useHeat } from './ui'
 
@@ -40,6 +41,7 @@ export default function Trade() {
   const [sending, setSending] = useState(false)
   // Ideas first when there is nothing being built.
   const [tab, setTab] = useState<'build' | 'ideas' | 'vacuum'>(count === 0 ? 'ideas' : 'build')
+  const suggestions = useMemo(() => x.getSuggestions(), [x.assets, trade, x.direction.mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!sheet)
     return (
@@ -119,6 +121,7 @@ export default function Trade() {
             <div className="row" style={HEAD}>
               <span className="title-l">Your roster</span>
             </div>
+            {suggestions?.side === 'give' && <Suggestions side="give" deals={suggestions.deals} />}
             {x.mine.map(row)}
           </div>
 
@@ -232,6 +235,7 @@ export default function Trade() {
               <span className="title-l trunc">{partnerName ?? 'Choose a partner'}</span>
               {partner != null && <Btn size="sm" label="Change" onClick={() => setTrade(t => ({ ...t, partner: null, get: [] }))} bg="var(--surf)" style={{ color: 'var(--acc)', minHeight: 32, fontSize: 13 }} />}
             </div>
+            {suggestions?.side === 'get' && <Suggestions side="get" deals={suggestions.deals} />}
             {partner == null
               ? d.teams
                   .filter(tm => tm.roster_id !== x.me)
@@ -268,6 +272,43 @@ export default function Trade() {
 const MODES: Mode[] = ['contend', 'middle', 'rebuild']
 const dealText = (dl: IdeaDeal) =>
   `Give ${dl.give.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(' + ')}. Get ${dl.get.map(a => (a.kind === 'pick' && a.slot ? a.slot : a.name)).join(' + ')}.`
+
+/** Build's options for the empty side: click one to load it. */
+function Suggestions({ side, deals }: { side: 'give' | 'get'; deals: Deal[] }) {
+  const x = useTrade()
+  const fixed = (side === 'get' ? x.give : x.get).map(a => a.name).join(' + ')
+  const verb = side === 'get' ? 'Get' : 'Give'
+  return (
+    <div className="stack" style={{ gap: 6, padding: 12, marginBottom: 4, borderRadius: 14, background: 'var(--surf)' }}>
+      <span style={{ fontWeight: 700 }}>{side === 'get' ? 'What you could get' : 'What you could give'}</span>
+      {deals.length === 0 && (
+        <span className="small mute">
+          {side === 'get'
+            ? `No deal for ${fixed}${x.partner != null ? ` with ${x.teamName(x.partner)}` : ''} where you both gain.`
+            : `Nothing of yours buys ${fixed} with you both gaining, leaving out picks the strategy says to hold.`}
+        </span>
+      )}
+      {deals.map(dl => {
+        const v = verdictText(dl.verdict)
+        return (
+          <button key={[dl.partner, ...dl[side].map(a => a.id)].join()} className="gcard" onClick={() => x.loadDeal(dl)} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4, padding: '10px 14px', background: 'var(--surf2)', minHeight: 0, textAlign: 'left' }}>
+            <span className="row small" style={{ justifyContent: 'space-between', gap: 8 }}>
+              <span className="trunc" style={{ fontWeight: 700, color: tone(v.tone) }}>
+                {v.label}{side === 'get' ? ` · ${x.teamName(dl.partner)}` : ''}
+              </span>
+              <span className="num mute" style={{ flexShrink: 0 }}>
+                You {signed(dl.verdict.em)} · Them {signed(dl.verdict.et)}
+              </span>
+            </span>
+            <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>
+              {verb} {dl[side].map(a => assetName(a)).join(' + ')}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 /** Ideas: your direction (auto or set), then Sell and Buy side by side. */
 function IdeasView({ onOpen }: { onOpen: () => void }) {

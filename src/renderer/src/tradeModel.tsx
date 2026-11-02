@@ -1,12 +1,12 @@
 // The trade being built, valued: shared by the Trade screen, the sidebar badge, and every "add to
 // trade" elsewhere (Players, the Player page, League). Your side is the sheet (raw or within
 // position), theirs the market blended by Market influence; picks are priced over the sim's slot
-// odds. The phone's lib/trade.tsx is the same.
+// odds. The phone's lib/trade.tsx is the same, minus Build's suggestions.
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Result, TradeData } from '@shared/types'
 import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, vacuum, type Asset, type Package, type Verdict, type VacuumVerdict } from '@shared/tradeMath'
 import { projectedSlots } from '@shared/slots'
-import { buildIdeas, demandModel, giveWarnings, heldPick, teamMode, type Ideas, type Mode } from '@shared/strategy'
+import { avoid, buildIdeas, demandModel, findGives, giveWarnings, heldPick, shortlist, teamMode, type Ideas, type Mode } from '@shared/strategy'
 import { anonTrades } from './names'
 import { EMPTY_TRADE, useApp } from './store'
 import { ORD } from './ui'
@@ -14,6 +14,9 @@ import { ORD } from './ui'
 export const POS_GROUPS = ['QB', 'RB', 'WR', 'TE', 'Picks'] as const
 /** How many of your assets the deal ideas shop one at a time. */
 const SHOP_TOP = 8
+/** How many options Build offers for an empty side, and from any one team when no partner is set. */
+const SUGGEST = 5
+const SUGGEST_PER_TEAM = 2
 /** Market influence is saved this long after the slider stops. */
 const SAVE_MS = 400
 
@@ -74,6 +77,8 @@ type Trade = {
   loadDeal: (x: Deal) => void
   /** packages where both sides win, best for you first (empty give = shop your top assets) */
   findDeals: (give: Asset[], perTeam: number, limit: number) => Deal[]
+  /** With one side of the trade filled: which side is empty, and options for it (not memoised: call it from a useMemo) */
+  getSuggestions: () => { side: 'give' | 'get'; deals: Deal[] } | null
   /** your direction for trade ideas: the override if set, else worked out from record and odds */
   direction: { mode: Mode; auto: { mode: Mode; why: string }; override: Mode | null }
   setMode: (m: Mode | null) => void
@@ -265,6 +270,28 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     return out.sort((a, b) => b.verdict.em - a.verdict.em).slice(0, limit)
   }
 
+  // Priced like the trade itself, so an option shows the verdict it opens with. The side you filled
+  // is your call; the side Monte fills keeps to the strategy (no held picks, nobody you'd avoid).
+  const getSuggestions = () => {
+    if (!d || me == null) return null
+    if (get.length && !give.length && partner != null) {
+      const team = d.teams.find(t => t.roster_id === partner)
+      const pool = mine.filter(a => mineOf(a) > 0 && !heldPick(a, me, d.pickInputs.season))
+      const p = { gamma: d.gamma, spotCost: d.spotCost, meFull, themFull: !!team?.full, demand: demandOf(partner) }
+      return { side: 'give' as const, deals: shortlist(findGives(get, pool, p, Infinity).map(x => ({ ...x, partner })), 'give', d.gamma, SUGGEST) }
+    }
+    if (give.length && !get.length) {
+      const teams = d.teams.filter(t => t.roster_id !== me && (partner == null || t.roster_id === partner))
+      const cands = teams.flatMap(t => {
+        const p = { gamma: d.gamma, spotCost: d.spotCost, meFull, themFull: t.full, demand: demandOf(t.roster_id) }
+        const pool = assets.filter(a => a.owner === t.roster_id && !avoid(a, direction.mode))
+        return findPackages(give, pool, p, Infinity).map(x => ({ ...x, partner: t.roster_id, give }))
+      })
+      return { side: 'get' as const, deals: shortlist(cands, 'get', d.gamma, SUGGEST, partner == null ? SUGGEST_PER_TEAM : SUGGEST) }
+    }
+    return null
+  }
+
   const value: Trade = {
     res,
     d,
@@ -297,6 +324,7 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     setPartner: rid => setTrade(x => ({ ...x, partner: rid, get: x.partner === rid ? x.get : [] })),
     loadDeal: x => setTrade(() => ({ partner: x.partner, give: x.give.map(a => a.id), get: x.get.map(a => a.id) })),
     findDeals,
+    getSuggestions,
     direction,
     setMode: m => {
       const { [leagueId]: _, ...rest } = settings?.tradeMode ?? {}

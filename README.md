@@ -79,6 +79,16 @@ npm run typecheck
 The installer is unsigned, so Windows SmartScreen asks once (More info → Run anyway). Installing
 a newer version over an old one keeps your settings.
 
+Installed copies check GitHub Releases when they open and every 6 hours, and offer newer versions
+in the sidebar and in Settings. To release one:
+
+1. Bump `version` in package.json and run `npm run dist`.
+2. Publish a GitHub release tagged `v<version>` (not a draft or prerelease), with three files from
+   `dist/`: `Monte-Setup-<version>.exe`, its `.blockmap` and `latest.yml`.
+
+Without `latest.yml` installed copies can't update; without the `.blockmap` they download the
+whole installer instead of the difference.
+
 On first launch, enter your Sleeper username and point Monte at the rankings .xlsx. Monte
 watches the file and reloads when you download a newer copy.
 

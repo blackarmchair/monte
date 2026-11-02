@@ -17,6 +17,7 @@ import Player from './Player'
 import Team from './Team'
 import { teamLabel } from './names'
 import SettingsPage from './Settings'
+import { UpdateCard } from './Update'
 
 const SECTIONS: Array<{ id: Section; label: string; icon: IconName }> = [
   { id: 'league', label: 'League', icon: 'league' },
@@ -111,6 +112,7 @@ function Shell() {
           </button>
         ))}
         <div style={{ flex: 1 }} />
+        <UpdateCard />
         <button className={`nav-item${page?.kind === 'settings' ? ' on' : ''}`} onClick={app.openSettings} style={{ color: 'var(--ink2)' }}>
           <Icon name="gear" stroke={1.7} />
           <span>Settings</span>

@@ -26,6 +26,15 @@ const api: MonteApi = {
   leagueTrades: leagueId => ipcRenderer.invoke('league:leagueTrades', leagueId),
   proposeTrade: p => ipcRenderer.invoke('sleeper:propose', p),
   setLineup: w => ipcRenderer.invoke('sleeper:lineup', w),
+  updateState: () => ipcRenderer.invoke('update:state'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateChanged: cb => {
+    const h = (_e: unknown, state: Parameters<typeof cb>[0]) => cb(state)
+    ipcRenderer.on('update:changed', h)
+    return () => ipcRenderer.removeListener('update:changed', h)
+  },
   onRanksFileChanged: cb => {
     const h = (_e: unknown, info: Parameters<typeof cb>[0]) => cb(info)
     ipcRenderer.on('ranks:changed', h)

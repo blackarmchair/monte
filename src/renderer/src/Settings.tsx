@@ -1,9 +1,11 @@
 // Settings (sidebar): the rankings file, theme, Hide names, simulations, trade values, injury
-// overrides (set on a player's Injury tab, listed and cleared here), and the Sleeper account.
+// overrides (set on a player's Injury tab, listed and cleared here), the Sleeper account, and the
+// app version with its update check.
 import { useState } from 'react'
 import type { Theme } from '@shared/types'
 import { useApp } from './store'
 import { SleeperConnect } from './SleeperSend'
+import { UpdateRow } from './Update'
 import { Btn, Link, Seg, Toggle } from './ui'
 
 const daysOld = (iso: string) => (Date.now() - Date.parse(iso)) / 86400000
@@ -192,6 +194,7 @@ export default function Settings() {
         </span>
         <Btn size="sm" label="Switch user" onClick={switchUser} />
       </div>
+      <UpdateRow />
     </div>
   )
 }

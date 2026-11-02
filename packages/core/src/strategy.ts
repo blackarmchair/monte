@@ -253,6 +253,32 @@ function askSettle(cands: IdeaDeal[], gamma: number): { ask: IdeaDeal; settle: I
   return { ask, settle: settle === ask ? null : settle }
 }
 
+/**
+ * A short list for the empty side of a trade being built: deals they clearly say yes to first, then
+ * coin flips, each best for you first. One deal per lead asset (the most valuable on the side being
+ * filled), or the list is one player with five different throw-ins; `perPartner` does the same for
+ * teams when shopping the whole league.
+ */
+export function shortlist(cands: IdeaDeal[], side: 'give' | 'get', gamma: number, limit: number, perPartner = limit): IdeaDeal[] {
+  const clear = (d: IdeaDeal) => Number(d.verdict.et > ET_NOISE)
+  const ok = cands
+    .filter(d => d.verdict.et > 0 && d.verdict.em > Math.max(MIN_GAIN, futureBar(d.give, gamma)))
+    .sort((a, b) => clear(b) - clear(a) || b.verdict.em - a.verdict.em)
+  const leads = new Set<string>()
+  const perTeam = new Map<number, number>()
+  const out: IdeaDeal[] = []
+  for (const d of ok) {
+    if (out.length === limit) break
+    const lead = d[side].reduce((best, a) => (mineOf(a) > mineOf(best) ? a : best)).id
+    const n = perTeam.get(d.partner) ?? 0
+    if (leads.has(lead) || n >= perPartner) continue
+    leads.add(lead)
+    perTeam.set(d.partner, n + 1)
+    out.push(d)
+  }
+  return out
+}
+
 /** `parts` are the factors behind `mult`, each with its own multiple; `why` is them as text. */
 export type Demand = { mult: number; why: string[]; parts: Array<{ text: string; x: number }> }
 

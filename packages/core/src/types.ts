@@ -494,6 +494,18 @@ export type Run<T> = { result?: T; busy?: boolean; error?: string; base?: T }
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
 /** The surface preload exposes on window.monte. */
+/** Desktop only: where the app is in updating itself from GitHub Releases. */
+export type UpdateState = {
+  status: 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+  /** the running version */
+  current: string
+  /** the newer version, once one is known */
+  version?: string
+  percent?: number
+  error?: string
+  checkedAt?: string
+}
+
 export type MonteApi = {
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
@@ -530,4 +542,10 @@ export type MonteApi = {
   setLineup(w: LineupWrite): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
   /** fires when the watched rankings file changes on disk */
   onRanksFileChanged(cb: (info: RanksFileInfo | null) => void): () => void
+  updateState(): Promise<UpdateState>
+  checkForUpdate(): Promise<UpdateState>
+  downloadUpdate(): Promise<UpdateState>
+  /** quits, installs the downloaded update and relaunches */
+  installUpdate(): Promise<void>
+  onUpdateChanged(cb: (state: UpdateState) => void): () => void
 }
