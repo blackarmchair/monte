@@ -7,6 +7,7 @@ import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
 import { gameTable } from '@monte/core/gameLog'
+import { isCurrentInjury } from '@monte/core/injuries'
 import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
@@ -389,11 +390,13 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
   const { settings, setSettings, context } = useApp()
   const { showToast } = useOverlay()
   const injuries = settings?.injuries ?? []
-  const o = injuries.find(i => i.id === id)
+  const season = context?.league.season
+  // An override from an earlier season no longer applies, so don't report it as the status.
+  const o = injuries.find(i => i.id === id && isCurrentInjury(i, season))
   const first = Math.max(1, (context?.week ?? 0) + 1)
   const [wk, setWk] = useState(Math.min(18, Math.max(first, o?.returnWeek ?? first)))
   const save = (returnWeek: number | null) => {
-    const entry: ManualInjury = { id, name, pos, team, returnWeek, addedAt: new Date().toISOString() }
+    const entry: ManualInjury = { id, name, pos, team, returnWeek, season, addedAt: new Date().toISOString() }
     void setSettings({ injuries: [...injuries.filter(i => i.id !== id), entry] })
     showToast(returnWeek == null ? `${name} out for the season` : `${name} out until week ${returnWeek}`)
   }

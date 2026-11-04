@@ -15,6 +15,8 @@ export type ManualInjury = {
   team: string
   /** first NFL week he plays again; null = out for the season */
   returnWeek: number | null
+  /** the season this applies to; older entries go by addedAt (see injuries.ts) */
+  season?: string
   note?: string
   addedAt: string
 }

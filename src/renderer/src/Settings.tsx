@@ -1,6 +1,7 @@
 // Settings (sidebar): the rankings file, theme, Hide names, simulations, trade values, injury
 // overrides (set on a player's Injury tab, listed and cleared here), the Sleeper account, and the
 // app version with its update check.
+import { injurySeason, isCurrentInjury, isExpiredInjury } from '@shared/injuries'
 import { useState } from 'react'
 import type { Theme } from '@shared/types'
 import { useApp } from './store'
@@ -19,7 +20,8 @@ export default function Settings() {
   const [msg, setMsg] = useState<string | null>(null)
   const injuries = settings.injuries ?? []
   const week = context?.week ?? 0
-  const expired = injuries.filter(i => i.returnWeek != null && i.returnWeek <= week)
+  const season = context?.league.season
+  const expired = injuries.filter(i => isExpiredInjury(i, season, week))
   const sorted = [...injuries].sort((a, b) => (a.returnWeek ?? 99) - (b.returnWeek ?? 99) || a.name.localeCompare(b.name))
   const doImport = async () => {
     const r = await window.monte.bundledInjuries()
@@ -143,6 +145,7 @@ export default function Settings() {
                 </span>
                 <span className="small" style={{ color: expired.includes(i) ? 'var(--mute)' : 'var(--warn)' }}>
                   {i.returnWeek == null ? 'Out for the season' : `Out until week ${i.returnWeek}`}
+                  {!isCurrentInjury(i, season) && ` (${injurySeason(i)})`}
                 </span>
               </button>
               <Link label="Remove" onClick={() => void setSettings({ injuries: injuries.filter(x => x.id !== i.id) })} />

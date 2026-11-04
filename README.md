@@ -74,6 +74,7 @@ npm run dev        # run with hot reload
 npm run build      # production build into out/
 npm run dist       # Windows installer: dist/Monte-Setup-<version>.exe
 npm run typecheck
+npm test           # core checks: Sleeper writes, picks, trade maths, settings (no network)
 ```
 
 The installer is unsigned, so Windows SmartScreen asks once (More info → Run anyway). Installing

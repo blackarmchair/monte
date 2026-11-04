@@ -5,11 +5,13 @@ import createEngine from './engine.worker?nodeWorker'
 // Windows wants the multi-size .ico (crisp at 16–256px in the title bar and taskbar).
 import iconIco from '../../resources/icon.ico?asset'
 import iconPng from '../../resources/icon.png?asset'
+import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte/core/deadline'
 import type { EngineJob } from '@monte/core/engine'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
 import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
 import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
 import { readRanksFile, watchRanksFile } from './ranksFile'
+import { createSettingsStore } from './settingsStore'
 import { loadWorkbook } from './workbook'
 import { createUpdater } from './updater'
 import type { RanksFileInfo, Result, Settings } from '@monte/core/types'
@@ -22,19 +24,14 @@ function wrap<A extends unknown[], T>(fn: (...a: A) => Promise<T>) {
 }
 
 // ---- settings --------------------------------------------------------------------------
-async function loadSettings(): Promise<Settings> {
-  try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(await readFile(settingsFile(), 'utf8')) }
-  } catch {
-    return { ...DEFAULT_SETTINGS }
-  }
-}
+// Made on first use: userData isn't final until the app has started (the smoke script moves it).
+let settingsStore: ReturnType<typeof createSettingsStore<Settings>> | null = null
+const settingsDisk = () => (settingsStore ??= createSettingsStore<Settings>(settingsFile(), DEFAULT_SETTINGS))
+const loadSettings = () => settingsDisk().load()
 
 async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await loadSettings()), ...patch }
+  const next = await settingsDisk().save(patch)
   if (patch.theme) applyTheme(next.theme)
-  await mkdir(dataDir(), { recursive: true })
-  await writeFile(settingsFile(), JSON.stringify(next, null, 2), 'utf8')
   return next
 }
 
@@ -109,14 +106,14 @@ const sendLineup = (w: LineupWrite) => withSleeper(token => setStarters(w, token
 
 // ---- engine ----------------------------------------------------------------------------
 function runWorker(job: EngineJob): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const w = createEngine({ workerData: job })
-    w.once('message', (m: Result<unknown>) => {
-      void w.terminate()
-      m.ok ? resolve(m.value) : reject(new Error(m.error))
-    })
+  const w = createEngine({ workerData: job })
+  const done = new Promise<unknown>((resolve, reject) => {
+    w.once('message', (m: Result<unknown>) => (m.ok ? resolve(m.value) : reject(new Error(m.error))))
     w.once('error', reject)
+    // Ignored after a result; otherwise the worker died without giving one.
+    w.once('exit', () => reject(new Error('The simulation stopped unexpectedly. Try again.')))
   })
+  return withDeadline(done, ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE).finally(() => void w.terminate())
 }
 
 // Every baseline pick-odds run (no what-ifs) also saves what the engine knew and what it
@@ -213,7 +210,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  applyTheme((await loadSettings()).theme)
+  applyTheme((await loadSettings().catch(() => DEFAULT_SETTINGS)).theme)
   ipcMain.handle('settings:get', () => loadSettings())
   ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => saveSettings(patch))
   ipcMain.handle('sleeper:findUser', wrap(monte.findUser))

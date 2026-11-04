@@ -19,13 +19,37 @@ async function writeText(f: File, data: string) {
   await f.write(data)
 }
 
-export async function readSettings(): Promise<string | null> {
-  const f = settingsFile()
-  return f.exists ? f.text() : null
+const settingsTmp = () => new File(Paths.document, 'settings.json.tmp')
+
+const parses = (text: string) => {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
 }
 
+/**
+ * The saved settings, or the save that was being moved into place if the app died mid-way. An
+ * unreadable file is kept as settings.corrupt.json rather than overwritten by the next save.
+ */
+export async function readSettings(): Promise<string | null> {
+  const main = settingsFile()
+  const text = main.exists ? await main.text() : null
+  if (text != null && parses(text)) return text
+  const tmp = settingsTmp()
+  const pending = tmp.exists ? await tmp.text() : null
+  if (text != null) await main.copy(new File(Paths.document, 'settings.corrupt.json'), { overwrite: true })
+  return pending != null && parses(pending) ? pending : null
+}
+
+/** Write beside the file, then move into place, so a crash can't leave half a settings file. */
 export async function writeSettings(json: string): Promise<void> {
-  await writeText(settingsFile(), json)
+  const tmp = settingsTmp()
+  tmp.create({ overwrite: true })
+  await tmp.write(json)
+  await tmp.move(settingsFile(), { overwrite: true })
 }
 
 export async function cacheRead(key: string): Promise<string | null> {

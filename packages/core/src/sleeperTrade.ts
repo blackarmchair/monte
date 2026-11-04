@@ -96,6 +96,40 @@ function decodeBase64(s: string): string {
 
 export class SleeperAuthError extends Error {}
 
+/** How long Sleeper gets to answer a read, and a write (which may land even if the answer never comes). */
+export const SLEEPER_READ_MS = 20_000
+export const SLEEPER_WRITE_MS = 30_000
+
+/**
+ * Does this GraphQL error say the session is bad? Only then is the saved token thrown away, which
+ * costs the user another trip to the browser's dev tools, so a refusal about the action itself
+ * ("forbidden" on a locked lineup, say) must not match. HTTP 401/403 are handled separately.
+ */
+export const isAuthMessage = (msg: string) =>
+  /unauth|not logged|(invalid|expired|bad|missing)\W+(\w+\W+)?token|token\W+(\w+\W+){0,2}(invalid|expired)/i.test(msg)
+
+/** POST to Sleeper's GraphQL and read the whole reply within `ms`. */
+export async function sleeperPost(
+  body: unknown,
+  token: string,
+  fetchFn: typeof fetch,
+  ms: number,
+  timeoutMessage: string,
+): Promise<{ status: number; ok: boolean; text: string }> {
+  try {
+    const res = await fetchFn(SLEEPER_GRAPHQL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: token.trim(), 'user-agent': 'Monte (dynasty desk)' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(ms),
+    })
+    return { status: res.status, ok: res.ok, text: await res.text() }
+  } catch (e) {
+    if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw new Error(timeoutMessage)
+    throw e
+  }
+}
+
 export type ProposeResult = { transactionId: string; status: string; mismatch: string | null }
 
 const sameMap = (got: unknown, ids: string[], rosters: number[]) => {
@@ -107,12 +141,14 @@ const sameMap = (got: unknown, ids: string[], rosters: number[]) => {
 /** Send the offer. Throws SleeperAuthError when Sleeper refuses the token. */
 export async function proposeTrade(t: TradeProposal, token: string, fetchFn: typeof fetch = fetch): Promise<ProposeResult> {
   const variables = buildProposal(t)
-  const res = await fetchFn(SLEEPER_GRAPHQL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: token.trim(), 'user-agent': 'Monte (dynasty desk)' },
-    body: JSON.stringify({ operationName: 'propose', query: MUTATION, variables }),
-  })
-  const text = await res.text()
+  const res = await sleeperPost(
+    { operationName: 'propose', query: MUTATION, variables },
+    token,
+    fetchFn,
+    SLEEPER_WRITE_MS,
+    "Sleeper didn't answer in time. The offer may still have gone through, so check Sleeper before sending it again.",
+  )
+  const text = res.text
   if (res.status === 401 || res.status === 403) throw new SleeperAuthError('Sleeper refused the session token. Connect Sleeper again in Settings.')
   if (!res.ok) throw new Error(`Sleeper answered HTTP ${res.status}: ${text.slice(0, 160)}`)
   let body: { data?: { propose_trade?: any }; errors?: Array<{ message?: string; code?: string }> }
@@ -123,7 +159,7 @@ export async function proposeTrade(t: TradeProposal, token: string, fetchFn: typ
   }
   if (body.errors?.length) {
     const msg = body.errors.map(e => e.message ?? e.code ?? 'error').join('; ')
-    if (/unauth|not logged|token|forbidden/i.test(msg)) throw new SleeperAuthError(`Sleeper refused the session token (${msg}). Connect Sleeper again in Settings.`)
+    if (isAuthMessage(msg)) throw new SleeperAuthError(`Sleeper refused the session token (${msg}). Connect Sleeper again in Settings.`)
     throw new Error(`Sleeper said: ${msg}`)
   }
   const tx = body.data?.propose_trade
@@ -145,12 +181,8 @@ export async function proposeTrade(t: TradeProposal, token: string, fetchFn: typ
  * Returns the account's display name.
  */
 export async function checkToken(token: string, userId: string, fetchFn: typeof fetch = fetch): Promise<string> {
-  const res = await fetchFn(SLEEPER_GRAPHQL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: token.trim(), 'user-agent': 'Monte (dynasty desk)' },
-    body: JSON.stringify({ query: 'query { me { user_id display_name } }' }),
-  })
-  const text = await res.text()
+  const res = await sleeperPost({ query: 'query { me { user_id display_name } }' }, token, fetchFn, SLEEPER_READ_MS, "Sleeper didn't answer in time. Try again.")
+  const text = res.text
   if (res.status === 401 || res.status === 403) throw new SleeperAuthError("Sleeper doesn't accept that token. Copy it again from a signed-in sleeper.com.")
   let body: { data?: { me?: { user_id?: string; display_name?: string } | null }; errors?: Array<{ message?: string }> }
   try {

@@ -1,5 +1,6 @@
 // Settings (from the header gear): the rankings sheet, theme, Hide names, simulations, trade
 // values, injury overrides (set on a player's Injury tab, listed and cleared here), and Sleeper.
+import { injurySeason, isCurrentInjury, isExpiredInjury } from '@monte/core/injuries'
 import { useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import type { Theme } from '@monte/core/types'
@@ -22,7 +23,8 @@ export default function Settings() {
   if (!settings) return null
   const injuries = settings.injuries ?? []
   const week = context?.week ?? 0
-  const expired = injuries.filter(i => i.returnWeek != null && i.returnWeek <= week)
+  const season = context?.league.season
+  const expired = injuries.filter(i => isExpiredInjury(i, season, week))
   const sorted = [...injuries].sort((a, b) => (a.returnWeek ?? 99) - (b.returnWeek ?? 99) || a.name.localeCompare(b.name))
   const stale = sheet?.pickedAt ? (Date.now() - Date.parse(sheet.pickedAt)) / 86400000 > 7 : false
   const line = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 12, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 18, backgroundColor: t.surf }
@@ -174,6 +176,7 @@ export default function Settings() {
                 </T>
                 <T v="small" c={expired.includes(i) ? 'mute' : 'warn'}>
                   {i.returnWeek == null ? 'Out for the season' : `Out until week ${i.returnWeek}`}
+                  {!isCurrentInjury(i, season) && ` (${injurySeason(i)})`}
                 </T>
               </Pressable>
               <Btn kind="link" label="Remove" onPress={() => void setSettings({ injuries: injuries.filter(x => x.id !== i.id) })} />

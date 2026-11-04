@@ -5,7 +5,9 @@
 import { Config } from 'sleeper-standings/dist/config.js'
 import { buildDraft, buildPoll, defaultDraft, summariseDraft } from './draft'
 import type { EngineJob } from './engine'
+import { overridesFor } from './injuries'
 import { buildOverview } from './overview'
+import { ownedPicks, pickOwners } from './picks'
 import { buildRanks, boardIndex } from './ranks'
 import { buildStartSit, type SeasonStats } from './startSit'
 import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
@@ -22,7 +24,6 @@ import type {
   ManualInjury,
   OverviewData,
   GameLog,
-  OwnedPick,
   PickOddsOpts,
   PlayerHit,
   PlayerInfo,
@@ -103,38 +104,6 @@ export function summarise(l: any): LeagueSummary {
     tePremium: Number(l.scoring_settings?.bonus_rec_te ?? 0),
     avatar: l.avatar ? `https://sleepercdn.com/avatars/thumbs/${l.avatar}` : null,
   }
-}
-
-/**
- * Which picks the user owns in the next rookie draft. Every roster starts with its own picks;
- * traded_picks then reassigns ownership. Without traded_picks "every team owns its own picks"
- * is wrong the moment one moves.
- */
-function pickOwners(rosters: RosterInfo[], traded: any[], draftSeason: string, rounds: number): Map<string, number> {
-  const owner = new Map<string, number>()
-  for (const r of rosters) for (let rd = 1; rd <= rounds; rd++) owner.set(`${r.roster_id}:${rd}`, r.roster_id)
-  for (const t of traded ?? [])
-    if (String(t.season) === draftSeason && t.round <= rounds) owner.set(`${t.roster_id}:${t.round}`, t.owner_id)
-  return owner
-}
-
-function ownedPicks(rosters: RosterInfo[], owner: Map<string, number>, draftSeason: string, myRosterId: number | null): OwnedPick[] {
-  if (myRosterId == null) return []
-  const name = new Map(rosters.map(r => [r.roster_id, r.display_name]))
-  const out: OwnedPick[] = []
-  for (const [key, o] of owner) {
-    if (o !== myRosterId) continue
-    const [orig, rd] = key.split(':').map(Number)
-    out.push({ season: draftSeason, round: rd, originalRosterId: orig, originalName: name.get(orig) ?? `Roster ${orig}` })
-  }
-  return out.sort((a, b) => a.round - b.round || a.originalName.localeCompare(b.originalName))
-}
-
-/** Sleeper id -> return week (99 = season), the shape the engine's resolver takes. */
-function overridesOf(s: Settings): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const i of s.injuries ?? []) out[i.id] = i.returnWeek ?? 99
-  return out
 }
 
 const SKILL = new Set(['QB', 'RB', 'WR', 'TE'])
@@ -328,6 +297,12 @@ export function createMonteService(host: Host) {
     return lines
   }
 
+  /** The user's injury overrides that apply to the current NFL season. */
+  async function currentOverrides(settings: Settings) {
+    const state = await sleeper<any>('/state/nfl')
+    return overridesFor(settings.injuries, String(state.league_season || state.season))
+  }
+
   async function league4(leagueId: string, traded = true) {
     return Promise.all([
       sleeper<any>(`/league/${leagueId}`),
@@ -389,6 +364,7 @@ export function createMonteService(host: Host) {
 
     async runPickOdds(leagueId: string, opts: PickOddsOpts): Promise<BBResult> {
       const [meta, settings] = await Promise.all([playersMeta(), host.settings()])
+      const overrides = await currentOverrides(settings)
       return (await host.runEngine({
         kind: 'bb',
         leagueId,
@@ -398,12 +374,12 @@ export function createMonteService(host: Host) {
         seed: opts.seed ?? settings.seed,
         model: opts.model ?? settings.model ?? 'B',
         playersMeta: meta,
-        overrides: overridesOf(settings),
+        overrides,
       })) as BBResult
     },
 
     async runPwopr(leagueId: string): Promise<PWOPRResult> {
-      return (await host.runEngine({ kind: 'pwopr', leagueId, overrides: overridesOf(await host.settings()) })) as PWOPRResult
+      return (await host.runEngine({ kind: 'pwopr', leagueId, overrides: await currentOverrides(await host.settings()) })) as PWOPRResult
     },
 
     async leagueOverview(leagueId: string): Promise<OverviewData> {
@@ -444,7 +420,7 @@ export function createMonteService(host: Host) {
         meta,
         userId,
         week,
-        overrides: overridesOf(settings),
+        overrides: overridesFor(settings.injuries, season),
       })
     },
 
@@ -609,7 +585,8 @@ export function createMonteService(host: Host) {
 
     /** The bundled config list, resolved to Sleeper ids so it can be imported as editable entries. */
     async bundledInjuries(): Promise<ManualInjury[]> {
-      const meta = await playersMeta()
+      const [meta, state] = await Promise.all([playersMeta(), sleeper<any>('/state/nfl')])
+      const season = String(state.league_season || state.season)
       const byName = new Map<string, string>()
       for (const [id, p] of Object.entries(meta))
         if (SKILL.has(p.position) && (p.team || !byName.has(normName(nameOf(p))))) byName.set(normName(nameOf(p)), id)
@@ -617,7 +594,7 @@ export function createMonteService(host: Host) {
       const entry = (name: string, returnWeek: number | null): ManualInjury | null => {
         const id = byName.get(normName(name))
         const p = id ? meta[id] : null
-        return id && p ? { id, name: nameOf(p), pos: p.position, team: p.team ?? 'FA', returnWeek, note: 'imported from sleeperStandings config', addedAt: now } : null
+        return id && p ? { id, name: nameOf(p), pos: p.position, team: p.team ?? 'FA', returnWeek, season, note: 'imported from sleeperStandings config', addedAt: now } : null
       }
       return [
         ...Object.entries(BUNDLED_INJURIES.returnWeek).map(([n, w]) => entry(n, w)),

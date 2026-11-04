@@ -4,6 +4,7 @@
 // Stats run the full width below: this season's games, every cell heat-coloured within its column.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { gameTable } from '@shared/gameLog'
+import { isCurrentInjury } from '@shared/injuries'
 import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
@@ -289,11 +290,13 @@ function TradeTab({ id, name, owner }: { id: string; name: string; owner: number
 function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: string; pos: string; team: string; sleeperTag: string }) {
   const { settings, setSettings, context, showToast } = useApp()
   const injuries = settings.injuries ?? []
-  const o = injuries.find(i => i.id === id)
+  const season = context?.league.season
+  // An override from an earlier season no longer applies, so don't report it as the status.
+  const o = injuries.find(i => i.id === id && isCurrentInjury(i, season))
   const first = Math.max(1, (context?.week ?? 0) + 1)
   const [wk, setWk] = useState(Math.min(18, Math.max(first, o?.returnWeek ?? first)))
   const save = (returnWeek: number | null) => {
-    const entry: ManualInjury = { id, name, pos, team, returnWeek, addedAt: new Date().toISOString() }
+    const entry: ManualInjury = { id, name, pos, team, returnWeek, season, addedAt: new Date().toISOString() }
     void setSettings({ injuries: [...injuries.filter(i => i.id !== id), entry] })
     showToast(returnWeek == null ? `${name} out for the season` : `${name} out until week ${returnWeek}`)
   }

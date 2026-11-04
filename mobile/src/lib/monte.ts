@@ -1,6 +1,7 @@
 // The phone's host for @monte/core: the same service the desktop app runs in its main process,
 // here in-process. `monte` mirrors the desktop's window.monte (same names, same Result shapes) so
 // screens port across without a second data layer.
+import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte/core/deadline'
 import { runEngineJob, type EngineJob } from '@monte/core/engine'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
 import type { PickOddsOpts, Result, Settings } from '@monte/core/types'
@@ -27,10 +28,15 @@ async function loadSettings(): Promise<Settings> {
   return settings
 }
 
+// Saves reach the disk one at a time and in order, so an older save can't land over a newer one.
+let settingsWrites: Promise<unknown> = Promise.resolve()
 async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
-  settings = { ...(await loadSettings()), ...patch }
-  await storage.writeSettings(JSON.stringify(settings))
-  return settings
+  const next = { ...(await loadSettings()), ...patch }
+  settings = next
+  const write = settingsWrites.then(() => storage.writeSettings(JSON.stringify(next)))
+  settingsWrites = write.catch(() => undefined)
+  await write
+  return next
 }
 
 // One parsed workbook, re-read only when a new one is picked. Several tabs ask at once on
@@ -61,7 +67,7 @@ async function loadBook(): Promise<Book> {
 let queue: Promise<unknown> = Promise.resolve()
 function runEngine(job: EngineJob): Promise<unknown> {
   // Let the UI paint its "running" state before the sim takes the JS thread.
-  const next = queue.then(() => new Promise(r => setTimeout(r, 60))).then(() => runEngineJob(job))
+  const next = queue.then(() => new Promise(r => setTimeout(r, 60))).then(() => withDeadline(runEngineJob(job), ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE))
   queue = next.catch(() => undefined)
   return next
 }

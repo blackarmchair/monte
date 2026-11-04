@@ -10,7 +10,7 @@
 //
 // Sources: github.com/Filip-Kin/sleeper-graphql (docs/mutations.md: update_matchup_leg executed,
 // roster_update_starters "not sufficient on its own"), github.com/bealmot/sleeper-mcp (API-NOTES.md).
-import { SLEEPER_GRAPHQL, SleeperAuthError } from './sleeperTrade'
+import { isAuthMessage, SLEEPER_READ_MS, SLEEPER_WRITE_MS, SleeperAuthError, sleeperPost } from './sleeperTrade'
 
 export type LineupWrite = {
   leagueId: string
@@ -31,13 +31,16 @@ const MUTATION = `mutation lineup($round: Int!, $leg: Int!, $league_id: Snowflak
   update_matchup_leg(round: $round, leg: $leg, league_id: $league_id, roster_id: $roster_id, starters: $starters) { roster_id round leg starters }
 }`
 
-export async function gql<T>(query: string, variables: Record<string, unknown>, token: string, fetchFn: typeof fetch = fetch): Promise<T> {
-  const res = await fetchFn(SLEEPER_GRAPHQL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: token.trim(), 'user-agent': 'Monte (dynasty desk)' },
-    body: JSON.stringify({ query, variables }),
-  })
-  const text = await res.text()
+/** Reads give up after SLEEPER_READ_MS. Pass `writeTimeout` for a write: the longer limit, and what to tell the user, since it may have landed. */
+export async function gql<T>(query: string, variables: Record<string, unknown>, token: string, fetchFn: typeof fetch = fetch, writeTimeout?: string): Promise<T> {
+  const res = await sleeperPost(
+    { query, variables },
+    token,
+    fetchFn,
+    writeTimeout ? SLEEPER_WRITE_MS : SLEEPER_READ_MS,
+    writeTimeout ?? "Sleeper didn't answer in time. Try again.",
+  )
+  const text = res.text
   if (res.status === 401 || res.status === 403) throw new SleeperAuthError('Sleeper refused the session token. Connect Sleeper again.')
   if (!res.ok) throw new Error(`Sleeper answered HTTP ${res.status}: ${text.slice(0, 160)}`)
   let body: { data?: T; errors?: Array<{ message?: string; code?: string }> }
@@ -48,7 +51,7 @@ export async function gql<T>(query: string, variables: Record<string, unknown>, 
   }
   if (body.errors?.length) {
     const msg = body.errors.map(e => e.message ?? e.code ?? 'error').join('; ')
-    if (/unauth|not logged|token|forbidden/i.test(msg)) throw new SleeperAuthError(`Sleeper refused the session token (${msg}). Connect Sleeper again.`)
+    if (isAuthMessage(msg)) throw new SleeperAuthError(`Sleeper refused the session token (${msg}). Connect Sleeper again.`)
     throw new Error(`Sleeper said: ${msg}`)
   }
   if (!body.data) throw new Error('Sleeper answered with no data.')
@@ -75,6 +78,7 @@ export async function setStarters(w: LineupWrite, token: string, fetchFn: typeof
     { round: w.week, leg: Number(mine.leg ?? w.week), league_id: w.leagueId, roster_id: w.rosterId, starters: sent },
     token,
     fetchFn,
+    "Sleeper didn't answer in time. The lineup may still have changed, so check it in Sleeper before sending again.",
   )
   if (!leg) throw new Error('Sleeper accepted the request but returned no lineup.')
   return {
