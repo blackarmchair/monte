@@ -113,6 +113,8 @@ export function buildLeagueWeek(o: {
   meta: Meta
   season: string
   week: number
+  /** forecast as of before kickoff, ignoring every result: for scoring the model afterwards */
+  pregame?: boolean
 }): LeagueWeek {
   const scoring: Record<string, number> = o.league.scoring_settings ?? {}
   const names = teamNames(o.rosters, o.users)
@@ -127,7 +129,7 @@ export function buildLeagueWeek(o: {
       const p = o.meta[id]
       const team = p?.position === 'DEF' ? id : p?.team ?? ''
       const points = Number(m.players_points?.[id] ?? 0)
-      const state = team ? stateOf(team) : 'bye'
+      const state = o.pregame ? 'pre' : team ? stateOf(team) : 'bye'
       return { id, name: nameOf(id, p), pos: p?.position ?? '', team, points, proj: leagueScore(o.projections[id], scoring), state }
     })
     let mean = 0
