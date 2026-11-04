@@ -101,8 +101,11 @@ rounded cards tinted by team or NFL colour, Sleeper headshots, heat-coloured cel
 - Lineup: tap a player, then a highlighted slot or player to swap; tap him again to cancel.
   "Sim out" (in the hint line) zeroes the selected starter.
 - Players: swipe a row left for Trade for / Offer / Claim; long-press to add him to the trade.
+- Swipe a main screen sideways to move between the five tabs. Anything inside that swipes sideways
+  goes first: pill rows and sliders, and a left swipe on a Players card opens its action.
 - Teams and players open as full pages; pickers, the trade review and pick details open in the
-  bottom sheet (tap the scrim to close).
+  bottom sheet. Tap the scrim or drag the grabber down to close; dragging the content also closes
+  a sheet short enough not to scroll.
 
 ## Sending trades
 

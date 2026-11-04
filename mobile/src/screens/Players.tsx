@@ -294,7 +294,8 @@ function SwipeCard(props: {
 
   const pan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
+      // A closed card only opens leftward; a rightward swipe on it is left for the tab swipe.
+      onMoveShouldSetPanResponder: (_, g) => (g.dx < 0 || base.current < 0) && Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
       onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, g) => x.setValue(Math.max(-ACTION_W - 18, Math.min(0, base.current + g.dx))),
       onPanResponderRelease: (_, g) => {

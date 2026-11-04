@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router/js-tabs'
 import AppHeader from '@/ui/AppHeader'
+import SwipeTabs from '@/ui/SwipeTabs'
 import TabBar from '@/ui/TabBar'
 import { useTheme } from '@/ui/theme'
 
@@ -12,7 +13,14 @@ export default function TabsLayout() {
     <Tabs
       tabBar={props => <TabBar {...props} />}
       backBehavior="history"
-      screenOptions={{ header: () => <AppHeader />, sceneStyle: { backgroundColor: t.bg } }}
+      // Every route shifts, not just the five tabs: a navigator with a mix of animated and still
+      // routes leaves the outgoing screen sliding away over one that has already appeared.
+      screenOptions={{ header: () => <AppHeader />, sceneStyle: { backgroundColor: t.bg }, animation: 'shift' }}
+      screenLayout={({ route, navigation, children }) => (
+        <SwipeTabs route={route.name} navigate={name => navigation.navigate(name)}>
+          {children}
+        </SwipeTabs>
+      )}
     >
       <Tabs.Screen name="index" options={{ title: 'League' }} />
       <Tabs.Screen name="lineup" options={{ title: 'Lineup' }} />

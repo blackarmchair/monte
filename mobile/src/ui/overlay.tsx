@@ -1,13 +1,16 @@
 // App-wide overlays: one bottom sheet (every detail view opens in it) and one toast. The provider
 // holds the state; the hosts render inside the app's providers so sheet content can use them.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Animated, Easing, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
+import { Animated, Easing, KeyboardAvoidingView, Modal, PanResponder, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { font, R, useTheme } from './theme'
 
 /** The tab bar's height above the bottom inset; floating bars and the toast sit above it. */
 export const TAB_H = 60
 const TOAST_MS = 2800
+const SHEET_CLAIM_PX = 6
+const SHEET_CLOSE_PX = 110
+const SHEET_FLICK_PX_PER_MS = 0.6
 
 type Toast = { msg: string; action?: { label: string; onPress: () => void } }
 type Overlay = {
@@ -48,7 +51,11 @@ export function useOverlay(): Overlay {
   return o
 }
 
-/** The bottom sheet: scrim (tap to close), grabber, up to 86% of the screen, scrolls inside. */
+/**
+ * The bottom sheet: scrim (tap to close), grabber, up to 86% of the screen, scrolls inside. Drag the
+ * grabber down to dismiss. Dragging the content also works when it fits without scrolling; once it
+ * can scroll, Android's scroller takes the touch first, so there only a fast flick gets through.
+ */
 export function SheetHost() {
   const t = useTheme()
   const insets = useSafeAreaInsets()
@@ -59,9 +66,35 @@ export function SheetHost() {
   const [visible, setVisible] = useState(false)
   const y = useRef(new Animated.Value(height)).current
   const fade = useRef(new Animated.Value(0)).current
+  const atTop = useRef(true)
+
+  const settle = () =>
+    Animated.parallel([
+      Animated.timing(y, { toValue: 0, duration: 160, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(fade, { toValue: 1, duration: 160, useNativeDriver: true }),
+    ]).start()
+  const drag = useRef({
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderMove: (_: unknown, g: { dy: number }) => {
+      const down = Math.max(0, g.dy)
+      y.setValue(down)
+      fade.setValue(1 - Math.min(1, down / height))
+    },
+    onPanResponderRelease: (_: unknown, g: { dy: number; vy: number }) => {
+      if (g.dy > SHEET_CLOSE_PX || (g.dy > 0 && g.vy > SHEET_FLICK_PX_PER_MS)) closeSheet()
+      else settle()
+    },
+    onPanResponderTerminate: settle,
+  }).current
+  const downward = (g: { dx: number; dy: number }) => g.dy > SHEET_CLAIM_PX && g.dy > Math.abs(g.dx) * 1.5
+  const grabberPan = useRef(PanResponder.create({ onMoveShouldSetPanResponder: (_, g) => downward(g), ...drag })).current
+  // Capture, so the drag wins over the buttons inside; only at the top of the scroll, where pulling
+  // down has nothing left to scroll.
+  const contentPan = useRef(PanResponder.create({ onMoveShouldSetPanResponderCapture: (_, g) => atTop.current && downward(g), ...drag })).current
 
   useEffect(() => {
     if (sheet) {
+      if (!visible) atTop.current = true
       setShown(sheet)
       setVisible(true)
       Animated.parallel([
@@ -102,12 +135,23 @@ export function SheetHost() {
             elevation: 16,
           }}
         >
-          <Pressable onPress={closeSheet} hitSlop={8} style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 16 }} accessibilityLabel="Close">
-            <View style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: t.surf2 }} />
-          </Pressable>
-          <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 + insets.bottom }} keyboardShouldPersistTaps="handled">
-            {shown}
-          </ScrollView>
+          <View {...grabberPan.panHandlers}>
+            <Pressable onPress={closeSheet} hitSlop={8} style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 20 }} accessibilityLabel="Close">
+              <View style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: t.surf2 }} />
+            </Pressable>
+          </View>
+          <View style={{ flexShrink: 1 }} {...contentPan.panHandlers}>
+            <ScrollView
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 + insets.bottom }}
+              keyboardShouldPersistTaps="handled"
+              scrollEventThrottle={16}
+              onScroll={e => {
+                atTop.current = e.nativeEvent.contentOffset.y <= 0
+              }}
+            >
+              {shown}
+            </ScrollView>
+          </View>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
