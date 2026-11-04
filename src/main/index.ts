@@ -1,6 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, safeStorage, session, shell, Tray } from 'electron'
+import { unzipSync } from 'fflate'
 import { join } from 'node:path'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import createEngine from './engine.worker?nodeWorker'
 // Windows wants the multi-size .ico (crisp at 16–256px in the title bar and taskbar).
 import iconIco from '../../resources/icon.ico?asset'
@@ -8,6 +9,9 @@ import iconPng from '../../resources/icon.png?asset'
 import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte/core/deadline'
 import type { EngineJob } from '@monte/core/engine'
 import { diffOffers, offerMessage } from '@monte/core/offerWatch'
+import { fetchSheet, sameWorkbook, SHEET_CHECK_MS } from '@monte/core/sheetLink'
+import { isSleeperPage, LOGIN_URL, loginMayVisit, READ_TOKEN_JS, TOKEN_POLL_MS, tokenFromStorage } from '@monte/core/sleeperLogin'
+import { readWorkbook } from '@monte/core/xlsx'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
 import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
 import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
@@ -34,6 +38,7 @@ const loadSettings = () => settingsDisk().load()
 async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
   const next = await settingsDisk().save(patch)
   if (patch.theme) applyTheme(next.theme)
+  if ('keepRunning' in patch) syncTray(!!next.keepRunning)
   return next
 }
 
@@ -78,6 +83,76 @@ async function connectSleeper(token: string): Promise<Settings> {
   await writeSleeperToken(t)
   const info = readToken(t)
   return saveSettings({ sleeperLink: { name: name || s.displayName || '', expiresAt: info?.expiresAt ?? null, connectedAt: new Date().toISOString() } })
+}
+
+// Sign in on Sleeper's own page, in a window with its own throwaway session and no access to Monte.
+// Monte never sees the password: once the page has saved its token, Monte reads that, checks it and
+// stores it as a pasted one would be. Resolves null if the user just closes the window.
+let loginWindow: BrowserWindow | null = null
+let loginRun: Promise<Settings | null> | null = null
+
+function signInSleeper(): Promise<Settings | null> {
+  if (loginRun) {
+    loginWindow?.focus()
+    return loginRun
+  }
+  loginRun = runLogin().finally(() => {
+    loginRun = null
+  })
+  return loginRun
+}
+
+async function runLogin(): Promise<Settings | null> {
+  const ses = session.fromPartition('sleeper-login')
+  await ses.clearStorageData()
+  const win = new BrowserWindow({
+    width: 520,
+    height: 780,
+    title: 'Sign in to Sleeper',
+    icon: process.platform === 'win32' ? iconIco : iconPng,
+    autoHideMenuBar: true,
+    webPreferences: { session: ses, contextIsolation: true, sandbox: true, nodeIntegration: false },
+  })
+  loginWindow = win
+  // Some login pages turn away anything announcing itself as Electron.
+  win.webContents.setUserAgent(win.webContents.getUserAgent().replace(/\s(Electron|monte)\/\S+/gi, ''))
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!loginMayVisit(url)) e.preventDefault()
+  })
+  try {
+    return await new Promise<Settings | null>((resolve, reject) => {
+      let reading = false
+      const timer = setInterval(() => {
+        if (reading || win.isDestroyed() || !isSleeperPage(win.webContents.getURL())) return
+        reading = true
+        win.webContents
+          .executeJavaScript(READ_TOKEN_JS)
+          .then((raw: unknown) => {
+            const token = tokenFromStorage(raw)
+            if (!token) return
+            clearInterval(timer)
+            return connectSleeper(token).then(resolve, reject)
+          })
+          .catch(() => undefined) // mid-navigation: the next tick tries again
+          .finally(() => {
+            reading = false
+          })
+      }, TOKEN_POLL_MS)
+      win.once('closed', () => {
+        clearInterval(timer)
+        resolve(null)
+      })
+      void win.loadURL(LOGIN_URL).catch(e => {
+        clearInterval(timer)
+        reject(new Error(`Couldn't open Sleeper's sign-in page: ${e instanceof Error ? e.message : e}`))
+      })
+    })
+  } finally {
+    loginWindow = null
+    if (!win.isDestroyed()) win.destroy()
+    await ses.clearStorageData().catch(() => undefined)
+  }
 }
 
 async function disconnectSleeper(): Promise<Settings> {
@@ -174,9 +249,7 @@ async function checkOffers() {
     n.once('close', () => liveNotifications.delete(n))
     n.once('click', () => {
       liveNotifications.delete(n)
-      const win = BrowserWindow.getAllWindows()[0]
-      if (win?.isMinimized()) win.restore()
-      win?.focus()
+      showWindow()
       broadcast('offers:open', o.leagueId)
     })
     n.show()
@@ -219,11 +292,86 @@ async function chooseRanksFile(): Promise<RanksFileInfo | null> {
   })
   if (r.canceled || !r.filePaths[0]) return null
   const info = await loadRanksFile(r.filePaths[0]) // validates before saving the path
-  await saveSettings({ ranksFile: r.filePaths[0] })
+  // Choosing a file by hand takes over from a linked sheet.
+  await saveSettings({ ranksFile: r.filePaths[0], sheetLink: undefined })
   return info
 }
 
+// A linked sheet is downloaded here and then treated like any chosen file. The copy is only replaced
+// when its data changed, so its age stays honest and screens don't reload for nothing.
+const linkedSheetFile = () => join(dataDir(), 'rankings-from-link.xlsx')
+
+async function refreshLinkedSheet(link: string): Promise<RanksFileInfo | null> {
+  const bytes = await fetchSheet(link)
+  try {
+    readWorkbook(bytes)
+  } catch {
+    throw new Error("Google sent something that isn't a workbook Monte can read.")
+  }
+  const dest = linkedSheetFile()
+  const existing = await readFile(dest).catch(() => null)
+  if (existing && (await loadSettings()).ranksFile === dest && sameWorkbook(new Uint8Array(existing), bytes, unzipSync)) return null
+  await writeFile(`${dest}.tmp`, bytes)
+  await rename(`${dest}.tmp`, dest)
+  const info = await loadRanksFile(dest)
+  await saveSettings({ ranksFile: dest })
+  broadcast('ranks:changed', info)
+  return info
+}
+
+async function setSheetLink(link: string | null): Promise<RanksFileInfo | null> {
+  if (!link) {
+    await saveSettings({ sheetLink: undefined })
+    return loadRanksFile((await loadSettings()).ranksFile)
+  }
+  // Downloads first: a link that doesn't work must not replace a sheet that does.
+  const changed = await refreshLinkedSheet(link)
+  await saveSettings({ sheetLink: link })
+  return changed ?? loadRanksFile((await loadSettings()).ranksFile)
+}
+
+function startSheetChecks() {
+  const run = () => {
+    void loadSettings()
+      .then(s => (s.sheetLink ? refreshLinkedSheet(s.sheetLink) : null))
+      .catch(e => console.warn('sheet check failed:', e instanceof Error ? e.message : e))
+  }
+  setTimeout(run, OFFER_FIRST_CHECK_MS)
+  setInterval(run, SHEET_CHECK_MS)
+}
+
 // ---- window ----------------------------------------------------------------------------
+function showWindow() {
+  const win = BrowserWindow.getAllWindows().find(w => w !== loginWindow)
+  if (!win) return createWindow()
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+// Optional: closing the window hides it to the tray, so offer notifications keep coming. Quitting is
+// then done from the tray menu. A real quit (tray, update install, shutdown) sets `quitting`.
+let tray: Tray | null = null
+let quitting = false
+
+function syncTray(on: boolean) {
+  if (!on) {
+    tray?.destroy()
+    tray = null
+    return
+  }
+  if (tray) return
+  tray = new Tray(process.platform === 'win32' ? iconIco : iconPng)
+  tray.setToolTip('Monte')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Monte', click: showWindow },
+      { label: 'Quit', click: () => app.quit() },
+    ]),
+  )
+  tray.on('click', showWindow)
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     // Wide enough by default for the draft-order heatmap's 1200px minimum plus the sidebar.
@@ -242,6 +390,12 @@ function createWindow() {
       sandbox: true,
     },
   })
+  win.on('close', e => {
+    if (tray && !quitting) {
+      e.preventDefault()
+      win.hide()
+    }
+  })
   // External links open in the browser, never inside the app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -250,6 +404,14 @@ function createWindow() {
   if (process.env['ELECTRON_RENDERER_URL']) void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
 }
+
+// With the window hidden in the tray, opening Monte again must show it rather than start a second copy.
+// Packaged only: a dev run alongside an installed copy is normal.
+if (app.isPackaged && !app.requestSingleInstanceLock()) app.quit()
+app.on('second-instance', showWindow)
+app.on('before-quit', () => {
+  quitting = true
+})
 
 app.whenReady().then(async () => {
   applyTheme((await loadSettings().catch(() => DEFAULT_SETTINGS)).theme)
@@ -272,8 +434,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('players:info', wrap(monte.playerInfo))
   ipcMain.handle('injuries:bundled', wrap(monte.bundledInjuries))
   ipcMain.handle('ranks:choose', wrap(chooseRanksFile))
+  ipcMain.handle('ranks:link', wrap(setSheetLink))
+  ipcMain.handle('league:trackRecord', wrap(monte.trackRecord))
   ipcMain.handle('ranks:info', wrap(async () => loadRanksFile((await loadSettings()).ranksFile)))
   ipcMain.handle('sleeper:connect', wrap(connectSleeper))
+  ipcMain.handle('sleeper:signIn', wrap(signInSleeper))
   ipcMain.handle('sleeper:disconnect', () => disconnectSleeper())
   ipcMain.handle('sleeper:propose', (_e, p: TradeProposal) => sendTrade(p))
   ipcMain.handle('sleeper:lineup', (_e, w: LineupWrite) => sendLineup(w))
@@ -287,7 +452,9 @@ app.whenReady().then(async () => {
   // Windows ties notifications to this id; it matches the installer's.
   if (process.platform === 'win32') app.setAppUserModelId('com.blackarmchair.monte')
   createWindow()
+  syncTray(!!(await loadSettings().catch(() => DEFAULT_SETTINGS)).keepRunning)
   startOfferChecks()
+  startSheetChecks()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
 

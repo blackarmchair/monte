@@ -62,6 +62,13 @@ A standalone, signed APK: no Expo Go, no computer needed once installed.
    `adb install -r` over USB, or copy it to the phone and open it (allow installs from that
    app when Android asks). Bump `versionCode` in app.json for each new release.
 
+## Signing in to Sleeper
+
+Settings → Sleeper connection → Sign in opens Sleeper's own login page in a web view. Monte reads the
+session token the page saves and never sees the password. The web view is incognito, so nothing else
+of the login stays. `react-native-webview` is a native module, so an installed APK needs a rebuild
+first. Pasting a token still works if Sleeper's page ever refuses the web view.
+
 ## New-offer alerts
 
 Turn them on in Settings, under Sleeper connection. They use `expo-notifications` and
@@ -82,6 +89,9 @@ Phones have no folder Monte can watch, so the sheet is picked rather than synced
    read inside Expo Go ("Missing 'READ' permission").
 
 Pick it again whenever the sheet updates. Monte keeps a copy, so the original can be deleted.
+
+Or paste the Google Sheets link in Settings, if anyone with the link can view it. Monte then checks
+it when you open the app, at most every 6 hours, and updates when its data changes.
 
 ## Layout
 

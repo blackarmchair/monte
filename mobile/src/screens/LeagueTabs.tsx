@@ -11,6 +11,7 @@ import { offerRole } from '@monte/core/offers'
 import { teamLabel } from '@monte/core/names'
 import { basisLabel, compareBases, matchupBasis } from '@monte/core/projBasis'
 import type { Result, StartSitData } from '@monte/core/types'
+import { useAppUpdate } from '@/lib/appUpdate'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { mineOf, useTrade } from '@/lib/trade'
@@ -18,7 +19,7 @@ import { Btn, Card, ErrorBox, GradCard, Headshot, kfmt, Loading, Notice, ORD, Ro
 import { useOverlay } from '@/ui/overlay'
 import { nflColor, R, ring, teamColor, useTheme } from '@/ui/theme'
 import { BasisLine, ProjCompare } from './ProjCompare'
-import { normCdf, WIN_SD } from './startsit.logic'
+import { normCdf, WIN_SD } from '@monte/core/startSitLogic'
 
 /** Load once per league, with a manual refresh. */
 function useLoad<T>(fetcher: (leagueId: string) => Promise<Result<T>>) {
@@ -69,6 +70,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const t = useTheme()
   const { context, sheet, settings, openPlayer } = useApp()
   const x = useTrade()
+  const update = useAppUpdate()
   const me = context?.myRosterId ?? null
   const trades = useLoad(id => monte.leagueTrades(id))
   const lineup = useLoad(id => (sheet && settings?.userId ? monte.startSit(id, settings.userId) : Promise.resolve(SHEET_NEEDED)))
@@ -78,6 +80,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
     ...offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'another team', verdict: x.readOffer(tx).label }))),
     ...(lineup.res?.ok ? lineupItems(lineup.res.value) : []),
     ...connectionItems(settings?.sleeperLink, lt?.pendingNote ?? null),
+    ...(update ? [{ id: 'app-update', tone: 'note' as const, title: `Monte ${update.version} is ready`, detail: 'Download it from Settings.', action: { kind: 'settings' as const } }] : []),
     ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks) : []),
   ])
   const act = items.filter(i => i.tone === 'act').length

@@ -21,6 +21,7 @@ const api: MonteApi = {
   chooseRanksFile: () => ipcRenderer.invoke('ranks:choose'),
   ranksFileInfo: () => ipcRenderer.invoke('ranks:info'),
   connectSleeper: token => ipcRenderer.invoke('sleeper:connect', token),
+  signInSleeper: () => ipcRenderer.invoke('sleeper:signIn'),
   disconnectSleeper: () => ipcRenderer.invoke('sleeper:disconnect'),
   leagueWeek: leagueId => ipcRenderer.invoke('league:week', leagueId),
   leagueTrades: leagueId => ipcRenderer.invoke('league:leagueTrades', leagueId),
@@ -36,6 +37,8 @@ const api: MonteApi = {
     ipcRenderer.on('update:changed', h)
     return () => ipcRenderer.removeListener('update:changed', h)
   },
+  setSheetLink: link => ipcRenderer.invoke('ranks:link', link),
+  trackRecord: userId => ipcRenderer.invoke('league:trackRecord', userId),
   onOpenLeague: cb => {
     const h = (_e: unknown, leagueId: string) => cb(leagueId)
     ipcRenderer.on('offers:open', h)

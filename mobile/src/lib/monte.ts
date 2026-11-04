@@ -5,6 +5,8 @@ import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte
 import { runEngineJob, type EngineJob } from '@monte/core/engine'
 import { diffOffers, type FoundOffer } from '@monte/core/offerWatch'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
+import { fetchSheet, sameWorkbook, SHEET_CHECK_MS } from '@monte/core/sheetLink'
+import { unzipSync } from 'fflate'
 import type { PickOddsOpts, Result, Settings } from '@monte/core/types'
 import { readWorkbook, type Book } from '@monte/core/xlsx'
 import { fileName } from '@monte/core/paths'
@@ -102,6 +104,28 @@ async function withSleeper<T>(run: (token: string) => Promise<T>): Promise<Resul
   }
 }
 
+const LINKED_NAME = 'Your linked Google Sheet'
+
+/** Download the linked sheet and swap it in if its data changed. The new sheet, or null if nothing changed. */
+async function pullLinkedSheet(link: string): Promise<SheetInfo | null> {
+  const bytes = await fetchSheet(link)
+  try {
+    readWorkbook(bytes)
+  } catch {
+    throw new Error("Google sent something that isn't a workbook Monte can read.")
+  }
+  const s = await loadSettings()
+  const checkedAt = new Date().toISOString()
+  const held = s.ranksFile && s.ranksName === LINKED_NAME ? await storage.readSheet(s.ranksFile).catch(() => null) : null
+  if (held && sameWorkbook(held, bytes, unzipSync)) {
+    await saveSettings({ sheetCheckedAt: checkedAt })
+    return null
+  }
+  const uri = await storage.storeSheet(bytes)
+  book = null
+  return sheetInfo(await saveSettings({ ranksFile: uri, ranksName: LINKED_NAME, ranksPickedAt: checkedAt, sheetCheckedAt: checkedAt }))
+}
+
 export const monte = {
   getSettings: loadSettings,
   setSettings: saveSettings,
@@ -121,6 +145,23 @@ export const monte = {
   searchPlayers: (query: string) => toResult(() => service.searchPlayers(query)),
   playerInfo: (id: string) => toResult(() => service.playerInfo(id)),
   bundledInjuries: () => toResult(() => service.bundledInjuries()),
+  trackRecord: (userId: string) => toResult(() => service.trackRecord(userId)),
+
+  /** Keep the sheet current from a Google Sheets link; null stops. A link that fails changes nothing. */
+  async setSheetLink(link: string | null): Promise<Result<SheetInfo | null>> {
+    return toResult(async () => {
+      if (!link) return sheetInfo(await saveSettings({ sheetLink: undefined, sheetCheckedAt: undefined }))
+      await pullLinkedSheet(link)
+      return sheetInfo(await saveSettings({ sheetLink: link }))
+    })
+  },
+
+  /** On launch or returning to the app, at most every few hours. Failing quietly keeps the sheet it has. */
+  async checkLinkedSheet(): Promise<SheetInfo | null> {
+    const s = await loadSettings()
+    if (!s.sheetLink || (s.sheetCheckedAt && Date.now() - Date.parse(s.sheetCheckedAt) < SHEET_CHECK_MS)) return null
+    return pullLinkedSheet(s.sheetLink).catch(() => null)
+  },
 
   /** Connect Sleeper for trade offers: the token must work and be this user's. */
   async connectSleeper(token: string): Promise<Result<Settings>> {
@@ -185,7 +226,7 @@ export const monte = {
       }
       const uri = await storage.storeSheet(picked.bytes)
       book = null
-      return sheetInfo(await saveSettings({ ranksFile: uri, ranksName: picked.name, ranksPickedAt: new Date().toISOString() }))
+      return sheetInfo(await saveSettings({ ranksFile: uri, ranksName: picked.name, ranksPickedAt: new Date().toISOString(), sheetLink: undefined, sheetCheckedAt: undefined }))
     })
   },
 }

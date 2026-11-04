@@ -48,7 +48,7 @@ sections: League, Lineup, Trade, Players and Picks, plus a page for every player
 | `src/` | Desktop app: Electron main process, preload, and the React renderer |
 | `packages/core/` | Shared data layer: Sleeper and FantasyCalc fetching, screen builders, trade and draft maths, trade proposals |
 | `mobile/` | Phone app (Expo / React Native, Expo Router), five tabs. See [mobile/README.md](mobile/README.md) |
-| `scripts/` | Parity and smoke checks against the reference tools |
+| `scripts/` | Parity checks against the reference tools, and `smoke.cjs`, which walks every screen of the built app |
 | `resources/` | Desktop app icons |
 
 ## Getting started
@@ -91,11 +91,15 @@ in the sidebar and in Settings. To release one:
 2. Publish a GitHub release tagged `v<version>` (not a draft or prerelease), with three files from
    `dist/`: `Monte-Setup-<version>.exe`, its `.blockmap` and `latest.yml`.
 
+To reach phones too, attach the release APK as `Monte-<phone version>.apk` (the `version` in
+`mobile/app.json`). The phone looks for that name on the newest release and offers it in Settings.
+
 Without `latest.yml` installed copies can't update; without the `.blockmap` they download the
 whole installer instead of the difference.
 
 On first launch, enter your Sleeper username and point Monte at the rankings .xlsx. Monte
-watches the file and reloads when you download a newer copy.
+watches the file and reloads when you download a newer copy. Or paste the sheet's Google Sheets link
+in Settings, if anyone with the link can view it, and Monte keeps it current by itself.
 
 ### Mobile
 

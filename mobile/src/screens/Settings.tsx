@@ -1,13 +1,15 @@
 // Settings (from the header gear): the rankings sheet, theme, Hide names, simulations, trade
 // values, injury overrides (set on a player's Injury tab, listed and cleared here), and Sleeper.
+import { appVersion, useAppUpdate } from '@/lib/appUpdate'
+import TrackRecord from './TrackRecord'
 import { disableOfferAlerts, enableOfferAlerts } from '@/lib/offerWatch'
 import { injurySeason, isCurrentInjury, isExpiredInjury } from '@monte/core/injuries'
 import { useState } from 'react'
-import { Pressable, ScrollView, View } from 'react-native'
+import { Linking, Pressable, ScrollView, View } from 'react-native'
 import type { Theme } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
-import { Btn, Card, ErrorBox, Row, Seg, T, Toggle } from '@/ui/kit'
+import { Btn, Card, ErrorBox, Field, Row, Seg, T, Toggle } from '@/ui/kit'
 import { R, useTheme } from '@/ui/theme'
 import SleeperConnect from './SleeperConnect'
 
@@ -18,7 +20,19 @@ const ago = (iso: string) => {
 
 export default function Settings() {
   const t = useTheme()
-  const { settings, setSettings, sheet, sheetError, sheetBusy, pickSheet, hide, switchUser, disconnectSleeper, context, openPlayer } = useApp()
+  const { settings, setSettings, sheet, sheetError, sheetBusy, pickSheet, setSheetLink, hide, switchUser, disconnectSleeper, context, openPlayer } = useApp()
+  const update = useAppUpdate()
+  const [link, setLink] = useState(settings?.sheetLink ?? '')
+  const [linkBusy, setLinkBusy] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const saveLink = async (value: string | null) => {
+    setLinkBusy(true)
+    setLinkError(null)
+    const error = await setSheetLink(value)
+    setLinkBusy(false)
+    setLinkError(error)
+    if (!error && !value) setLink('')
+  }
   const [connecting, setConnecting] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   if (!settings) return null
@@ -47,7 +61,7 @@ export default function Settings() {
         {sheet ? (
           <>
             <T v="bold" size={16}>
-              {sheet.name}
+              {hide ? 'Your rankings sheet' : sheet.name}
             </T>
             <T size={14} c="ink2">
               Picked {sheet.pickedAt ? ago(sheet.pickedAt) : '—'}. Pick it again whenever the sheet updates.
@@ -193,6 +207,33 @@ export default function Settings() {
             {msg}
           </T>
         )}
+      </Card>
+
+      <Card radius={18} gap={8}>
+        <T v="small" c="mute">
+          Keep the sheet current
+        </T>
+        <T size={14} c="ink2">
+          {settings.sheetLink
+            ? 'Monte checks your linked Google Sheet when you open it, at most every 6 hours, and updates when its data changes.'
+            : 'Paste the Google Sheets link and Monte keeps the sheet current for you. The link must be viewable by anyone who has it.'}
+        </T>
+        <Field placeholder="https://docs.google.com/spreadsheets/d/…" value={link} onChangeText={setLink} autoCapitalize="none" keyboardType="url" />
+        {linkError && <ErrorBox message={linkError} />}
+        <Btn size="sm" label={linkBusy ? 'Checking…' : 'Use this link'} disabled={linkBusy || !link.trim()} style={{ minHeight: 40 }} onPress={() => void saveLink(link.trim())} />
+        {!!settings.sheetLink && <Btn size="sm" label="Stop using the link" disabled={linkBusy} style={{ minHeight: 40 }} onPress={() => void saveLink(null)} />}
+      </Card>
+
+      <TrackRecord />
+
+      <Card radius={18} gap={8}>
+        <T v="small" c="mute">
+          Monte {appVersion}
+        </T>
+        <T size={14} c="ink2">
+          {update ? `Version ${update.version} is ready. Download it, then open the file to install. Android may ask you to allow installs from your browser.` : "You're on the newest version Monte can see."}
+        </T>
+        {update && <Btn size="sm" kind="primary" label={`Download ${update.version}`} style={{ minHeight: 40 }} onPress={() => void Linking.openURL(update.url)} />}
       </Card>
 
       <Card radius={18} gap={8}>

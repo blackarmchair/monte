@@ -10,6 +10,8 @@ import { offersInLeague, type FoundOffer } from './offerWatch'
 import { buildOverview } from './overview'
 import { ownedPicks, pickOwners } from './picks'
 import { buildRanks, boardIndex } from './ranks'
+import { simCacheKey, simResultFresh } from './simCache'
+import { forecastGames, scoreForecasts, type ScoredGame, type TrackRecord } from './trackRecord'
 import { buildStartSit, type SeasonStats } from './startSit'
 import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
 import { ktcTier, parseKtc, type KtcRow } from './ktc'
@@ -366,17 +368,20 @@ export function createMonteService(host: Host) {
     async runPickOdds(leagueId: string, opts: PickOddsOpts): Promise<BBResult> {
       const [meta, settings] = await Promise.all([playersMeta(), host.settings()])
       const overrides = await currentOverrides(settings)
-      return (await host.runEngine({
-        kind: 'bb',
-        leagueId,
-        sims: opts.sims,
-        strengthCV: opts.strengthCV,
-        forced: opts.forced ?? {},
-        seed: opts.seed ?? settings.seed,
-        model: opts.model ?? settings.model ?? 'B',
-        playersMeta: meta,
-        overrides,
-      })) as BBResult
+      const seed = opts.seed ?? settings.seed
+      const model = opts.model ?? settings.model ?? 'B'
+      const forced = opts.forced ?? {}
+      // Screens start this sim on their own, and on a phone it holds the UI thread. A recent result
+      // for the same inputs serves them; only a run asked for by hand or a what-if always simulates.
+      const baseline = !Object.values(forced).some(w => w.length)
+      const key = simCacheKey({ leagueId, sims: opts.sims, strengthCV: opts.strengthCV, seed, model, overrides })
+      if (opts.cached && baseline) {
+        const saved = await cachedJson<BBResult & { ranAt?: string }>(key)
+        if (saved && simResultFresh(saved.ranAt)) return saved
+      }
+      const result = (await host.runEngine({ kind: 'bb', leagueId, sims: opts.sims, strengthCV: opts.strengthCV, forced, seed, model, playersMeta: meta, overrides })) as BBResult
+      if (baseline) await host.cacheWrite(key, JSON.stringify(result)).catch(() => undefined)
+      return result
     },
 
     async runPwopr(leagueId: string): Promise<PWOPRResult> {
@@ -582,6 +587,42 @@ export function createMonteService(host: Host) {
         const note = e instanceof SleeperAuthError ? 'Sleeper refused the saved token, so open offers are hidden. Connect Sleeper again in Settings.' : `Couldn’t read open offers: ${e instanceof Error ? e.message : String(e)}`
         return { pending: null, pendingNote: note, recent }
       }
+    },
+
+    /**
+     * Monte's matchup win chances against how this season's finished games came out, across your
+     * leagues. A finished week can't change, so each league's weeks are scored once and kept. Playoff
+     * weeks are left out: only bracket games pair up, and consolation games blur the picture.
+     */
+    async trackRecord(userId: string): Promise<TrackRecord> {
+      const state = await sleeper<any>('/state/nfl')
+      const season = String(state.league_season || state.season)
+      const throughWeek = state.season_type === 'regular' || state.season_type === 'post' ? Math.max(0, Math.min(18, Number(state.week) - 1)) : 0
+      const leagues = (await sleeper<any[]>(`/user/${userId}/leagues/nfl/${season}`)) ?? []
+      const meta = await playersMeta()
+      const games: ScoredGame[] = []
+      let scored = 0
+      for (const { league_id: id } of leagues) {
+        try {
+          const [league, rosters, users] = await league4(id, false)
+          const end = Number(league.settings?.playoff_week_start) || 19
+          const before = games.length
+          for (let week = 1; week <= throughWeek && week < end; week++) {
+            const key = `record_${id}_${season}_${week}.json`
+            let found = await cachedJson<ScoredGame[]>(key)
+            if (!found) {
+              const [matchups, projections] = await Promise.all([sleeper<any[]>(`/league/${id}/matchups/${week}`), weekProjections(season, week)])
+              found = forecastGames(buildLeagueWeek({ league, rosters, users, matchups: matchups ?? [], projections, schedule: {}, meta, season, week, pregame: true }))
+              if (found.length) await host.cacheWrite(key, JSON.stringify(found))
+            }
+            games.push(...found)
+          }
+          if (games.length > before) scored++
+        } catch (e) {
+          console.warn(`track record skipped league ${id}:`, e instanceof Error ? e.message : e)
+        }
+      }
+      return { season, throughWeek, leagues: scored, ...scoreForecasts(games) }
     },
 
     /**

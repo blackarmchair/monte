@@ -50,6 +50,8 @@ type App = {
   sheet: RanksFileInfo | null
   sheetError: string | null
   chooseSheet: () => Promise<void>
+  /** keep the sheet current from a Google Sheets link; null stops. The error, or null if it worked. */
+  setSheetLink: (link: string | null) => Promise<string | null>
   resync: () => Promise<void>
   /** changes whenever the workbook or injury overrides change: screens reload on it */
   dataVersion: string
@@ -221,7 +223,7 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
     hide,
     bb,
     bbBase,
-    runBB: opts => id && void runBBFor(id, opts ?? { sims: settings.sims, strengthCV: settings.strengthCV, seed: settings.seed, model: settings.model }),
+    runBB: opts => id && void runBBFor(id, opts ?? { sims: settings.sims, strengthCV: settings.strengthCV, seed: settings.seed, model: settings.model, cached: true }),
     pw,
     runPW: () => id && void runPWFor(id),
     sheet,
@@ -232,7 +234,16 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
       if (r.value) {
         setSheet(r.value)
         setSheetError(null)
+        setSettingsState(await window.monte.getSettings())
       }
+    },
+    async setSheetLink(link) {
+      const r = await window.monte.setSheetLink(link)
+      if (!r.ok) return r.error
+      setSheet(r.value)
+      setSheetError(null)
+      setSettingsState(await window.monte.getSettings())
+      return null
     },
     async resync() {
       const r = await window.monte.ranksFileInfo()

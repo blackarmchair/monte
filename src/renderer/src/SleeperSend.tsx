@@ -1,4 +1,4 @@
-// Send in Sleeper: connect (paste the session token) if needed, confirm, sent. The offer itself
+// Send in Sleeper: connect (sign in, or paste the session token) if needed, confirm, sent. The offer itself
 // goes out from the main process, which holds the token; see @monte/core/sleeperTrade. The connect
 // step is also its own dialog, for Lineup's push, and sits inline in Settings.
 import { useState } from 'react'
@@ -14,11 +14,20 @@ const side = (as: Asset[]) => ({
 })
 const label = (a: Asset) => (a.kind === 'pick' && a.slot ? `${a.name} (${a.slot})` : a.name)
 
-/** Connect Sleeper: paste the session token from a signed-in sleeper.com. */
+/** Connect Sleeper: sign in on Sleeper's page, or paste the session token from a signed-in sleeper.com. */
 export function SleeperConnect({ onDone }: { onDone: (s: Settings) => void }) {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pasting, setPasting] = useState(false)
+  const signIn = async () => {
+    setBusy(true)
+    setError(null)
+    const r = await window.monte.signInSleeper()
+    setBusy(false)
+    if (!r.ok) return setError(r.error)
+    if (r.value) onDone(r.value)
+  }
   const go = async () => {
     if (!token.trim() || busy) return
     setBusy(true)
@@ -32,20 +41,32 @@ export function SleeperConnect({ onDone }: { onDone: (s: Settings) => void }) {
   return (
     <div className="stack" style={{ gap: 12 }}>
       <div className="sub" style={{ fontSize: 14 }}>
-        Sleeper has no public way to send a trade, so Monte uses your Sleeper session, the way Sleeper's own website does. Sign in at sleeper.com in your browser, open
-        the developer tools (F12) → Application → Local Storage → https://sleeper.com, and copy the value of <b>token</b>. Paste it here.
+        Sleeper has no public way to send a trade, so Monte uses your Sleeper session, the way Sleeper's own website does. Sign in on Sleeper's page, in a window Monte opens. Monte never sees your password.
       </div>
       <div className="small mute">
-        The token can act as you on Sleeper. Monte keeps it encrypted by your OS and uses it only for the trade offers and lineups you send from Monte. Disconnect any
-        time in Settings; signing out of sleeper.com also ends it.
+        Your session can act as you on Sleeper. Monte keeps it encrypted by your OS and uses it only for what you do from Monte: answering and sending offers, setting lineups, and checking for new offers. Disconnect any time in Settings; signing out of sleeper.com also ends it.
       </div>
-      <label className="field on-surf">
-        <input type="password" autoFocus placeholder="Paste the token" value={token} onChange={e => setToken(e.target.value)} onKeyDown={e => e.key === 'Enter' && go()} />
-      </label>
       {error && <ErrorBox message={error} />}
-      <div>
-        <Btn kind="primary" label={busy ? 'Checking with Sleeper…' : 'Connect Sleeper'} disabled={busy || !token.trim()} onClick={go} />
-      </div>
+      {!pasting && (
+        <div className="row" style={{ gap: 14 }}>
+          <Btn kind="primary" label={busy ? 'Waiting for you to sign in…' : 'Sign in to Sleeper'} disabled={busy} onClick={() => void signIn()} />
+          <Link label="Paste a token instead" disabled={busy} onClick={() => setPasting(true)} />
+        </div>
+      )}
+      {pasting && (
+        <>
+          <div className="sub" style={{ fontSize: 14 }}>
+            Sign in at sleeper.com in your browser, open the developer tools (F12) → Application → Local Storage → https://sleeper.com, and copy the value of <b>token</b>.
+          </div>
+          <label className="field on-surf">
+            <input type="password" autoFocus placeholder="Paste the token" value={token} onChange={e => setToken(e.target.value)} onKeyDown={e => e.key === 'Enter' && go()} />
+          </label>
+          <div className="row" style={{ gap: 14 }}>
+            <Btn kind="primary" label={busy ? 'Checking with Sleeper…' : 'Connect Sleeper'} disabled={busy || !token.trim()} onClick={go} />
+            <Link label="Sign in instead" disabled={busy} onClick={() => setPasting(false)} />
+          </div>
+        </>
+      )}
     </div>
   )
 }

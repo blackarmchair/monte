@@ -93,6 +93,12 @@ export type Settings = {
   /** Sleeper connected for sending trade offers (the token itself is in secure storage — the
    *  phone's Keychain/Keystore, the desktop's OS-encrypted file — never here) */
   sleeperLink?: { name: string; expiresAt: number | null; connectedAt: string }
+  /** the rankings sheet's Google Sheets link: when set, Monte keeps the sheet current from it */
+  sheetLink?: string
+  /** phone app: when the linked sheet was last checked (the desktop checks on a timer) */
+  sheetCheckedAt?: string
+  /** desktop: closing the window keeps Monte in the tray, so offer notifications keep coming */
+  keepRunning?: boolean
   /** alerts for new trade offers. Desktop: on unless turned off. Phone: off until turned on, since it needs permission. */
   notifyOffers?: boolean
   /** offers already alerted about, oldest first */
@@ -197,6 +203,8 @@ export type PickOddsOpts = {
   forced?: Record<number, number[]>
   seed?: number
   model?: 'A' | 'B'
+  /** a run nobody asked for by hand: a recent saved result with the same inputs will do */
+  cached?: boolean
 }
 
 export type Signal = 'Over (Strong)' | 'Over' | 'Neutral' | 'Under' | 'Under (Strong)'
@@ -537,6 +545,8 @@ export type MonteApi = {
   ranksFileInfo(): Promise<Result<RanksFileInfo | null>>
   /** Connect Sleeper for trade offers: the session token must work and be this user's. */
   connectSleeper(token: string): Promise<Result<Settings>>
+  /** Sign in on Sleeper's own page in a separate window. Null if the window was just closed. */
+  signInSleeper(): Promise<Result<Settings | null>>
   disconnectSleeper(): Promise<Settings>
   /** Send a trade offer in Sleeper. `needsConnect` means connect (again) and retry. */
   /** this week's matchups with Monte's win chance */
@@ -548,6 +558,10 @@ export type MonteApi = {
   answerOffer(a: import('./sleeperOffers').OfferAnswer): Promise<Result<{ status: string; mismatch: string | null }> & { needsConnect?: boolean }>
   /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */
   setLineup(w: LineupWrite): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
+  /** keep the rankings sheet current from a Google Sheets link; null stops. Returns the sheet now in use. */
+  setSheetLink(link: string | null): Promise<Result<RanksFileInfo | null>>
+  /** how Monte's matchup win chances have held up this season */
+  trackRecord(userId: string): Promise<Result<import('./trackRecord').TrackRecord>>
   /** fires when a new-offer notification is clicked, with its league */
   onOpenLeague(cb: (leagueId: string) => void): () => void
   /** fires when the watched rankings file changes on disk */

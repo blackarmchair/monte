@@ -2,6 +2,7 @@
 // overrides (set on a player's Injury tab, listed and cleared here), the Sleeper account, and the
 // app version with its update check.
 import { injurySeason, isCurrentInjury, isExpiredInjury } from '@shared/injuries'
+import TrackRecord from './TrackRecord'
 import { useState } from 'react'
 import type { Theme } from '@shared/types'
 import { useApp } from './store'
@@ -15,7 +16,18 @@ const line: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 
 const block: React.CSSProperties = { padding: 18, borderRadius: 18, background: 'var(--surf)', display: 'flex', flexDirection: 'column', gap: 8 }
 
 export default function Settings() {
-  const { settings, setSettings, settingsSaved, sheet, sheetError, chooseSheet, resync, hide, switchUser, context, openPlayer } = useApp()
+  const { settings, setSettings, settingsSaved, sheet, sheetError, chooseSheet, setSheetLink, resync, hide, switchUser, context, openPlayer } = useApp()
+  const [link, setLink] = useState(settings.sheetLink ?? '')
+  const [linkBusy, setLinkBusy] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const saveLink = async (value: string | null) => {
+    setLinkBusy(true)
+    setLinkError(null)
+    const error = await setSheetLink(value)
+    setLinkBusy(false)
+    setLinkError(error)
+    if (!error && !value) setLink('')
+  }
   const [connecting, setConnecting] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const injuries = settings.injuries ?? []
@@ -39,8 +51,8 @@ export default function Settings() {
           <span className="small mute">Rankings sheet</span>
           {sheet ? (
             <>
-              <span className="trunc" style={{ fontWeight: 700, fontSize: 16 }} title={sheet.path}>
-                {sheet.name}
+              <span className="trunc" style={{ fontWeight: 700, fontSize: 16 }} title={hide ? undefined : sheet.path}>
+                {hide ? 'Your rankings sheet' : sheet.name}
               </span>
               <span className="sub" style={{ fontSize: 14 }}>
                 Synced {clock(sheet.syncedAt)}. Monte watches the file and reloads when you download a newer copy.
@@ -160,6 +172,25 @@ export default function Settings() {
       </div>
 
       <div style={block}>
+        <span className="small mute">Keep the sheet current</span>
+        <span className="sub" style={{ fontSize: 14 }}>
+          {settings.sheetLink
+            ? 'Monte checks your linked Google Sheet every 6 hours and updates when its data changes.'
+            : 'Paste the Google Sheets link and Monte keeps the sheet current for you. The link must be viewable by anyone who has it.'}
+        </span>
+        <label className="field on-surf">
+          <input placeholder="https://docs.google.com/spreadsheets/d/…" value={link} onChange={e => setLink(e.target.value)} />
+        </label>
+        {linkError && <span style={{ fontSize: 14, color: 'var(--neg)' }}>{linkError}</span>}
+        <div className="row" style={{ gap: 8 }}>
+          <Btn size="sm" label={linkBusy ? 'Checking…' : 'Use this link'} disabled={linkBusy || !link.trim()} onClick={() => void saveLink(link.trim())} />
+          {settings.sheetLink && <Btn size="sm" label="Stop using the link" disabled={linkBusy} onClick={() => void saveLink(null)} />}
+        </div>
+      </div>
+
+      <TrackRecord style={block} />
+
+      <div style={block}>
         <span className="small mute">Sleeper connection</span>
         {settings.sleeperLink ? (
           <>
@@ -168,11 +199,13 @@ export default function Settings() {
               {settings.sleeperLink.expiresAt ? ` The session ends ${new Date(settings.sleeperLink.expiresAt).toLocaleDateString()}.` : ''}
             </span>
             <span className="sub" style={{ fontSize: 14 }}>
-              {settings.notifyOffers === false ? 'New-offer notifications are off.' : 'Monte notifies you of new trade offers in any league while it is open, checking every 5 minutes.'}
+              {settings.notifyOffers === false ? 'New-offer notifications are off.' : 'Monte notifies you of new trade offers in any league while it is running, checking every 5 minutes.'}
+              {settings.keepRunning ? ' Closing the window keeps it running in the tray; quit from the tray icon.' : ''}
             </span>
             <div className="row" style={{ gap: 8 }}>
               <Btn size="sm" label="Disconnect" onClick={async () => settingsSaved(await window.monte.disconnectSleeper())} />
               <Btn size="sm" label={settings.notifyOffers === false ? 'Turn on notifications' : 'Turn off notifications'} onClick={() => void setSettings({ notifyOffers: settings.notifyOffers === false })} />
+              <Btn size="sm" label={settings.keepRunning ? 'Quit when the window closes' : 'Keep running in the tray'} onClick={() => void setSettings({ keepRunning: !settings.keepRunning })} />
             </div>
           </>
         ) : connecting ? (

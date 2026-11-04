@@ -196,7 +196,7 @@ export async function proposeTrade(t: TradeProposal, token: string, fetchFn: typ
 export async function checkToken(token: string, userId: string, fetchFn: typeof fetch = fetch): Promise<string> {
   const res = await sleeperPost({ query: 'query { me { user_id display_name } }' }, token, fetchFn, SLEEPER_READ_MS, "Sleeper didn't answer in time. Try again.")
   const text = res.text
-  if (res.status === 401 || res.status === 403) throw new SleeperAuthError("Sleeper doesn't accept that token. Copy it again from a signed-in sleeper.com.")
+  if (res.status === 401 || res.status === 403) throw new SleeperAuthError("Sleeper didn't accept that session. Sign in again, or paste a fresh token.")
   let body: { data?: { me?: { user_id?: string; display_name?: string } | null }; errors?: Array<{ message?: string }> }
   try {
     body = JSON.parse(text)
@@ -204,7 +204,7 @@ export async function checkToken(token: string, userId: string, fetchFn: typeof 
     throw new Error(`Sleeper answered HTTP ${res.status}: ${text.slice(0, 160)}`)
   }
   const me = body.data?.me
-  if (!me?.user_id) throw new SleeperAuthError("Sleeper doesn't accept that token. Copy it again from a signed-in sleeper.com.")
-  if (String(me.user_id) !== userId) throw new SleeperAuthError(`That token is for ${me.display_name ?? 'another account'}, not the account Monte is using.`)
+  if (!me?.user_id) throw new SleeperAuthError("Sleeper didn't accept that session. Sign in again, or paste a fresh token.")
+  if (String(me.user_id) !== userId) throw new SleeperAuthError(`That session is for ${me.display_name ?? 'another account'}, not the account Monte is using. Sign in as that account, or switch user in Settings.`)
   return me.display_name ?? ''
 }

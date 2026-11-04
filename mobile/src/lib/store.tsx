@@ -1,6 +1,7 @@
 // App-wide state, ported from the desktop App.tsx: settings, leagues, the selected league's
 // context, cached engine runs, the trade being built, the filters other tabs can set (Players,
 // Picks), Pick odds' what-if results, and the click-throughs between tabs and pages.
+import { AppState } from 'react-native'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { router } from 'expo-router'
 import type { BBResult, LeagueContext, LeagueSummary, PickOddsOpts, PWOPRResult, Run, Settings } from '@monte/core/types'
@@ -57,6 +58,8 @@ type App = {
   /** a picked workbook is being read and checked */
   sheetBusy: boolean
   pickSheet: () => Promise<void>
+  /** keep the sheet current from a Google Sheets link; null stops. The error, or null if it worked. */
+  setSheetLink: (link: string | null) => Promise<string | null>
   /** changes whenever the workbook or injury overrides change: screens reload on it */
   dataVersion: string
   /** Your asset goes to Give; anyone else's goes to Get with their team as partner (a different
@@ -107,6 +110,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void monte.getSettings().then(setSettingsState)
     void monte.sheetInfo().then(setSheet)
+    const check = () => void monte.checkLinkedSheet().then(info => info && setSheet(info))
+    check()
+    const sub = AppState.addEventListener('change', s => s === 'active' && check())
+    return () => sub.remove()
   }, [])
 
   const setSettings = useCallback(async (patch: Partial<Settings>) => {
@@ -189,7 +196,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     hide,
     bb,
     bbBase,
-    runBB: opts => id && settings && void runBBFor(id, opts ?? { sims: settings.sims, strengthCV: settings.strengthCV }),
+    runBB: opts => id && settings && void runBBFor(id, opts ?? { sims: settings.sims, strengthCV: settings.strengthCV, cached: true }),
     pw,
     runPW: () => id && void runPWFor(id),
     trade,
@@ -203,6 +210,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sheet,
     sheetError,
     sheetBusy,
+    async setSheetLink(link) {
+      const r = await monte.setSheetLink(link)
+      if (!r.ok) return r.error
+      setSheet(r.value)
+      setSheetError(null)
+      setSettingsState(await monte.getSettings())
+      return null
+    },
     async pickSheet() {
       setSheetError(null)
       setSheetBusy(true)
