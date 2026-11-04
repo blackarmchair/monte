@@ -6,7 +6,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { BBResult, LeagueContext, LeagueSummary, PickOddsOpts, PWOPRResult, RanksFileInfo, Run, Settings } from '@shared/types'
 import { anonBB, anonContext, leagueLabel } from './names'
 
-export type TradeState = { give: string[]; get: string[]; partner: number | null }
+export type TradeState = {
+  give: string[]
+  get: string[]
+  partner: number | null
+  /** the offer this would replace, when building a counter */
+  counter?: { transactionId: string; leg: number; partner: number }
+}
 export const EMPTY_TRADE: TradeState = { give: [], get: [], partner: null }
 export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string }
 export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', q: '' }
@@ -108,6 +114,17 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
       setSheetError(info ? null : 'The file moved or could not be read.')
     })
   }, [])
+
+  // A new-offer notification was clicked: League opens on This week, which lists it.
+  useEffect(
+    () =>
+      window.monte.onOpenLeague(leagueId => {
+        setSelected(leagueId)
+        setSection('league')
+        setStack([])
+      }),
+    [],
+  )
 
   const setSettings = useCallback(async (patch: Partial<Settings>) => setSettingsState(await window.monte.setSettings(patch)), [setSettingsState])
 

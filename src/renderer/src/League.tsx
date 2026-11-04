@@ -1,8 +1,8 @@
-// League, three tabs. Standings: where you stand, then the table; click a team for its page (Team).
+// League, four tabs. This week: what needs you. Standings: where you stand, then the table; click a team for its page (Team).
 // Matchups: this week's pairs, yours first and open, with Monte's win chance. Trades: your open
 // offers (Sleeper connected) and the league's completed trades.
 import { useMemo, useState } from 'react'
-import { Matchups, Trades } from './LeagueTabs'
+import { Matchups, ThisWeek, Trades } from './LeagueTabs'
 import { useApp } from './store'
 import { Btn, ErrorBox, GradCard, HeatChip, kfmt, Loading, NeedsSheet, RING_SOFT, Seg, Stack2, TeamAvatar, teamColor, useHeat } from './ui'
 import { record, thinnest, useOverview } from './overviewLogic'
@@ -14,10 +14,10 @@ const SORTS: Array<{ value: Sort; label: string }> = [
   { value: 'record', label: 'Record' },
 ]
 
-type Tab = 'standings' | 'matchups' | 'trades'
+type Tab = 'week' | 'standings' | 'matchups' | 'trades'
 
 export default function League() {
-  const [tab, setTab] = useState<Tab>('standings')
+  const [tab, setTab] = useState<Tab>('week')
   return (
     <div className="page stack" style={{ gap: 20 }}>
       <Seg
@@ -25,12 +25,13 @@ export default function League() {
         value={tab}
         onChange={setTab}
         options={[
+          { value: 'week', label: 'This week' },
           { value: 'standings', label: 'Standings' },
           { value: 'matchups', label: 'Matchups' },
           { value: 'trades', label: 'Trades' },
         ]}
       />
-      {tab === 'standings' ? <Standings /> : tab === 'matchups' ? <Matchups /> : <Trades />}
+      {tab === 'week' ? <ThisWeek onTrades={() => setTab('trades')} /> : tab === 'standings' ? <Standings /> : tab === 'matchups' ? <Matchups /> : <Trades />}
     </div>
   )
 }

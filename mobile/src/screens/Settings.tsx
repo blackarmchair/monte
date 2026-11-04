@@ -1,5 +1,6 @@
 // Settings (from the header gear): the rankings sheet, theme, Hide names, simulations, trade
 // values, injury overrides (set on a player's Injury tab, listed and cleared here), and Sleeper.
+import { disableOfferAlerts, enableOfferAlerts } from '@/lib/offerWatch'
 import { injurySeason, isCurrentInjury, isExpiredInjury } from '@monte/core/injuries'
 import { useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
@@ -204,7 +205,33 @@ export default function Settings() {
               Connected{settings.sleeperLink.name && !hide ? ` as ${settings.sleeperLink.name}` : ''}. Monte can send trade offers and set your lineup in Sleeper.
               {settings.sleeperLink.expiresAt ? ` The session ends ${new Date(settings.sleeperLink.expiresAt).toLocaleDateString()}.` : ''}
             </T>
-            <Btn size="sm" label="Disconnect" onPress={() => void disconnectSleeper()} style={{ minHeight: 40 }} />
+            <T size={14} c="ink2">
+              {settings.notifyOffers
+                ? "Monte alerts you to new trade offers in any league. Android decides when it checks, usually every 15 minutes or more, and it can't check after a force-stop."
+                : 'New-offer alerts are off.'}
+            </T>
+            <Btn
+              size="sm"
+              label={settings.notifyOffers ? 'Turn off alerts' : 'Turn on alerts'}
+              style={{ minHeight: 40 }}
+              onPress={async () => {
+                if (settings.notifyOffers) {
+                  await disableOfferAlerts()
+                  return setSettings({ notifyOffers: false })
+                }
+                if (!(await enableOfferAlerts())) return setMsg('Android blocked notifications for Monte. Allow them in system settings, then try again.')
+                await setSettings({ notifyOffers: true })
+              }}
+            />
+            <Btn
+              size="sm"
+              label="Disconnect"
+              onPress={() => {
+                void disableOfferAlerts()
+                void disconnectSleeper()
+              }}
+              style={{ minHeight: 40 }}
+            />
           </>
         ) : connecting ? (
           <SleeperConnect onDone={() => setConnecting(false)} />

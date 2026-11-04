@@ -41,7 +41,8 @@
         }
       ],
       "expo-secure-store",
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "expo-background-task"
     ],
     "scheme": "monte",
     "experiments": {

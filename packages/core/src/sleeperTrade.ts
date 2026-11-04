@@ -25,6 +25,8 @@ export type TradeProposal = {
   partnerRosterId: number
   give: TradeSide
   get: TradeSide
+  /** sending this as a counter: rejects that offer in the same call */
+  counter?: { transactionId: string; leg: number }
 }
 
 export type ProposeVariables = {
@@ -34,10 +36,20 @@ export type ProposeVariables = {
   k_drops: string[]
   v_drops: number[]
   draft_picks: string[]
+  reject_transaction_id?: string
+  reject_transaction_leg?: number
 }
 
 const MUTATION = `mutation propose($league_id: Snowflake!, $k_adds: [String], $v_adds: [Int], $k_drops: [String], $v_drops: [Int], $draft_picks: [String]) {
   propose_trade(league_id: $league_id, k_adds: $k_adds, v_adds: $v_adds, k_drops: $k_drops, v_drops: $v_drops, draft_picks: $draft_picks) {
+    transaction_id status adds drops draft_picks roster_ids
+  }
+}`
+
+// A counter is the same call naming the offer it replaces. Kept separate so a plain offer goes out
+// exactly as it always has. Source: sleeper-graphql docs/mutations.md (propose_trade, exercised as a counter).
+const COUNTER = `mutation propose($league_id: Snowflake!, $k_adds: [String], $v_adds: [Int], $k_drops: [String], $v_drops: [Int], $draft_picks: [String], $reject_transaction_id: Snowflake, $reject_transaction_leg: Int) {
+  propose_trade(league_id: $league_id, k_adds: $k_adds, v_adds: $v_adds, k_drops: $k_drops, v_drops: $v_drops, draft_picks: $draft_picks, reject_transaction_id: $reject_transaction_id, reject_transaction_leg: $reject_transaction_leg) {
     transaction_id status adds drops draft_picks roster_ids
   }
 }`
@@ -57,6 +69,7 @@ export function buildProposal(t: TradeProposal): ProposeVariables {
     k_drops: moves.map(m => m.id),
     v_drops: moves.map(m => m.from),
     draft_picks: [...t.give.picks.map(p => pickString(p, them, me)), ...t.get.picks.map(p => pickString(p, me, them))],
+    ...(t.counter ? { reject_transaction_id: t.counter.transactionId, reject_transaction_leg: t.counter.leg } : {}),
   }
 }
 
@@ -142,7 +155,7 @@ const sameMap = (got: unknown, ids: string[], rosters: number[]) => {
 export async function proposeTrade(t: TradeProposal, token: string, fetchFn: typeof fetch = fetch): Promise<ProposeResult> {
   const variables = buildProposal(t)
   const res = await sleeperPost(
-    { operationName: 'propose', query: MUTATION, variables },
+    { operationName: 'propose', query: t.counter ? COUNTER : MUTATION, variables },
     token,
     fetchFn,
     SLEEPER_WRITE_MS,

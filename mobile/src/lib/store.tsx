@@ -7,7 +7,13 @@ import type { BBResult, LeagueContext, LeagueSummary, PickOddsOpts, PWOPRResult,
 import { anonBB, anonContext, leagueLabel } from '@monte/core/names'
 import { monte, type SheetInfo } from './monte'
 
-export type TradeState = { give: string[]; get: string[]; partner: number | null }
+export type TradeState = {
+  give: string[]
+  get: string[]
+  partner: number | null
+  /** the offer this would replace, when building a counter */
+  counter?: { transactionId: string; leg: number; partner: number }
+}
 export const EMPTY_TRADE: TradeState = { give: [], get: [], partner: null }
 /** Players tab filters, settable from other tabs ("Find RB targets"). */
 export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string }

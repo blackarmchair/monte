@@ -44,6 +44,8 @@ export type TradeTx = {
   week: number
   /** roster that sent the offer, when Sleeper says */
   creator: number | null
+  /** rosters that have agreed so far */
+  consenters: number[]
   /** what each roster receives */
   sides: Array<{ rosterId: number; players: TradeAssetMove[]; picks: TradePickMove[] }>
 }
@@ -158,6 +160,13 @@ export function buildLeagueWeek(o: {
   return { season: o.season, week: o.week, playoffs: poStart > 0 && o.week >= poStart, matchups, builtAt: new Date().toISOString() }
 }
 
+/** How often to re-read an open Matchups screen: fast with a game on, slowly until kickoff, not at all once the week is done. */
+export function matchupPollMs(week: LeagueWeek | null): number | null {
+  const states = (week?.matchups ?? []).flatMap(m => m.sides.flatMap(s => s.starters.map(p => p.state)))
+  if (states.includes('live')) return 60_000
+  return states.includes('pre') ? 300_000 : null
+}
+
 /** One Sleeper trade (REST or GraphQL shape) as what each roster receives. */
 export function normaliseTrade(t: any, meta: Meta, creatorRoster: (userId: string) => number | null): TradeTx {
   const rosters: number[] = (t.roster_ids ?? []).map(Number)
@@ -185,6 +194,7 @@ export function normaliseTrade(t: any, meta: Meta, creatorRoster: (userId: strin
     created: Number(t.created ?? t.status_updated ?? 0),
     week: Number(t.leg ?? 0),
     creator: t.creator ? creatorRoster(String(t.creator)) : null,
+    consenters: (t.consenter_ids ?? []).map(Number),
     sides: [...sides.values()],
   }
 }
@@ -193,14 +203,14 @@ export function normaliseTrade(t: any, meta: Meta, creatorRoster: (userId: strin
 // Source: github.com/Filip-Kin/sleeper-graphql (docs/queries.md: league_transactions_by_status).
 const PENDING = `query pending($league_id: Snowflake!, $leg: Int!) {
   league_transactions_by_status(league_id: $league_id, leg: $leg, status: "proposed") {
-    transaction_id type status created creator leg roster_ids adds drops draft_picks player_map
+    transaction_id type status created creator leg roster_ids consenter_ids adds drops draft_picks player_map
   }
 }`
 
 /** Open trade offers in these legs (weeks). Throws SleeperAuthError when the token is refused. */
-export async function fetchPending(leagueId: string, legs: number[], token: string): Promise<any[]> {
+export async function fetchPending(leagueId: string, legs: number[], token: string, fetchFn: typeof fetch = fetch): Promise<any[]> {
   const out = await Promise.all(
-    legs.map(leg => gql<{ league_transactions_by_status: any[] | null }>(PENDING, { league_id: leagueId, leg }, token).then(d => d.league_transactions_by_status ?? [])),
+    legs.map(leg => gql<{ league_transactions_by_status: any[] | null }>(PENDING, { league_id: leagueId, leg }, token, fetchFn).then(d => d.league_transactions_by_status ?? [])),
   )
   const seen = new Set<string>()
   return out.flat().filter(t => t?.type === 'trade' && !seen.has(String(t.transaction_id)) && seen.add(String(t.transaction_id)))

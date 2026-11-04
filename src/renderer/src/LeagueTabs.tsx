@@ -1,8 +1,10 @@
 // League's Matchups and Trades tabs. Matchups: this week's pairs, yours first and open, each with
 // Monte's win chance and (click) the starters side by side. Trades: your open offers when Sleeper is
 // connected, then the league's completed trades this season, newest first.
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { LeagueTrades, LeagueWeek, MatchPlayer, MatchSide, TradeTx } from '@shared/leagueWeek'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { connectionItems, lineupItems, offerItems, orderInbox, waiverItems, type InboxAction } from '@shared/inbox'
+import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@shared/leagueWeek'
+import { offerRole } from '@shared/offers'
 import { basisLabel, compareBases, matchupBasis } from '@shared/projBasis'
 import type { Result, StartSitData } from '@shared/types'
 import { teamLabel } from './names'
@@ -10,7 +12,7 @@ import { BasisLine, ProjCompare } from './ProjCompare'
 import { normCdf, WIN_SD } from './startsit.logic'
 import { useApp } from './store'
 import { mineOf, useTrade } from './tradeModel'
-import { ErrorBox, GradCard, Headshot, kfmt, Link, Loading, nflColor, ORD, RING_SOFT, Stack2, TeamAvatar, teamColor } from './ui'
+import { Btn, ErrorBox, GradCard, Headshot, kfmt, Link, Loading, nflColor, Notice, ORD, RING_SOFT, Stack2, TeamAvatar, teamColor } from './ui'
 
 /** Load once per league, with a manual refresh. */
 function useLoad<T>(fetcher: (leagueId: string) => Promise<Result<T>>) {
@@ -26,8 +28,19 @@ function useLoad<T>(fetcher: (leagueId: string) => Promise<Result<T>>) {
       setBusy(false)
     })
   }
+  // A quiet re-read for polling: no spinner, and a failure keeps what's on screen.
+  const current = useRef(leagueId)
+  useEffect(() => {
+    current.current = leagueId
+  }, [leagueId])
+  const refresh = () => {
+    if (!leagueId) return
+    void fetcher(leagueId).then(r => {
+      if (r.ok && current.current === leagueId) setRes(r)
+    })
+  }
   useEffect(load, [leagueId]) // eslint-disable-line react-hooks/exhaustive-deps
-  return { res, busy, load }
+  return { res, busy, load, refresh }
 }
 
 function TabHead({ title, sub, busy, onRefresh }: { title: string; sub?: string; busy: boolean; onRefresh: () => void }) {
@@ -42,20 +55,84 @@ function TabHead({ title, sub, busy, onRefresh }: { title: string; sub?: string;
   )
 }
 
+const SHEET_NEEDED: Result<StartSitData> = { ok: false, error: 'Add your rankings sheet to check your lineup.' }
+
+/** What needs you this week in this league: offers to answer, lineup problems, then what's worth knowing. */
+export function ThisWeek({ onTrades }: { onTrades: () => void }) {
+  const { context, sheet, settings, go, openPlayer, openSettings } = useApp()
+  const x = useTrade()
+  const me = context?.myRosterId ?? null
+  const trades = useLoad(id => window.monte.leagueTrades(id))
+  const lineup = useLoad(id => (sheet && settings.userId ? window.monte.startSit(id, settings.userId) : Promise.resolve(SHEET_NEEDED)))
+  const lt = trades.res?.ok ? trades.res.value : null
+  const received = (lt?.pending ?? []).filter(t => offerRole(t, me) === 'received')
+  const items = orderInbox([
+    ...offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'another team', verdict: x.readOffer(tx).label }))),
+    ...(lineup.res?.ok ? lineupItems(lineup.res.value) : []),
+    ...connectionItems(settings.sleeperLink, lt?.pendingNote ?? null),
+    ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks) : []),
+  ])
+  const act = items.filter(i => i.tone === 'act').length
+  const loading = !trades.res || !lineup.res
+  const run = (a: InboxAction) => {
+    if (a.kind === 'trades') onTrades()
+    else if (a.kind === 'lineup') go('lineup')
+    else if (a.kind === 'player') openPlayer(a.id, a.name)
+    else openSettings()
+  }
+  const refreshAll = () => {
+    trades.load()
+    lineup.load()
+  }
+  return (
+    <div className="stack" style={{ gap: 12, maxWidth: 860 }}>
+      <TabHead
+        title={context && context.week > 0 ? `Week ${context.week}` : 'This week'}
+        sub={loading ? undefined : act ? `${act} to deal with` : 'Nothing needs you'}
+        busy={trades.busy || lineup.busy}
+        onRefresh={refreshAll}
+      />
+      {trades.res && !trades.res.ok && <ErrorBox message={trades.res.error} onRetry={trades.load} />}
+      {lineup.res && !lineup.res.ok && <div className="small mute">Lineup check unavailable: {lineup.res.error}</div>}
+      {items.map(i => (
+        <button key={i.id} className="row" onClick={() => run(i.action)} style={{ gap: 14, padding: '14px 18px', borderRadius: 18, background: 'var(--card)', textAlign: 'left', width: '100%' }}>
+          <span style={{ width: 10, height: 10, flexShrink: 0, borderRadius: 5, background: i.tone === 'act' ? 'var(--acc)' : 'var(--mute)' }} />
+          <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+            <span style={{ fontWeight: 700 }}>{i.title}</span>
+            <span className="small mute">{i.detail}</span>
+          </span>
+        </button>
+      ))}
+      {loading && <Loading label="Checking your league…" />}
+      {!loading && items.length === 0 && <div className="mute">All clear. Nothing needs you in this league right now.</div>}
+    </div>
+  )
+}
+
 export function Matchups() {
   const { context, hide, settings, sheet } = useApp()
-  const { res, busy, load } = useLoad(id => window.monte.leagueWeek(id))
+  const { res, busy, load, refresh } = useLoad(id => window.monte.leagueWeek(id))
   const me = context?.myRosterId ?? null
   // Lineup's read, fetched only when the comparison opens: it needs the sheet.
   const [cmpOpen, setCmpOpen] = useState(false)
   const [ss, setSs] = useState<Result<StartSitData> | null>(null)
-  useEffect(() => setSs(null), [res])
+  // Polling replaces `res` every minute; the comparison only goes stale with a new week or league.
+  const shownWeek = res?.ok ? res.value.week : null
+  useEffect(() => setSs(null), [shownWeek, context?.league.league_id])
   useEffect(() => {
     const leagueId = context?.league.league_id
     if (!cmpOpen || ss || !sheet || !leagueId || !settings.userId) return
     void window.monte.startSit(leagueId, settings.userId).then(setSs)
   }, [cmpOpen, ss, sheet, context, settings.userId])
   const lw: LeagueWeek | null = res?.ok ? res.value : null
+  const pollMs = matchupPollMs(lw)
+  useEffect(() => {
+    if (!pollMs) return
+    const timer = window.setInterval(() => {
+      if (!document.hidden) refresh()
+    }, pollMs)
+    return () => window.clearInterval(timer)
+  }, [pollMs, context?.league.league_id]) // eslint-disable-line react-hooks/exhaustive-deps
   // Yours first; within each pair, yours on the left.
   const pairs = useMemo(() => {
     if (!lw) return []
@@ -221,7 +298,7 @@ export function Trades() {
       {!res && <Loading label="Reading the league’s trades…" />}
       {lt && (
         <Block title={`Your open offers${open.length ? ` · ${open.length}` : ''}`}>
-          {lt.pendingNote ? <div className="mute">{lt.pendingNote}</div> : open.length === 0 ? <div className="mute">No open offers.</div> : open.map(t => <TradeCard key={t.id} t={t} />)}
+          {lt.pendingNote ? <div className="mute">{lt.pendingNote}</div> : open.length === 0 ? <div className="mute">No open offers.</div> : open.map(t => <TradeCard key={t.id} t={t} onAnswered={load} />)}
         </Block>
       )}
       {lt && (
@@ -242,7 +319,66 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-function TradeCard({ t }: { t: TradeTx }) {
+/** Your answer to an offer: Monte's read, then Accept / Reject (each confirmed) or Counter. */
+function OfferActions({ t, onAnswered }: { t: TradeTx; onAnswered: () => void }) {
+  const { context, showToast, settingsSaved, sheet } = useApp()
+  const x = useTrade()
+  const [ask, setAsk] = useState<'accept' | 'reject' | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const role = offerRole(t, context?.myRosterId ?? null)
+  if (role === 'accepted') return <span className="small mute">You accepted this. It's waiting on the other team or the league's review.</span>
+  if (role !== 'received' || !context || context.myRosterId == null) return null
+
+  const read = x.readOffer(t)
+  const closed = !!x.d?.deadline.closed
+  const canCounter = read.partner != null && !closed && !read.missing.length
+  const answer = async (action: 'accept' | 'reject') => {
+    setBusy(true)
+    setError(null)
+    const r = await window.monte.answerOffer({ leagueId: context.league.league_id, transactionId: t.id, leg: t.week, myRosterId: context.myRosterId!, action })
+    setBusy(false)
+    if (!r.ok) {
+      setError(r.error)
+      if (r.needsConnect) settingsSaved(await window.monte.getSettings())
+      return
+    }
+    setAsk(null)
+    showToast(r.value.mismatch ?? (action === 'accept' ? 'Offer accepted' : 'Offer rejected'))
+    onAnswered()
+  }
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      {read.verdict ? (
+        <span style={{ fontWeight: 700, color: `var(--${read.tone === 'mute' ? 'ink2' : read.tone})` }}>
+          {read.label} <span className="small mute">({read.verdict.em > 0 ? '+' : ''}{Math.round(read.verdict.em)} effective value to you)</span>
+        </span>
+      ) : read.missing.length ? (
+        <span className="small mute">Monte has no value for {read.missing.join(', ')}, so no verdict.</span>
+      ) : read.partner == null ? (
+        <span className="small mute">A three-team trade: Monte doesn't value these.</span>
+      ) : !sheet ? (
+        <span className="small mute">Add your rankings sheet for a verdict.</span>
+      ) : null}
+      {ask && <Notice message={ask === 'accept' ? "Accept this offer? If your league has no trade review period, the trade completes right away. Monte can't undo it." : "Reject this offer? Monte can't undo it."} />}
+      {error && <ErrorBox message={error} />}
+      {ask ? (
+        <div className="row" style={{ gap: 8 }}>
+          <Btn kind="primary" label={busy ? 'Sending…' : ask === 'accept' ? 'Yes, accept' : 'Yes, reject'} disabled={busy} onClick={() => void answer(ask)} />
+          <Btn label="Back" disabled={busy} onClick={() => setAsk(null)} />
+        </div>
+      ) : (
+        <div className="row" style={{ gap: 8 }}>
+          <Btn kind="primary" label="Accept" disabled={closed} title={closed ? 'The trade deadline has passed' : undefined} onClick={() => setAsk('accept')} />
+          <Btn label="Reject" onClick={() => setAsk('reject')} />
+          <Btn label="Counter" disabled={!canCounter} onClick={() => x.counterOffer(t)} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TradeCard({ t, onAnswered }: { t: TradeTx; onAnswered?: () => void }) {
   const { context, openPlayer } = useApp()
   const { byId, teamName } = useTrade()
   const me = context?.myRosterId ?? null
@@ -289,6 +425,7 @@ function TradeCard({ t }: { t: TradeTx }) {
           </div>
         ))}
       </div>
+      {t.status === 'proposed' && onAnswered && <OfferActions t={t} onAnswered={onAnswered} />}
     </div>
   )
 }

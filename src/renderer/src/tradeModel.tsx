@@ -6,6 +6,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import type { Result, TradeData } from '@shared/types'
 import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, vacuum, type Asset, type Package, type Verdict, type VacuumVerdict } from '@shared/tradeMath'
 import { projectedSlots } from '@shared/slots'
+import type { TradeTx } from '@shared/leagueWeek'
+import { offerSides, offerVerdictText, type OfferSides } from '@shared/offers'
 import { avoid, buildIdeas, demandModel, findGives, giveWarnings, heldPick, shortlist, teamMode, type Ideas, type Mode } from '@shared/strategy'
 import { anonTrades } from './names'
 import { EMPTY_TRADE, useApp } from './store'
@@ -73,6 +75,12 @@ type Trade = {
   toggle: (id: string) => void
   remove: (id: string) => void
   clear: () => void
+  /** the offer a send would replace; dropped if the partner changes */
+  counter: { transactionId: string; leg: number } | null
+  /** an open offer in Monte's terms, with a verdict when every asset has a value */
+  readOffer: (tx: TradeTx) => OfferSides & { verdict: Verdict | null; label: string; tone: VerdictTone }
+  /** load an offer into Build as a counter, and go there */
+  counterOffer: (tx: TradeTx) => void
   setPartner: (rid: number) => void
   loadDeal: (x: Deal) => void
   /** packages where both sides win, best for you first (empty give = shop your top assets) */
@@ -102,7 +110,7 @@ export function useTrade(): Trade {
 }
 
 export function TradeProvider({ children }: { children: ReactNode }) {
-  const { context, settings, setSettings, bbBase: bb, runBB, trade, setTrade, dataVersion, sheet, hide } = useApp()
+  const { context, settings, setSettings, bbBase: bb, runBB, trade, setTrade, dataVersion, sheet, hide, tradeWith } = useApp()
   const leagueId = context?.league.league_id ?? ''
   const saveTimer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(saveTimer.current), [])
@@ -321,6 +329,23 @@ export function TradeProvider({ children }: { children: ReactNode }) {
     toggle,
     remove,
     clear: () => setTrade(() => EMPTY_TRADE),
+    counter: trade.counter && trade.counter.partner === partner ? trade.counter : null,
+    readOffer: tx => {
+      const s = offerSides(tx, me, byId)
+      const team = d?.teams.find(t => t.roster_id === s.partner)
+      const verdict =
+        d && s.partner != null && !s.missing.length && s.give.length + s.get.length > 0
+          ? evaluate(s.give, s.get, { gamma: d.gamma, spotCost: d.spotCost, meFull, themFull: !!team?.full, demand: demandOf(s.partner) })
+          : null
+      return { ...s, verdict, ...offerVerdictText(verdict) }
+    },
+    counterOffer: tx => {
+      const s = offerSides(tx, me, byId)
+      if (s.partner == null) return
+      const owner = s.partner
+      setTrade(() => ({ give: s.give.map(a => a.id), get: s.get.map(a => a.id), partner: owner, counter: { transactionId: tx.id, leg: tx.week, partner: owner } }))
+      tradeWith(owner)
+    },
     setPartner: rid => setTrade(x => ({ ...x, partner: rid, get: x.partner === rid ? x.get : [] })),
     loadDeal: x => setTrade(() => ({ partner: x.partner, give: x.give.map(a => a.id), get: x.get.map(a => a.id) })),
     findDeals,

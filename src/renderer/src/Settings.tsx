@@ -167,8 +167,12 @@ export default function Settings() {
               Connected{settings.sleeperLink.name && !hide ? ` as ${settings.sleeperLink.name}` : ''}. Monte can send trade offers and set your lineup in Sleeper.
               {settings.sleeperLink.expiresAt ? ` The session ends ${new Date(settings.sleeperLink.expiresAt).toLocaleDateString()}.` : ''}
             </span>
-            <div>
+            <span className="sub" style={{ fontSize: 14 }}>
+              {settings.notifyOffers === false ? 'New-offer notifications are off.' : 'Monte notifies you of new trade offers in any league while it is open, checking every 5 minutes.'}
+            </span>
+            <div className="row" style={{ gap: 8 }}>
               <Btn size="sm" label="Disconnect" onClick={async () => settingsSaved(await window.monte.disconnectSleeper())} />
+              <Btn size="sm" label={settings.notifyOffers === false ? 'Turn on notifications' : 'Turn off notifications'} onClick={() => void setSettings({ notifyOffers: settings.notifyOffers === false })} />
             </div>
           </>
         ) : connecting ? (

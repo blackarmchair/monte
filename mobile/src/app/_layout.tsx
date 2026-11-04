@@ -1,9 +1,11 @@
 import '@/lib/polyfills'
+import { useEffect } from 'react'
 import { View } from 'react-native'
-import { Stack } from 'expo-router'
+import { router, Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
 import { IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_600SemiBold, IBMPlexSans_700Bold } from '@expo-google-fonts/ibm-plex-sans'
+import { watchOffers } from '@/lib/offerWatch'
 import { AppProvider, useApp } from '@/lib/store'
 import { TradeProvider } from '@/lib/trade'
 import { OverlayProvider, SheetHost, ToastHost } from '@/ui/overlay'
@@ -30,8 +32,17 @@ export default function RootLayout() {
 }
 
 function Shell() {
-  const { settings } = useApp()
+  const { settings, selectLeague } = useApp()
   const t = useTheme()
+  const userId = settings?.userId
+  useEffect(() => {
+    if (!userId) return
+    // League opens on This week, which lists the offer.
+    return watchOffers(leagueId => {
+      selectLeague(leagueId)
+      router.navigate('/')
+    })
+  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!settings) return <View style={{ flex: 1, backgroundColor: t.bg }} />
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>

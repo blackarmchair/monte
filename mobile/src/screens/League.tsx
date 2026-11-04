@@ -1,4 +1,4 @@
-// League (the default tab), three tabs. Standings: a hero with where you stand and the one next
+// League (the default tab), four tabs. This week: what needs you. Standings: a hero with where you stand and the one next
 // move, then one team-coloured card per team with a heat chip for the sorted metric, or the
 // value-vs-starters map; tap a team for its page. Matchups and Trades live in LeagueTabs.
 import { useMemo, useState } from 'react'
@@ -6,7 +6,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { useApp } from '@/lib/store'
 import { Btn, ErrorBox, GradCard, HeatChip, Hero, kfmt, Loading, NeedsSheet, Section, Seg, Stack2, T, TeamAvatar, useTopOnFocus } from '@/ui/kit'
 import { font, R, rankHeat, ring, teamColor, useTheme } from '@/ui/theme'
-import { Matchups, Trades } from './LeagueTabs'
+import { Matchups, ThisWeek, Trades } from './LeagueTabs'
 import { record, thinnest, useOverview, type TeamRow } from './overviewLogic'
 
 type Sort = 'overall' | 'starter' | 'record' | 'map'
@@ -22,7 +22,7 @@ export default function League() {
   const { context, sheet, findTargets, openTeam } = useApp()
   const { res, data, rows, n, load, simBusy, simError, runBB } = useOverview()
   const [sort, setSort] = useState<Sort>('overall')
-  const [tab, setTab] = useState<'standings' | 'matchups' | 'trades'>('standings')
+  const [tab, setTab] = useState<'week' | 'standings' | 'matchups' | 'trades'>('week')
   const scroll = useTopOnFocus<ScrollView>()
   const by = sort === 'map' ? 'overall' : sort
   const ordered = useMemo(() => [...rows].sort((a, b) => (a.ranks[by] ?? 99) - (b.ranks[by] ?? 99)), [rows, by])
@@ -40,11 +40,13 @@ export default function League() {
         value={tab}
         onChange={setTab}
         options={[
+          { value: 'week', label: 'Week' },
           { value: 'standings', label: 'Standings' },
           { value: 'matchups', label: 'Matchups' },
           { value: 'trades', label: 'Trades' },
         ]}
       />
+      {tab === 'week' && <ThisWeek onTrades={() => setTab('trades')} />}
       {tab === 'matchups' && <Matchups />}
       {tab === 'trades' && <Trades />}
       {tab === 'standings' && myRow && need && (

@@ -62,6 +62,14 @@ A standalone, signed APK: no Expo Go, no computer needed once installed.
    `adb install -r` over USB, or copy it to the phone and open it (allow installs from that
    app when Android asks). Bump `versionCode` in app.json for each new release.
 
+## New-offer alerts
+
+Turn them on in Settings, under Sleeper connection. They use `expo-notifications` and
+`expo-background-task`, which are native modules, so an installed APK needs a rebuild (prebuild,
+then build, as above) before they exist. Android chooses when the check runs, 15 minutes apart at
+best and only with network and battery to spare, and it stops after a force-stop. Monte also checks
+each time it comes to the front.
+
 ## The rankings sheet
 
 Phones have no folder Monte can watch, so the sheet is picked rather than synced:

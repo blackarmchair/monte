@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, safeStorage, shell } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import createEngine from './engine.worker?nodeWorker'
@@ -7,9 +7,11 @@ import iconIco from '../../resources/icon.ico?asset'
 import iconPng from '../../resources/icon.png?asset'
 import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte/core/deadline'
 import type { EngineJob } from '@monte/core/engine'
+import { diffOffers, offerMessage } from '@monte/core/offerWatch'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
 import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
 import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
+import { answerOffer, type OfferAnswer } from '@monte/core/sleeperOffers'
 import { readRanksFile, watchRanksFile } from './ranksFile'
 import { createSettingsStore } from './settingsStore'
 import { loadWorkbook } from './workbook'
@@ -102,6 +104,8 @@ const sendTrade = (p: TradeProposal) =>
     return { transactionId: r.transactionId, mismatch: r.mismatch }
   })
 
+const sendAnswer = (a: OfferAnswer) => withSleeper(token => answerOffer(a, token))
+
 const sendLineup = (w: LineupWrite) => withSleeper(token => setStarters(w, token))
 
 // ---- engine ----------------------------------------------------------------------------
@@ -146,6 +150,44 @@ const monte = createMonteService({
   loadBook: async () => loadWorkbook((await loadSettings()).ranksFile),
   runEngine,
 })
+
+// ---- new-offer notifications -----------------------------------------------------------
+// While Monte is open, look for new offers across every league. Monte quits when its window closes,
+// so nothing arrives after that. A refused token is left for the next real write to deal with:
+// a background check must not disconnect anyone.
+const OFFER_CHECK_MS = 5 * 60 * 1000
+const OFFER_FIRST_CHECK_MS = 30 * 1000
+/** Electron drops a notification's click handler if the object is collected. */
+const liveNotifications = new Set<Notification>()
+
+async function checkOffers() {
+  const s = await loadSettings()
+  if (s.notifyOffers === false || !s.userId || !s.sleeperLink || !Notification.isSupported()) return
+  const token = await readSleeperToken()
+  if (!token) return
+  const { fresh, seen } = diffOffers(await monte.receivedOffers(s.userId, token), s.seenOffers ?? [])
+  if (!fresh.length) return
+  await saveSettings({ seenOffers: seen })
+  for (const o of fresh) {
+    const n = new Notification({ ...offerMessage(o, !!s.hideNames), icon: process.platform === 'win32' ? iconIco : iconPng })
+    liveNotifications.add(n)
+    n.once('close', () => liveNotifications.delete(n))
+    n.once('click', () => {
+      liveNotifications.delete(n)
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win?.isMinimized()) win.restore()
+      win?.focus()
+      broadcast('offers:open', o.leagueId)
+    })
+    n.show()
+  }
+}
+
+function startOfferChecks() {
+  const run = () => void checkOffers().catch(e => console.warn('offer check failed:', e instanceof Error ? e.message : e))
+  setTimeout(run, OFFER_FIRST_CHECK_MS)
+  setInterval(run, OFFER_CHECK_MS)
+}
 
 // ---- rankings file --------------------------------------------------------------------
 let stopWatch: (() => void) | null = null
@@ -235,13 +277,17 @@ app.whenReady().then(async () => {
   ipcMain.handle('sleeper:disconnect', () => disconnectSleeper())
   ipcMain.handle('sleeper:propose', (_e, p: TradeProposal) => sendTrade(p))
   ipcMain.handle('sleeper:lineup', (_e, w: LineupWrite) => sendLineup(w))
+  ipcMain.handle('sleeper:answer', (_e, a: OfferAnswer) => sendAnswer(a))
   const updater = createUpdater(state => broadcast('update:changed', state))
   ipcMain.handle('update:state', () => updater.state())
   ipcMain.handle('update:check', () => updater.check())
   ipcMain.handle('update:download', () => updater.download())
   ipcMain.handle('update:install', () => updater.install())
 
+  // Windows ties notifications to this id; it matches the installer's.
+  if (process.platform === 'win32') app.setAppUserModelId('com.blackarmchair.monte')
   createWindow()
+  startOfferChecks()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
 

@@ -6,6 +6,7 @@ import { Config } from 'sleeper-standings/dist/config.js'
 import { buildDraft, buildPoll, defaultDraft, summariseDraft } from './draft'
 import type { EngineJob } from './engine'
 import { overridesFor } from './injuries'
+import { offersInLeague, type FoundOffer } from './offerWatch'
 import { buildOverview } from './overview'
 import { ownedPicks, pickOwners } from './picks'
 import { buildRanks, boardIndex } from './ranks'
@@ -581,6 +582,31 @@ export function createMonteService(host: Host) {
         const note = e instanceof SleeperAuthError ? 'Sleeper refused the saved token, so open offers are hidden. Connect Sleeper again in Settings.' : `Couldn’t read open offers: ${e instanceof Error ? e.message : String(e)}`
         return { pending: null, pendingNote: note, recent }
       }
+    },
+
+    /**
+     * Offers waiting on your answer in every league, for notifications. A new offer lands in the
+     * current week's leg, so two legs are enough and this stays light. One league failing doesn't
+     * cost the others; a refused token stops the check, and it's for the caller to decide what to do.
+     */
+    async receivedOffers(userId: string, token: string): Promise<FoundOffer[]> {
+      const state = await sleeper<any>('/state/nfl')
+      const season = state.league_season || state.season
+      const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
+      const legs = week > 1 ? [week - 1, week] : [week]
+      const leagues = (await sleeper<any[]>(`/user/${userId}/leagues/nfl/${season}`)) ?? []
+      const out: FoundOffer[] = []
+      for (const league of leagues) {
+        try {
+          const pending = await fetchPending(league.league_id, legs, token)
+          if (!pending.length) continue
+          const [rosters, users] = await Promise.all([sleeper<any[]>(`/league/${league.league_id}/rosters`), sleeper<any[]>(`/league/${league.league_id}/users`)])
+          out.push(...offersInLeague({ league, rosters, users, pending, userId }))
+        } catch (e) {
+          if (e instanceof SleeperAuthError) throw e
+        }
+      }
+      return out
     },
 
     /** The bundled config list, resolved to Sleeper ids so it can be imported as editable entries. */

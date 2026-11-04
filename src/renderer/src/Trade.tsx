@@ -6,7 +6,7 @@
 // through a team that values the middle player less than another does). With one side of a Build
 // filled, the column for the other side opens with options for it. Vacuum scores any two sides
 // of players and picks, rostered or not, on the sheet and on the market, with no teams at all.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { vacuumText, type Asset, type Side } from '@shared/tradeMath'
 import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
 import { useApp } from './store'
@@ -41,6 +41,10 @@ export default function Trade() {
   const [sending, setSending] = useState(false)
   // Ideas first when there is nothing being built.
   const [tab, setTab] = useState<'build' | 'ideas' | 'vacuum'>(count === 0 ? 'ideas' : 'build')
+  // A counter arrives from League with this screen possibly on another tab.
+  useEffect(() => {
+    if (x.counter) setTab('build')
+  }, [x.counter?.transactionId]) // eslint-disable-line react-hooks/exhaustive-deps
   const suggestions = useMemo(() => x.getSuggestions(), [x.assets, trade, x.direction.mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!sheet)
@@ -205,11 +209,12 @@ export default function Trade() {
                     {Math.round(x.beta * 100)}%
                   </span>
                 </div>
+                {x.counter && <Notice tone="acc" message={`Countering ${partnerName}'s offer. Change anything, then send: it replaces theirs.`} />}
                 <div className="row" style={{ gap: 8 }}>
                   <Btn
                     kind="primary"
                     size="lg"
-                    label="Send in Sleeper"
+                    label={x.counter ? 'Send counter in Sleeper' : 'Send in Sleeper'}
                     disabled={!v || x.me == null || partner == null || d.deadline.closed}
                     title={
                       d.deadline.closed
@@ -260,6 +265,7 @@ export default function Trade() {
           partnerName={partnerName ?? 'them'}
           give={give}
           get={get}
+          counter={x.counter}
           onSettings={settingsSaved}
           onSent={x.clear}
           onClose={() => setSending(false)}

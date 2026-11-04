@@ -93,6 +93,10 @@ export type Settings = {
   /** Sleeper connected for sending trade offers (the token itself is in secure storage — the
    *  phone's Keychain/Keystore, the desktop's OS-encrypted file — never here) */
   sleeperLink?: { name: string; expiresAt: number | null; connectedAt: string }
+  /** alerts for new trade offers. Desktop: on unless turned off. Phone: off until turned on, since it needs permission. */
+  notifyOffers?: boolean
+  /** offers already alerted about, oldest first */
+  seenOffers?: string[]
   /** players marked taken by hand on a draft's Board, by draft id (the few most recent drafts) */
   draftMarks?: Record<string, string[]>
 }
@@ -540,8 +544,12 @@ export type MonteApi = {
   /** completed trades, and your open offers when Sleeper is connected */
   leagueTrades(leagueId: string): Promise<Result<LeagueTrades>>
   proposeTrade(p: TradeProposal): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>
+  /** Accept or reject an offer made to you. `needsConnect` means connect (again) and retry. */
+  answerOffer(a: import('./sleeperOffers').OfferAnswer): Promise<Result<{ status: string; mismatch: string | null }> & { needsConnect?: boolean }>
   /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */
   setLineup(w: LineupWrite): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
+  /** fires when a new-offer notification is clicked, with its league */
+  onOpenLeague(cb: (leagueId: string) => void): () => void
   /** fires when the watched rankings file changes on disk */
   onRanksFileChanged(cb: (info: RanksFileInfo | null) => void): () => void
   updateState(): Promise<UpdateState>

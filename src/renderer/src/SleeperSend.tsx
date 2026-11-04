@@ -80,6 +80,8 @@ export default function SleeperSend(props: {
   partnerName: string
   give: Asset[]
   get: Asset[]
+  /** sending this as a counter to that offer */
+  counter?: { transactionId: string; leg: number } | null
   /** the settings main saved (connected / disconnected), for the app's copy */
   onSettings: (s: Settings) => void
   onSent: () => void
@@ -100,6 +102,7 @@ export default function SleeperSend(props: {
       partnerRosterId: props.partnerRosterId,
       give: side(props.give),
       get: side(props.get),
+      ...(props.counter ? { counter: { transactionId: props.counter.transactionId, leg: props.counter.leg } } : {}),
     })
     if (r.ok) {
       setMismatch(r.value.mismatch)
@@ -120,7 +123,7 @@ export default function SleeperSend(props: {
     props.onClose()
   }
 
-  const title = step === 'connect' ? 'Connect Sleeper' : step === 'sent' ? `Offer sent to ${partnerName}.` : `Send this offer to ${partnerName}?`
+  const title = step === 'connect' ? 'Connect Sleeper' : step === 'sent' ? `${props.counter ? 'Counter' : 'Offer'} sent to ${partnerName}.` : `Send this ${props.counter ? 'counter' : 'offer'} to ${partnerName}?`
 
   return (
     <div className="scrim" onMouseDown={e => e.target === e.currentTarget && close()}>
@@ -162,9 +165,9 @@ export default function SleeperSend(props: {
                 ))}
               </div>
             ))}
-            <Notice message={`This goes to ${partnerName}'s manager as soon as you click Send. If your league has no trade review period, their accepting it completes the trade.`} />
+            <Notice message={`${props.counter ? `This rejects ${partnerName}'s offer and sends yours in its place. ` : ''}This goes to ${partnerName}'s manager as soon as you click Send. If your league has no trade review period, their accepting it completes the trade.`} />
             {error && <ErrorBox message={error} />}
-            <Btn kind="primary" size="lg" label={busy ? 'Sending…' : 'Send offer'} disabled={busy} onClick={send} />
+            <Btn kind="primary" size="lg" label={busy ? 'Sending…' : props.counter ? 'Send counter' : 'Send offer'} disabled={busy} onClick={send} />
             {settings.sleeperLink && <div className="small mute">Sending as {props.hideNames ? 'you' : settings.sleeperLink.name || 'you'} on Sleeper.</div>}
           </div>
         )}

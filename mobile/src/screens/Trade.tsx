@@ -5,7 +5,7 @@
 // than another does). Vacuum scores any two sides of players and picks, rostered or not, on the sheet's
 // sheet and on the market, with no teams at all. A verdict bar floats above the tab bar while the trade has anything in it;
 // Review opens the full read and the send.
-import { useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Linking, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 import { vacuumText, type Asset, type Side } from '@monte/core/tradeMath'
 import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
@@ -38,6 +38,10 @@ export default function Trade() {
 
   // Ideas first when there is nothing being built.
   const [tab, setTab] = useState<'build' | 'ideas' | 'vacuum'>(count === 0 ? 'ideas' : 'build')
+  // A counter arrives from League with this screen possibly on another tab.
+  useEffect(() => {
+    if (x.counter) setTab('build')
+  }, [x.counter?.transactionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!sheet) return <NeedsSheet />
 
@@ -285,7 +289,7 @@ function TradeSheet() {
       players: as.filter(a => a.kind === 'player').map(a => a.id),
       picks: as.filter(a => a.kind === 'pick').map(a => ({ season: a.season!, round: a.round!, originalRosterId: a.originalOwner! })),
     })
-    const r = await monte.proposeTrade({ leagueId: context!.league.league_id, myRosterId: x.me!, partnerRosterId: x.partner!, give: side(x.give), get: side(x.get) })
+    const r = await monte.proposeTrade({ leagueId: context!.league.league_id, myRosterId: x.me!, partnerRosterId: x.partner!, give: side(x.give), get: side(x.get), ...(x.counter ? { counter: { transactionId: x.counter.transactionId, leg: x.counter.leg } } : {}) })
     if (r.ok) {
       setMismatch(r.value.mismatch)
       return setStep('sent')
@@ -312,7 +316,7 @@ function TradeSheet() {
   if (step === 'confirm' || step === 'sending')
     return (
       <View style={{ gap: 14 }}>
-        <T v="head">Send this offer to {partnerName}?</T>
+        <T v="head">Send this {x.counter ? 'counter' : 'offer'} to {partnerName}?</T>
         {(
           [
             ['You give', x.give],
@@ -330,9 +334,9 @@ function TradeSheet() {
             ))}
           </Card>
         ))}
-        <Notice message={`This goes to ${partnerName}'s manager as soon as you tap Send. If your league has no trade review period, their accepting it completes the trade.`} />
+        <Notice message={`${x.counter ? `This rejects ${partnerName}'s offer and sends yours in its place. ` : ''}This goes to ${partnerName}'s manager as soon as you tap Send. If your league has no trade review period, their accepting it completes the trade.`} />
         {error && <ErrorBox message={error} />}
-        <Btn full size="lg" kind="primary" label={step === 'sending' ? 'Sending…' : 'Send offer'} disabled={step === 'sending'} onPress={send} />
+        <Btn full size="lg" kind="primary" label={step === 'sending' ? 'Sending…' : x.counter ? 'Send counter' : 'Send offer'} disabled={step === 'sending'} onPress={send} />
         <Btn full size="lg" label="Back" disabled={step === 'sending'} onPress={() => setStep('review')} />
         {!!settings?.sleeperLink && (
           <T v="small" c="mute">
@@ -346,7 +350,7 @@ function TradeSheet() {
     return (
       <View style={{ gap: 14 }}>
         <T v="head" color={t.pos}>
-          Offer sent to {partnerName}.
+          {x.counter ? 'Counter' : 'Offer'} sent to {partnerName}.
         </T>
         <T c="ink2">It's waiting in Sleeper for their answer. You can withdraw it there.</T>
         {mismatch && <Notice message={mismatch} />}
@@ -420,11 +424,12 @@ function TradeSheet() {
       <T v="small" c="mute">
         Their side is the market ({x.d?.market.source ?? 'KeepTradeCut'}), blended toward the sheet as you lower this: how much your league trades like the market.
       </T>
+      {x.counter && <Notice tone="acc" message={`Countering ${partnerName}'s offer. Change anything, then send: it replaces theirs.`} />}
       <Row gap={8}>
         <Btn
           size="lg"
           kind="primary"
-          label="Send in Sleeper"
+          label={x.counter ? 'Send counter in Sleeper' : 'Send in Sleeper'}
           disabled={!canSend}
           style={{ flex: 1 }}
           onPress={() => {

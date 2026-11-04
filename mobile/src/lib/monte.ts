@@ -3,12 +3,14 @@
 // screens port across without a second data layer.
 import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte/core/deadline'
 import { runEngineJob, type EngineJob } from '@monte/core/engine'
+import { diffOffers, type FoundOffer } from '@monte/core/offerWatch'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
 import type { PickOddsOpts, Result, Settings } from '@monte/core/types'
 import { readWorkbook, type Book } from '@monte/core/xlsx'
 import { fileName } from '@monte/core/paths'
 import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
 import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
+import { answerOffer, type OfferAnswer } from '@monte/core/sleeperOffers'
 import * as storage from './storage'
 
 /** A phone runs the sim on the UI's JS thread, so it defaults to fewer sims than desktop. */
@@ -145,6 +147,23 @@ export const monte = {
       const r = await proposeTrade(p, token)
       return { transactionId: r.transactionId, mismatch: r.mismatch }
     }),
+
+  /**
+   * Offers Monte hasn't alerted about yet, across every league, marked as seen. Nothing when alerts
+   * are off or Sleeper isn't connected. A refused token throws, and is left for the next real write
+   * to deal with: a background check must not disconnect anyone.
+   */
+  async newOffers(): Promise<{ fresh: FoundOffer[]; hideNames: boolean }> {
+    const s = await loadSettings()
+    const token = s.notifyOffers && s.userId && s.sleeperLink ? await storage.readToken() : null
+    if (!token) return { fresh: [], hideNames: !!s.hideNames }
+    const { fresh, seen } = diffOffers(await service.receivedOffers(s.userId!, token), s.seenOffers ?? [])
+    if (fresh.length) await saveSettings({ seenOffers: seen })
+    return { fresh, hideNames: !!s.hideNames }
+  },
+
+  /** Accept or reject an offer made to you. `needsConnect` means connect (again) and retry. */
+  answerOffer: (a: OfferAnswer) => withSleeper(token => answerOffer(a, token)),
 
   /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */
   setLineup: (w: LineupWrite) => withSleeper(token => setStarters(w, token)),
