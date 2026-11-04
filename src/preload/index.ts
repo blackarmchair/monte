@@ -39,6 +39,7 @@ const api: MonteApi = {
   },
   setSheetLink: link => ipcRenderer.invoke('ranks:link', link),
   trackRecord: userId => ipcRenderer.invoke('league:trackRecord', userId),
+  waiverDesk: (leagueId, userId) => ipcRenderer.invoke('league:waivers', leagueId, userId),
   onOpenLeague: cb => {
     const h = (_e: unknown, leagueId: string) => cb(leagueId)
     ipcRenderer.on('offers:open', h)

@@ -35,7 +35,8 @@ sections: League, Lineup, Trade, Players and Picks, plus a page for every player
   your picks lands, with what-if picks for next week's matchups; and the rookie draft: a live
   board, pick grades against the sheet, and team grades.
 - **This week.** League opens on what needs you: offers to answer with Monte's read, lineup problems
-  you can still fix, a stale sheet, and unrostered players worth a look.
+  you can still fix, a stale sheet, and unrostered players worth a look. Below that, the league's
+  waivers: your budget, the last run, winning bids, your pending claims and recent moves.
 - **Answer offers.** Accept, reject or counter from the Trades tab. New offers notify you: on desktop
   while Monte is open, on the phone from a background check Android schedules.
 - **Hide names** for sharing screenshots, light and dark themes, and injury overrides that feed

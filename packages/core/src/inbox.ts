@@ -75,7 +75,7 @@ export function lineupItems(ss: StartSitData, now = Date.now()): InboxItem[] {
  * shown as the sheet's own ranks (lower is better), not Monte's value scores: those run the other
  * way, and scoring adjustments can move a TE or QB past someone ranked ahead of him.
  */
-export function waiverItems(freeAgents: Asset[], mine: Asset[], ranks: Record<string, { sheetRank: number | null }>): InboxItem[] {
+export function waiverItems(freeAgents: Asset[], mine: Asset[], ranks: Record<string, { sheetRank: number | null }>, likelyOnWaivers: string[] = []): InboxItem[] {
   const rankOf = (a: Asset) => ranks[a.id]?.sheetRank ?? null
   const players = mine.filter(a => a.kind === 'player')
   if (!players.length) return []
@@ -99,7 +99,7 @@ export function waiverItems(freeAgents: Asset[], mine: Asset[], ranks: Record<st
       id: `waiver:${a.id}`,
       tone: 'note' as const,
       title: `${a.name} is unrostered`,
-      detail: `${a.pos}, ${a.team}. The sheet ranks him #${rank}. ${lowest}`,
+      detail: `${a.pos}, ${a.team}. The sheet ranks him #${rank}. ${lowest}${likelyOnWaivers.includes(a.id) ? ' Recently dropped, so likely on waivers.' : ''}`,
       action: { kind: 'player' as const, id: a.id, name: a.name },
     }))
 }

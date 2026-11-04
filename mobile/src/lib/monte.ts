@@ -146,6 +146,7 @@ export const monte = {
   playerInfo: (id: string) => toResult(() => service.playerInfo(id)),
   bundledInjuries: () => toResult(() => service.bundledInjuries()),
   trackRecord: (userId: string) => toResult(() => service.trackRecord(userId)),
+  waiverDesk: (leagueId: string, userId: string) => toResult(async () => service.waiverDesk(leagueId, userId, await storage.readToken())),
 
   /** Keep the sheet current from a Google Sheets link; null stops. A link that fails changes nothing. */
   async setSheetLink(link: string | null): Promise<Result<SheetInfo | null>> {

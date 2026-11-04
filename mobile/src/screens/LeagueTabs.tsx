@@ -8,6 +8,7 @@ import { AppState, Linking, Pressable, View } from 'react-native'
 import { connectionItems, lineupItems, offerItems, orderInbox, waiverItems, type InboxAction } from '@monte/core/inbox'
 import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@monte/core/leagueWeek'
 import { offerRole } from '@monte/core/offers'
+import { moveText, type WaiverDesk } from '@monte/core/waivers'
 import { teamLabel } from '@monte/core/names'
 import { basisLabel, compareBases, matchupBasis } from '@monte/core/projBasis'
 import type { Result, StartSitData } from '@monte/core/types'
@@ -74,6 +75,8 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const me = context?.myRosterId ?? null
   const trades = useLoad(id => monte.leagueTrades(id))
   const lineup = useLoad(id => (sheet && settings?.userId ? monte.startSit(id, settings.userId) : Promise.resolve(SHEET_NEEDED)))
+  const waivers = useLoad(id => monte.waiverDesk(id, settings?.userId ?? ''))
+  const desk = waivers.res?.ok ? waivers.res.value : null
   const lt = trades.res?.ok ? trades.res.value : null
   const received = (lt?.pending ?? []).filter(tx => offerRole(tx, me) === 'received')
   const items = orderInbox([
@@ -81,7 +84,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
     ...(lineup.res?.ok ? lineupItems(lineup.res.value) : []),
     ...connectionItems(settings?.sleeperLink, lt?.pendingNote ?? null),
     ...(update ? [{ id: 'app-update', tone: 'note' as const, title: `Monte ${update.version} is ready`, detail: 'Download it from Settings.', action: { kind: 'settings' as const } }] : []),
-    ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks) : []),
+    ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks, desk?.likelyOnWaivers) : []),
   ])
   const act = items.filter(i => i.tone === 'act').length
   const loading = !trades.res || !lineup.res
@@ -94,6 +97,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const refreshAll = () => {
     trades.load()
     lineup.load()
+    waivers.load()
   }
   return (
     <View style={{ gap: 10 }}>
@@ -123,6 +127,67 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
           All clear. Nothing needs you in this league right now.
         </T>
       )}
+      {waivers.res && !waivers.res.ok && (
+        <T v="small" c="mute">
+          Waivers unavailable: {waivers.res.error}
+        </T>
+      )}
+      {desk && <WaiverBlock desk={desk} />}
+    </View>
+  )
+}
+
+const shortDate = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/** The league's waivers at a glance. Read-only: claims are still made in Sleeper. */
+function WaiverBlock({ desk }: { desk: WaiverDesk }) {
+  const x = useTrade()
+  const facts = [
+    desk.faab ? `FAAB: $${desk.faab.left} of $${desk.faab.budget} left` : desk.priority != null ? `Waiver priority: #${desk.priority}` : null,
+    `Waivers run ${desk.cadence}${desk.lastRun ? `, last on ${shortDate(desk.lastRun)}` : ''}`,
+    desk.bids ? `Winning bids this season: ${desk.bids.count} paid, median $${desk.bids.median}, high $${desk.bids.high}` : null,
+  ].filter(Boolean)
+  return (
+    <View style={{ gap: 8, paddingTop: 12 }}>
+      <T v="label">Waivers</T>
+      <Card gap={4}>
+        {facts.map(f => (
+          <T key={f} v="semi" size={14}>
+            {f}
+          </T>
+        ))}
+        {!!desk.pendingNote && (
+          <T v="small" c="mute">
+            {desk.pendingNote}
+          </T>
+        )}
+        {desk.pending?.map(c => (
+          <T key={c.id} v="small">
+            Your claim: {moveText(c)}
+            {c.bid != null && desk.faab ? ` · $${c.bid}` : ''}
+          </T>
+        ))}
+        {desk.pending?.length === 0 && (
+          <T v="small" c="mute">
+            You have no pending claims.
+          </T>
+        )}
+      </Card>
+      {desk.recent.length > 0 && (
+        <T v="small" c="mute">
+          Recent moves
+        </T>
+      )}
+      {desk.recent.map(m => (
+        <Card key={m.id} gap={2}>
+          <T v="small">
+            {m.rosterId != null ? x.teamName(m.rosterId) : 'A team'}: {moveText(m)}
+          </T>
+          <T v="small" c="mute">
+            {m.kind === 'waiver' ? (desk.faab ? `$${m.bid}` : 'waiver') : 'free agent'}
+          </T>
+        </Card>
+      ))}
     </View>
   )
 }

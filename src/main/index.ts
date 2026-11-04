@@ -436,6 +436,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('ranks:choose', wrap(chooseRanksFile))
   ipcMain.handle('ranks:link', wrap(setSheetLink))
   ipcMain.handle('league:trackRecord', wrap(monte.trackRecord))
+  ipcMain.handle('league:waivers', wrap(async (leagueId: string, userId: string) => monte.waiverDesk(leagueId, userId, await readSleeperToken())))
   ipcMain.handle('ranks:info', wrap(async () => loadRanksFile((await loadSettings()).ranksFile)))
   ipcMain.handle('sleeper:connect', wrap(connectSleeper))
   ipcMain.handle('sleeper:signIn', wrap(signInSleeper))

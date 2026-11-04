@@ -560,6 +560,8 @@ export type MonteApi = {
   setLineup(w: LineupWrite): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
   /** keep the rankings sheet current from a Google Sheets link; null stops. Returns the sheet now in use. */
   setSheetLink(link: string | null): Promise<Result<RanksFileInfo | null>>
+  /** the league's waivers: budget, last run, winning bids, your pending claims, recent moves */
+  waiverDesk(leagueId: string, userId: string): Promise<Result<import('./waivers').WaiverDesk>>
   /** how Monte's matchup win chances have held up this season */
   trackRecord(userId: string): Promise<Result<import('./trackRecord').TrackRecord>>
   /** fires when a new-offer notification is clicked, with its league */

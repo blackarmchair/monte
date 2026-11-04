@@ -11,6 +11,7 @@ import { buildOverview } from './overview'
 import { ownedPicks, pickOwners } from './picks'
 import { buildRanks, boardIndex } from './ranks'
 import { simCacheKey, simResultFresh } from './simCache'
+import { buildWaiverDesk, fetchPendingClaims, type WaiverDesk } from './waivers'
 import { forecastGames, scoreForecasts, type ScoredGame, type TrackRecord } from './trackRecord'
 import { buildStartSit, type SeasonStats } from './startSit'
 import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
@@ -587,6 +588,33 @@ export function createMonteService(host: Host) {
         const note = e instanceof SleeperAuthError ? 'Sleeper refused the saved token, so open offers are hidden. Connect Sleeper again in Settings.' : `Couldn’t read open offers: ${e instanceof Error ? e.message : String(e)}`
         return { pending: null, pendingNote: note, recent }
       }
+    },
+
+    /**
+     * The league's waivers, all read-only. The public API covers everything but your own open claims;
+     * those need the session token, and failing to read them only leaves them out, with a note.
+     */
+    async waiverDesk(leagueId: string, userId: string, token: string | null): Promise<WaiverDesk> {
+      const state = await sleeper<any>('/state/nfl')
+      const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
+      const [[league, rosters], meta, byLeg] = await Promise.all([
+        league4(leagueId, false),
+        playersMeta(),
+        Promise.all(Array.from({ length: week }, (_, i) => sleeper<any[]>(`/league/${leagueId}/transactions/${i + 1}`).catch(() => [] as any[]))),
+      ])
+      const roster = rosters.find(r => r.owner_id === userId || (r.co_owners ?? []).includes(userId)) ?? null
+      let pending: any[] | null = null
+      let pendingNote: string | null = null
+      if (!token) pendingNote = 'Connect Sleeper in Settings to see your pending claims.'
+      else if (!roster) pending = []
+      else {
+        try {
+          pending = await fetchPendingClaims(leagueId, week > 1 ? [week - 1, week] : [week], roster.roster_id, token)
+        } catch (e) {
+          pendingNote = e instanceof SleeperAuthError ? 'Sleeper refused the saved session, so pending claims are hidden. Connect Sleeper again in Settings.' : `Couldn’t read pending claims: ${e instanceof Error ? e.message : String(e)}`
+        }
+      }
+      return buildWaiverDesk({ league, roster, transactions: byLeg.flat(), pending, pendingNote, meta })
     },
 
     /**

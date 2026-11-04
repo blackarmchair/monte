@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { connectionItems, lineupItems, offerItems, orderInbox, waiverItems, type InboxAction } from '@shared/inbox'
 import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@shared/leagueWeek'
 import { offerRole } from '@shared/offers'
+import { moveText, type WaiverDesk } from '@shared/waivers'
 import { basisLabel, compareBases, matchupBasis } from '@shared/projBasis'
 import type { Result, StartSitData } from '@shared/types'
 import { teamLabel } from './names'
@@ -64,13 +65,15 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const me = context?.myRosterId ?? null
   const trades = useLoad(id => window.monte.leagueTrades(id))
   const lineup = useLoad(id => (sheet && settings.userId ? window.monte.startSit(id, settings.userId) : Promise.resolve(SHEET_NEEDED)))
+  const waivers = useLoad(id => window.monte.waiverDesk(id, settings.userId ?? ''))
+  const desk = waivers.res?.ok ? waivers.res.value : null
   const lt = trades.res?.ok ? trades.res.value : null
   const received = (lt?.pending ?? []).filter(t => offerRole(t, me) === 'received')
   const items = orderInbox([
     ...offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'another team', verdict: x.readOffer(tx).label }))),
     ...(lineup.res?.ok ? lineupItems(lineup.res.value) : []),
     ...connectionItems(settings.sleeperLink, lt?.pendingNote ?? null),
-    ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks) : []),
+    ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks, desk?.likelyOnWaivers) : []),
   ])
   const act = items.filter(i => i.tone === 'act').length
   const loading = !trades.res || !lineup.res
@@ -83,6 +86,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const refreshAll = () => {
     trades.load()
     lineup.load()
+    waivers.load()
   }
   return (
     <div className="stack" style={{ gap: 12, maxWidth: 860 }}>
@@ -105,7 +109,51 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
       ))}
       {loading && <Loading label="Checking your league…" />}
       {!loading && items.length === 0 && <div className="mute">All clear. Nothing needs you in this league right now.</div>}
+      {waivers.res && !waivers.res.ok && <div className="small mute">Waivers unavailable: {waivers.res.error}</div>}
+      {desk && <WaiverBlock desk={desk} />}
     </div>
+  )
+}
+
+const shortDate = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/** The league's waivers at a glance. Read-only: claims are still made in Sleeper. */
+function WaiverBlock({ desk }: { desk: WaiverDesk }) {
+  const x = useTrade()
+  const facts = [
+    desk.faab ? `FAAB: $${desk.faab.left} of $${desk.faab.budget} left` : desk.priority != null ? `Waiver priority: #${desk.priority}` : null,
+    `Waivers run ${desk.cadence}${desk.lastRun ? `, last on ${shortDate(desk.lastRun)}` : ''}`,
+    desk.bids ? `Winning bids this season: ${desk.bids.count} paid, median $${desk.bids.median}, high $${desk.bids.high}` : null,
+  ].filter(Boolean)
+  return (
+    <section className="stack" style={{ gap: 8, paddingTop: 12 }}>
+      <span className="label">Waivers</span>
+      <div className="stack" style={{ gap: 4, padding: '14px 18px', borderRadius: 18, background: 'var(--card)' }}>
+        {facts.map(f => (
+          <span key={f} style={{ fontWeight: 600, fontSize: 14 }}>
+            {f}
+          </span>
+        ))}
+        {desk.pendingNote && <span className="small mute">{desk.pendingNote}</span>}
+        {desk.pending?.map(c => (
+          <span key={c.id} className="small">
+            Your claim: {moveText(c)}{c.bid != null && desk.faab ? ` · $${c.bid}` : ''}
+          </span>
+        ))}
+        {desk.pending?.length === 0 && <span className="small mute">You have no pending claims.</span>}
+      </div>
+      {desk.recent.length > 0 && <span className="small mute">Recent moves</span>}
+      {desk.recent.map(m => (
+        <div key={m.id} className="row" style={{ gap: 10, justifyContent: 'space-between', padding: '8px 18px', borderRadius: 14, background: 'var(--surf)' }}>
+          <span className="small" style={{ minWidth: 0 }}>
+            <b>{m.rosterId != null ? x.teamName(m.rosterId) : 'A team'}:</b> {moveText(m)}
+          </span>
+          <span className="small mute" style={{ flexShrink: 0 }}>
+            {m.kind === 'waiver' ? (desk.faab ? `$${m.bid}` : 'waiver') : 'free agent'}
+          </span>
+        </div>
+      ))}
+    </section>
   )
 }
 
