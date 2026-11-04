@@ -1,0 +1,15 @@
+# The core checks need no install: Node runs the TypeScript directly, and nothing they import needs
+# node_modules. A typecheck or build would also need the sleeperStandings sibling checkout.
+name: Test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test

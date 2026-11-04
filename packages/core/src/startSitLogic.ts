@@ -1,5 +1,5 @@
-// Pure helpers for Lineup (the phone has the same file).
-import type { SSPlayer } from '@shared/types'
+// Pure helpers for the Lineup screens.
+import type { SSPlayer } from './types'
 
 /** Positions each Sleeper slot code accepts; a slot missing here (K, DEF, IDP…) is pinned. */
 export const ELIG: Record<string, string[]> = {

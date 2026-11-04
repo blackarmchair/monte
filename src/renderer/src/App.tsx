@@ -2,6 +2,7 @@
 // sections and Settings; a 72px top bar with the page title and a search that filters Players
 // live; the page; a centred league modal and the toast. Player, Team and Settings push over a section.
 import { useEffect, useState } from 'react'
+import CrashGuard from './CrashGuard'
 import type { LeagueSummary, Settings } from '@shared/types'
 import Onboarding from './Onboarding'
 import { AppProvider, useApp, type Section } from './store'
@@ -141,7 +142,8 @@ function Shell() {
           </label>
         </header>
         <div className="scroll" ref={app.scrollRef}>
-          {body}
+          {/* Keyed so moving to another screen recovers from a crash on this one. */}
+          <CrashGuard key={`${selected}|${section}|${page ? JSON.stringify(page) : ''}`}>{body}</CrashGuard>
         </div>
       </main>
 

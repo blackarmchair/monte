@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Linking, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
 import { vacuumText, type Asset, type Side } from '@monte/core/tradeMath'
+import { staleSheetNote } from '@monte/core/inbox'
 import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@monte/core/strategy'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
@@ -80,6 +81,7 @@ export default function Trade() {
           />
         )}
 
+        {d && staleSheetNote(d.sheet.modifiedAt) && <Notice message={staleSheetNote(d.sheet.modifiedAt)!} />}
         {d && deadlineNote(d.deadline) && <Notice message={deadlineNote(d.deadline)!} tone={d.deadline.closed ? 'warn' : 'acc'} />}
 
         {d && tab === 'vacuum' && <VacuumView scroll={scroll} />}

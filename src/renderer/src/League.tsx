@@ -1,6 +1,7 @@
 // League, four tabs. This week: what needs you. Standings: where you stand, then the table; click a team for its page (Team).
 // Matchups: this week's pairs, yours first and open, with Monte's win chance. Trades: your open
 // offers (Sleeper connected) and the league's completed trades.
+import { sheetName } from '@shared/names'
 import { useMemo, useState } from 'react'
 import { Matchups, ThisWeek, Trades } from './LeagueTabs'
 import { useApp } from './store'
@@ -37,7 +38,7 @@ export default function League() {
 }
 
 function Standings() {
-  const { context, sheet, findTargets, openTeam } = useApp()
+  const { context, sheet, findTargets, openTeam, hide } = useApp()
   const { res, data, rows, n, load, simBusy, simError, runBB } = useOverview()
   const { rank } = useHeat()
   const [sort, setSort] = useState<Sort>('overall')
@@ -106,7 +107,7 @@ function Standings() {
             )
           })}
           <div className="small mute" style={{ paddingTop: 4 }}>
-            {data.sheet.name} · {data.sheet.ranked} players matched
+            {sheetName(data.sheet.name, hide)} · {data.sheet.ranked} players matched
             {data.sheet.unmatched.length ? ` · ${data.sheet.unmatched.length} sheet names didn't match Sleeper` : ''}
           </div>
         </div>

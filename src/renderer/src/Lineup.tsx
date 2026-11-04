@@ -2,6 +2,8 @@
 // top, then starters (NFL-colour cards) beside the bench (surf cards). Click a player to select
 // him, then a highlighted slot or player to swap; click him again to cancel. Set in Sleeper sends
 // the lineup on screen.
+import { sheetName } from '@shared/names'
+import { staleSheetNote } from '@shared/inbox'
 import { useEffect, useMemo, useState } from 'react'
 import type { LeagueWeek } from '@shared/leagueWeek'
 import { basisLabel, compareBases } from '@shared/projBasis'
@@ -11,7 +13,7 @@ import { useApp } from './store'
 import { ConnectModal } from './SleeperSend'
 import { BasisLine, ProjCompare } from './ProjCompare'
 import { Btn, ErrorBox, GradCard, Headshot, Link, Loading, NeedsSheet, nflColor, Notice, num, RING, RING_THIN, Tag } from './ui'
-import { benchOnly, ELIG, eligible, normCdf, tagOf, WIN_SD, type Swap } from './startsit.logic'
+import { benchOnly, ELIG, eligible, normCdf, tagOf, WIN_SD, type Swap } from '@shared/startSitLogic'
 
 /** Seeded so the same lineup gives the same count when re-run. */
 function simWins(diff: number, n: number): number {
@@ -314,6 +316,7 @@ export default function Lineup() {
           )}
           {push.error && <ErrorBox message={push.error} onRetry={sendLineup} />}
           {push.note && <Notice message={push.note} />}
+          {staleSheetNote(d.sheet.modifiedAt) && <Notice message={staleSheetNote(d.sheet.modifiedAt)!} />}
           {d.warnings.map(w => (
             <Notice key={w} message={w} />
           ))}
@@ -373,7 +376,7 @@ export default function Lineup() {
 
           <div className="row" style={{ gap: 16, alignItems: 'flex-start' }}>
             <span className="small mute" style={{ flex: 1, maxWidth: 820 }}>
-              Ranks from {d.sheet.name} › Week {d.boardWeek ?? '?'}. Proj is the sheet's rank mapped to the points per game that rank scored last season in this league's
+              Ranks from {sheetName(d.sheet.name, hide)} › Week {d.boardWeek ?? '?'}. Proj is the sheet's rank mapped to the points per game that rank scored last season in this league's
               scoring. The order is the signal; totals are approximate.
             </span>
             <Btn size="sm" label={busy ? 'Refreshing…' : 'Refresh'} disabled={busy} onClick={load} bg="var(--surf)" />

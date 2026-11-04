@@ -4,7 +4,8 @@
 // odds. The phone's lib/trade.tsx is the same, minus Build's suggestions.
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Result, TradeData } from '@shared/types'
-import { ET_NOISE, evaluate, findPackages, pickValues, positionRatios, vacuum, type Asset, type Package, type Verdict, type VacuumVerdict } from '@shared/tradeMath'
+import { mineOf, verdictText, type VerdictTone } from '@shared/tradeView'
+import { evaluate, findPackages, pickValues, positionRatios, vacuum, type Asset, type Package, type Verdict, type VacuumVerdict } from '@shared/tradeMath'
 import { projectedSlots } from '@shared/slots'
 import type { TradeTx } from '@shared/leagueWeek'
 import { offerSides, offerVerdictText, type OfferSides } from '@shared/offers'
@@ -22,30 +23,8 @@ const SUGGEST_PER_TEAM = 2
 /** Market influence is saved this long after the slider stops. */
 const SAVE_MS = 400
 
-export type VerdictTone = 'pos' | 'warn' | 'neg' | 'mute'
 export type Deal = Package & { partner: number; give: Asset[] }
-export const mineOf = (a: Asset) => a.mine ?? a.sheet
-
-/** Your-value-vs-market read on one asset, from your side of the table. */
-export function marketTag(a: Asset): { label: string; tone: 'acc' | 'pos' | 'mute' } {
-  const m = mineOf(a)
-  const d = m - a.val
-  if (a.market == null) return { label: 'No market', tone: 'mute' }
-  if (d <= -Math.max(250, 0.1 * m)) return { label: 'Sell high', tone: 'acc' }
-  if (d >= Math.max(250, 0.1 * a.val)) return { label: 'Undervalued', tone: 'pos' }
-  return { label: 'Fair', tone: 'mute' }
-}
-
-export const assetMeta = (a: Asset) =>
-  a.kind === 'pick' ? (a.slot ? `projected ${a.slot}` : 'future pick') : `${a.pos} · ${a.team}${a.age ? ` · ${a.age}` : ''}`
-
-export function verdictText(v: Verdict | null): { label: string; tone: VerdictTone } {
-  if (!v) return { label: 'Build a trade', tone: 'mute' }
-  if (v.em > 0 && v.et > ET_NOISE) return { label: 'Both sides win', tone: 'pos' }
-  if (v.em > 0 && v.et > 0) return { label: 'Coin flip for them', tone: 'warn' }
-  if (v.em > 0) return { label: 'They say no', tone: 'neg' }
-  return { label: 'You lose value', tone: 'neg' }
-}
+export { assetMeta, marketTag, mineOf, verdictText, type VerdictTone } from '@shared/tradeView'
 
 type Trade = {
   res: Result<TradeData> | null

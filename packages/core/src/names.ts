@@ -8,6 +8,9 @@ export const teamLabel = (rosterId: number) => `Team #${rosterId}`
 /** `index` is the league's position in the user's Sleeper league list (0-based). */
 export const leagueLabel = (index: number) => `League #${index + 1}`
 
+/** The rankings file's name can identify its source, so Hide names covers it too. */
+export const sheetName = (name: string, hide: boolean) => (hide ? 'your rankings sheet' : name)
+
 export function anonContext(c: LeagueContext): LeagueContext {
   return {
     ...c,

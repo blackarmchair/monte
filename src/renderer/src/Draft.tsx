@@ -5,6 +5,7 @@
 // selected pick or team in the sticky right panel. Until Sleeper creates next season's draft, that
 // season opens as a provisional order from Pick odds' projection, with traded picks applied.
 // Grades port draftPunk's sheet-order rule; Sleeper is polled while the draft can change.
+import { sheetName } from '@shared/names'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { DraftData, DraftPickRow, DraftPlayer, DraftPool, DraftPoll, DraftStatus, Result } from '@shared/types'
 import { provisionalOrder, withMarks } from '@shared/draft'
@@ -332,7 +333,7 @@ export default function DraftPanel() {
       {d && !provisional && (
         <>
           <Tag label={STATUS_LABEL[status]} tone={status === 'drafting' ? 'acc' : status === 'paused' ? 'warn' : 'mid'} />
-          <span className="small mute">{POLL_MS[status] ? `checking every ${POLL_MS[status]! / 1000}s` : d.sheet.name}</span>
+          <span className="small mute">{POLL_MS[status] ? `checking every ${POLL_MS[status]! / 1000}s` : sheetName(d.sheet.name, hide)}</span>
           <Link label={busy ? 'Loading…' : 'Refresh'} onClick={() => load()} disabled={busy} />
           <Seg
             value={pool}

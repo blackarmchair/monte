@@ -8,6 +8,7 @@
 // of players and picks, rostered or not, on the sheet and on the market, with no teams at all.
 import { useEffect, useMemo, useState } from 'react'
 import { vacuumText, type Asset, type Side } from '@shared/tradeMath'
+import { staleSheetNote } from '@shared/inbox'
 import { deadlineNote, MODE_LABEL, PHASE_LINE, type Chain, type Idea, type IdeaDeal, type Mode } from '@shared/strategy'
 import { useApp } from './store'
 import { assetMeta, marketTag, mineOf, useTrade, verdictText, type Deal, type VerdictTone } from './tradeModel'
@@ -98,6 +99,12 @@ export default function Trade() {
               { value: 'vacuum', label: 'Vacuum' },
             ]}
           />
+        </div>
+      )}
+
+      {d && staleSheetNote(d.sheet.modifiedAt) && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Notice message={staleSheetNote(d.sheet.modifiedAt)!} />
         </div>
       )}
 

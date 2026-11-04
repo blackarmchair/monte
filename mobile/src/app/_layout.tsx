@@ -10,6 +10,7 @@ import { AppProvider, useApp } from '@/lib/store'
 import { TradeProvider } from '@/lib/trade'
 import { OverlayProvider, SheetHost, ToastHost } from '@/ui/overlay'
 import { useTheme } from '@/ui/theme'
+import CrashGuard from '@/ui/CrashGuard'
 import Onboarding from '@/screens/Onboarding'
 
 export default function RootLayout() {
@@ -47,13 +48,15 @@ function Shell() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <StatusBar style={t.dark ? 'light' : 'dark'} />
-      {!settings.userId ? (
-        <Onboarding />
-      ) : (
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
-          <Stack.Screen name="(tabs)" />
-        </Stack>
-      )}
+      <CrashGuard>
+        {!settings.userId ? (
+          <Onboarding />
+        ) : (
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
+            <Stack.Screen name="(tabs)" />
+          </Stack>
+        )}
+      </CrashGuard>
       <ToastHost />
       <SheetHost />
     </View>

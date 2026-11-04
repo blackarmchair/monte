@@ -2,6 +2,7 @@
 // each player with a value-rank heat chip and his market read; Usage = PWOPR, heat on the usage
 // gap, a sample-strength mark and a label framed by who holds him. Swipe a card left for its action, long-press to drop him straight into the trade, tap for
 // his page.
+import { sheetName } from '@monte/core/names'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Animated, FlatList, Linking, PanResponder, Pressable, ScrollView, Text, View } from 'react-native'
 import { tepBoardFor, type RanksData, type Result } from '@monte/core/types'
@@ -167,7 +168,7 @@ export default function Players() {
       ? `${lines.length} players · usage PPG → Sleeper's week ${pw.result.targetWeek} projection. Usage PPG is what his role is worth per game: every game this season (weeks ${pw.result.usageWeeks[0]}–${pw.result.usageWeeks[pw.result.usageWeeks.length - 1]}), weighted toward recent ones; the projection is that one week. Shares are the last 3 games, ▲▼ against the season. Snap share shown; route data unavailable. Sample size: ●○○ under 3 games, ●●● 5+.`
       : ''
     : ranks
-    ? `${lines.length} players · values from ${ranks.sheet.name}`
+    ? `${lines.length} players · values from ${sheetName(ranks.sheet.name, hide)}`
     : ''
 
   return (

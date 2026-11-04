@@ -3,6 +3,7 @@
 // a Board of who's left. Grades port draftPunk's sheet-order rule; Sleeper is polled while the
 // draft can still change. Until Sleeper creates next season's draft, that season opens as a
 // provisional order taken from Pick odds' projection, with traded picks applied.
+import { sheetName } from '@monte/core/names'
 import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import type { DraftData, DraftPickRow, DraftPlayer, DraftPool, DraftPoll, DraftStatus, Result } from '@monte/core/types'
@@ -403,7 +404,7 @@ export default function DraftPanel() {
             <Row gap={10}>
               <Tag label={STATUS_LABEL[status]} tone={status === 'drafting' ? 'acc' : status === 'paused' ? 'warn' : 'mid'} />
               <T v="small" c="mute" style={{ flex: 1 }}>
-                {d.sheet.name} · {POLL_MS[status] ? `checking every ${POLL_MS[status]! / 1000}s` : 'not polling'}
+                {sheetName(d.sheet.name, hide)} · {POLL_MS[status] ? `checking every ${POLL_MS[status]! / 1000}s` : 'not polling'}
               </T>
               <Btn kind="link" label={busy ? 'Loading…' : 'Refresh'} onPress={() => load()} disabled={busy} />
             </Row>

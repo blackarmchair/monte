@@ -4,6 +4,7 @@
 // reads top to bottom, under one sticky header row (click a Usage column to sort by it; its (?)
 // opens what each column means, and clicking a verdict opens why that player got it). The top bar's search filters it live. Click a card for his page; its button adds him to the trade (or
 // claims a free agent in Sleeper).
+import { sheetName } from '@shared/names'
 import { useEffect, useMemo, useState } from 'react'
 import { tepBoardFor, type RanksData, type Result } from '@shared/types'
 import { teamLabel } from './names'
@@ -231,7 +232,7 @@ export default function Players() {
       ? `${lines.length} players · usage weeks ${pw.result.usageWeeks[0]}–${pw.result.usageWeeks[pw.result.usageWeeks.length - 1]} · shares: last 3 games / season · snap share shown; route data unavailable`
       : ''
     : ranks
-    ? `${lines.length} players · ${ranks.sheet.name}`
+    ? `${lines.length} players · ${sheetName(ranks.sheet.name, hide)}`
     : ''
 
   return (

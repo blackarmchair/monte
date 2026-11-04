@@ -55,7 +55,7 @@ export async function buildRanks(opts: {
         avatar: userAvatar(u),
       }
     }),
-    myRosterId: rosters.find(r => r.owner_id === opts.userId)?.roster_id ?? null,
+    myRosterId: rosters.find(r => r.owner_id === opts.userId || (r.co_owners ?? []).includes(opts.userId))?.roster_id ?? null,
     tePremium: Number(league?.scoring_settings?.bonus_rec_te ?? 0),
     builtAt: new Date().toISOString(),
   }

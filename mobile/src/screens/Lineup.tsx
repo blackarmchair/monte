@@ -2,6 +2,8 @@
 // the best swap, then starter cards (NFL colour) and bench cards (surf). Tap a player to select
 // him, then tap a highlighted slot or player to swap; tap him again to cancel. Set in Sleeper
 // sends the lineup.
+import { sheetName } from '@monte/core/names'
+import { staleSheetNote } from '@monte/core/inbox'
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, Text, View } from 'react-native'
 import type { LeagueWeek } from '@monte/core/leagueWeek'
@@ -15,7 +17,7 @@ import SleeperConnect from './SleeperConnect'
 import { BasisLine, ProjCompare } from './ProjCompare'
 import { Btn, ErrorBox, GradCard, Headshot, Hero, Loading, NeedsSheet, Notice, Row, Section, T, Tag, num, useTopOnFocus } from '@/ui/kit'
 import { font, nflColor, useTheme } from '@/ui/theme'
-import { benchOnly, ELIG, eligible, normCdf, tagOf, WIN_SD, type Swap } from './startsit.logic'
+import { benchOnly, ELIG, eligible, normCdf, tagOf, WIN_SD, type Swap } from '@monte/core/startSitLogic'
 
 /** Seeded so the same lineup gives the same count when re-run. */
 function simWins(diff: number, n: number): number {
@@ -311,6 +313,7 @@ export default function Lineup() {
           )}
           {push.error && <ErrorBox message={push.error} onRetry={sendLineup} />}
           {push.note && <Notice message={push.note} />}
+          {staleSheetNote(d.sheet.modifiedAt) && <Notice message={staleSheetNote(d.sheet.modifiedAt)!} />}
           {d.warnings.map(w => (
             <Notice key={w} message={w} />
           ))}
@@ -362,7 +365,7 @@ export default function Lineup() {
           })}
 
           <T v="small" c="mute" style={{ paddingTop: 8 }}>
-            Ranks from {d.sheet.name} › Week {d.boardWeek ?? '?'}. Proj is the sheet's rank mapped to the points per game that rank scored last season in this league's
+            Ranks from {sheetName(d.sheet.name, hide)} › Week {d.boardWeek ?? '?'}. Proj is the sheet's rank mapped to the points per game that rank scored last season in this league's
             scoring. The order is the signal; totals are approximate.
           </T>
           <Btn label={busy ? 'Refreshing…' : 'Refresh'} disabled={busy} onPress={load} bg={t.surf} />

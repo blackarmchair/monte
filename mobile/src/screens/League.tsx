@@ -1,6 +1,7 @@
 // League (the default tab), four tabs. This week: what needs you. Standings: a hero with where you stand and the one next
 // move, then one team-coloured card per team with a heat chip for the sorted metric, or the
 // value-vs-starters map; tap a team for its page. Matchups and Trades live in LeagueTabs.
+import { sheetName } from '@monte/core/names'
 import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { useApp } from '@/lib/store'
@@ -19,7 +20,7 @@ const SORTS: Array<{ value: Sort; label: string }> = [
 
 export default function League() {
   const t = useTheme()
-  const { context, sheet, findTargets, openTeam } = useApp()
+  const { context, sheet, findTargets, openTeam, hide } = useApp()
   const { res, data, rows, n, load, simBusy, simError, runBB } = useOverview()
   const [sort, setSort] = useState<Sort>('overall')
   const [tab, setTab] = useState<'week' | 'standings' | 'matchups' | 'trades'>('week')
@@ -83,7 +84,7 @@ export default function League() {
               <TeamMap rows={rows} n={n} me={me} onPick={r => openTeam(r.team.roster_id)} />
             ))}
           <T v="small" c="mute" style={{ paddingTop: 4 }}>
-            {data.sheet.name} · {data.sheet.ranked} players matched
+            {sheetName(data.sheet.name, hide)} · {data.sheet.ranked} players matched
             {data.sheet.unmatched.length ? ` · ${data.sheet.unmatched.length} sheet names didn't match Sleeper` : ''}
           </T>
         </View>

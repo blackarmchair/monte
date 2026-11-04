@@ -22,6 +22,12 @@ const TOKEN_WARN_DAYS = 7
 const WAIVER_LIMIT = 3
 const OUT_FOR_NOW = new Set(['IR', 'Out', 'PUP', 'Sus', 'NA', 'DNR'])
 
+/** A warning for screens that lean on the sheet, or null while it's fresh. */
+export function staleSheetNote(modifiedAt: string, now = Date.now()): string | null {
+  const age = Math.floor((now - Date.parse(modifiedAt)) / DAY_MS)
+  return age > SHEET_STALE_DAYS ? `Your rankings sheet is ${age} days old, so these reads may be out of date.` : null
+}
+
 /** Offers waiting on your answer, already filtered to `received`. */
 export function offerItems(offers: Array<{ tx: TradeTx; from: string; verdict: string }>): InboxItem[] {
   return offers.map(({ tx, from, verdict }) => ({
