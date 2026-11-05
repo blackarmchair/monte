@@ -326,6 +326,13 @@ export function createMonteService(host: Host) {
     return week > 1 ? [week - 1, week] : [week]
   }
 
+  /** Your leagues this season, less any hidden in Settings: those send no alerts and stay out of the track record. */
+  async function shownLeagues(userId: string, season: string | number): Promise<any[]> {
+    const [leagues, settings] = await Promise.all([sleeper<any[]>(`/user/${userId}/leagues/nfl/${season}`), host.settings()])
+    const hidden = new Set(settings.hiddenLeagues ?? [])
+    return (leagues ?? []).filter(l => !hidden.has(String(l.league_id)))
+  }
+
   async function league4(leagueId: string, traded = true) {
     return Promise.all([
       sleeper<any>(`/league/${leagueId}`),
@@ -693,7 +700,7 @@ export function createMonteService(host: Host) {
       const state = await sleeper<any>('/state/nfl')
       const season = String(state.league_season || state.season)
       const throughWeek = state.season_type === 'regular' || state.season_type === 'post' ? Math.max(0, Math.min(18, Number(state.week) - 1)) : 0
-      const leagues = (await sleeper<any[]>(`/user/${userId}/leagues/nfl/${season}`)) ?? []
+      const leagues = await shownLeagues(userId, season)
       const meta = await playersMeta()
       const games: ScoredGame[] = []
       let scored = 0
@@ -730,7 +737,7 @@ export function createMonteService(host: Host) {
       const season = state.league_season || state.season
       const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
       const legs = week > 1 ? [week - 1, week] : [week]
-      const leagues = (await sleeper<any[]>(`/user/${userId}/leagues/nfl/${season}`)) ?? []
+      const leagues = await shownLeagues(userId, season)
       const out: FoundOffer[] = []
       for (const league of leagues) {
         try {
@@ -758,7 +765,7 @@ export function createMonteService(host: Host) {
       const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
       const nflWeek = state.season_type === 'regular' || state.season_type === 'post' ? Number(state.week) || null : null
       const legs = week > 1 ? [week - 1, week] : [week]
-      const leagues = ((await sleeper<any[]>(`/user/${userId}/leagues/nfl/${season}`)) ?? []).filter(l => l.status === 'in_season' || l.status === 'post_season')
+      const leagues = (await shownLeagues(userId, season)).filter(l => l.status === 'in_season' || l.status === 'post_season')
       if (!leagues.length) return out
       const [{ players }, games] = await Promise.all([projectionsFor(season, week), nflSchedule(season).catch(() => null)])
       for (const league of leagues) {

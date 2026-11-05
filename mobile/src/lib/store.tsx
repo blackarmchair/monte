@@ -28,7 +28,12 @@ type Runs<T> = Record<string, Run<T>>
 type App = {
   settings: Settings | null
   setSettings: (patch: Partial<Settings>) => Promise<void>
+  /** the leagues shown in Monte (hidden ones left out) */
   leagues: LeagueSummary[]
+  /** every league, hidden ones marked, for showing or hiding them */
+  allLeagues: Array<LeagueSummary & { hidden: boolean }>
+  /** hide a league, or show it again; the last shown league can't be hidden */
+  toggleLeagueHidden: (id: string) => void
   leagueError: string | null
   loadLeagues: () => void
   selected: string | null
@@ -127,8 +132,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void monte.listLeagues(settings.userId).then(r => {
       if (!r.ok) return setLeagueError(r.error)
       setLeagues(r.value)
-      const keep = r.value.find(l => l.league_id === settings.lastLeagueId)
-      setSelected(s => s ?? (keep ?? r.value[0])?.league_id ?? null)
+      const hidden = new Set(settings?.hiddenLeagues ?? [])
+      const shown = r.value.filter(l => !hidden.has(l.league_id))
+      const keep = shown.find(l => l.league_id === settings?.lastLeagueId)
+      setSelected(s => s ?? (keep ?? shown[0] ?? r.value[0])?.league_id ?? null)
     })
   }, [settings?.userId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(loadLeagues, [loadLeagues])
@@ -169,7 +176,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const hide = !!settings?.hideNames
   const id = rawContext?.league.league_id ?? null
   const context = useMemo(() => (rawContext && hide ? anonContext(rawContext) : rawContext), [rawContext, hide])
-  const shownLeagues = useMemo(() => (hide ? leagues.map((l, i) => ({ ...l, name: leagueLabel(i), avatar: null })) : leagues), [leagues, hide])
+  const hiddenKey = (settings?.hiddenLeagues ?? []).join(',')
+  const allLeagues = useMemo(() => {
+    const hidden = new Set(hiddenKey ? hiddenKey.split(',') : [])
+    // Numbered across every league, so a league keeps its number when another is hidden.
+    return (hide ? leagues.map((l, i) => ({ ...l, name: leagueLabel(i), avatar: null })) : leagues).map(l => ({ ...l, hidden: hidden.has(l.league_id) }))
+  }, [leagues, hide, hiddenKey])
+  const shownLeagues = useMemo(() => allLeagues.filter(l => !l.hidden), [allLeagues])
+  // Hiding the open league moves to the first one still shown.
+  useEffect(() => {
+    if (selected && allLeagues.some(l => l.league_id === selected && l.hidden)) setSelected(shownLeagues[0]?.league_id ?? null)
+  }, [allLeagues, shownLeagues, selected])
+  const toggleLeagueHidden = (lid: string) => {
+    const hidden = settings?.hiddenLeagues ?? []
+    if (hidden.includes(lid)) return void setSettings({ hiddenLeagues: hidden.filter(x => x !== lid) })
+    if (shownLeagues.length <= 1) return
+    void setSettings({ hiddenLeagues: [...hidden, lid] })
+  }
 
   const bb = useMemo<Run<BBResult>>(() => {
     const r = (id && bbRuns[id]) || {}
@@ -187,6 +210,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     settings,
     setSettings,
     leagues: shownLeagues,
+    allLeagues,
+    toggleLeagueHidden,
     leagueError,
     loadLeagues,
     selected,

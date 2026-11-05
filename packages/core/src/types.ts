@@ -106,6 +106,8 @@ export type Settings = {
   seenOffers?: string[]
   /** other alerts already sent, by key, oldest first */
   seenAlerts?: string[]
+  /** leagues hidden from Monte: not listed, no alerts, left out of the track record */
+  hiddenLeagues?: string[]
   /** players marked taken by hand on a draft's Board, by draft id (the few most recent drafts) */
   draftMarks?: Record<string, string[]>
 }

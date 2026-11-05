@@ -7,7 +7,7 @@ import type { LeagueSummary, Settings } from '@shared/types'
 import Onboarding from './Onboarding'
 import { AppProvider, useApp, type Section } from './store'
 import { TradeProvider, useTrade } from './tradeModel'
-import { Check, ErrorBox, GradCard, Icon, LeagueAvatar, Loading, Stack2, type IconName } from './ui'
+import { Check, ErrorBox, GradCard, Icon, LeagueAvatar, Link, Loading, Stack2, type IconName } from './ui'
 import League from './League'
 import Lineup from './Lineup'
 import Trade from './Trade'
@@ -170,7 +170,8 @@ function Shell() {
 }
 
 function LeaguesModal({ onClose }: { onClose: () => void }) {
-  const { leagues, selected, selectLeague, leagueError, loadLeagues } = useApp()
+  const { leagues, allLeagues, toggleLeagueHidden, selected, selectLeague, leagueError, loadLeagues } = useApp()
+  const [editing, setEditing] = useState(false)
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', esc)
@@ -179,11 +180,25 @@ function LeaguesModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-label="Leagues">
-        <div className="modal-title" style={{ paddingBottom: 4 }}>
+        <div className="modal-title row" style={{ paddingBottom: 4, justifyContent: 'space-between', alignItems: 'center' }}>
           Leagues
+          {allLeagues.length > 1 && <Link label={editing ? 'Done' : 'Edit'} onClick={() => setEditing(e => !e)} />}
         </div>
         {leagueError && <ErrorBox message={leagueError} onRetry={loadLeagues} />}
-        {leagues.map(l => (
+        {editing && (
+          <span className="small mute" style={{ paddingBottom: 4 }}>
+            Untick a league to hide it. Hidden leagues stay out of Monte and send no alerts.
+          </span>
+        )}
+        {editing &&
+          allLeagues.map(l => (
+            <GradCard key={l.league_id} color={null} minHeight={60} dim={l.hidden} title={l.hidden ? `Show ${l.name}` : `Hide ${l.name}`} onClick={() => toggleLeagueHidden(l.league_id)}>
+              <LeagueAvatar name={l.name} src={l.avatar} />
+              <Stack2 title={l.name} sub={l.hidden ? 'Hidden' : formatLabel(l)} />
+              <Check on={!l.hidden} size={28} />
+            </GradCard>
+          ))}
+        {!editing && leagues.map(l => (
           <GradCard
             key={l.league_id}
             color={null}
