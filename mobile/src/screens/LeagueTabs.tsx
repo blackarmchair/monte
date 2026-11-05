@@ -5,9 +5,10 @@
 import { useFocusEffect, router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AppState, Linking, Pressable, View } from 'react-native'
-import { connectionItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@monte/core/inbox'
+import { connectionItems, irItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@monte/core/inbox'
 import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@monte/core/leagueWeek'
 import { offerRole } from '@monte/core/offers'
+import { bidProblem } from '@monte/core/sleeperWaivers'
 import { moveDrop, moveTitle, type WaiverDesk, type WaiverMove } from '@monte/core/waivers'
 import { teamLabel } from '@monte/core/names'
 import { basisLabel, compareBases, matchupBasis } from '@monte/core/projBasis'
@@ -16,7 +17,7 @@ import { useAppUpdate } from '@/lib/appUpdate'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { mineOf, useTrade } from '@/lib/trade'
-import { Btn, Card, ErrorBox, GradCard, Headshot, HeatChip, Hero, kfmt, Loading, Notice, ORD, Row, Section, Stack2, StatTile, T, Tag, TeamAvatar } from '@/ui/kit'
+import { Btn, Card, ErrorBox, Field, GradCard, Headshot, HeatChip, Hero, kfmt, Loading, Notice, ORD, Row, Section, Stack2, StatTile, T, Tag, TeamAvatar } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
 import { nflColor, R, rankHeat, ring, teamColor, useTheme } from '@/ui/theme'
 import { BasisLine, ProjCompare } from './ProjCompare'
@@ -72,9 +73,11 @@ const shortDate = (ms: number) => new Date(ms).toLocaleDateString([], { month: '
 /** What needs you this week in this league: the top thing first, then the rest, then waivers. */
 export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const t = useTheme()
-  const { context, sheet, settings, openPlayer } = useApp()
+  const { context, sheet, settings, setSettings, openPlayer } = useApp()
+  const { showToast } = useOverlay()
   const x = useTrade()
   const update = useAppUpdate()
+  const [irBusy, setIrBusy] = useState<string | null>(null)
   const me = context?.myRosterId ?? null
   const trades = useLoad(id => monte.leagueTrades(id))
   const lineup = useLoad(id => (sheet && settings?.userId ? monte.startSit(id, settings.userId) : Promise.resolve(SHEET_NEEDED)))
@@ -84,9 +87,12 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const received = (lt?.pending ?? []).filter(tx => offerRole(tx, me) === 'received')
   const offers = offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'Another team', verdict: x.readOffer(tx).label })))
   const fixes = lineup.res?.ok ? lineupItems(lineup.res.value) : []
+  const ir = irItems(desk?.ir ?? null)
   const items = orderInbox([
+    ...ir.filter(i => i.id.startsWith('ir-off')),
     ...offers,
     ...fixes,
+    ...ir.filter(i => !i.id.startsWith('ir-off')),
     ...connectionItems(settings?.sleeperLink, lt?.pendingNote ?? null),
     ...(update ? [{ id: 'app-update', tone: 'note' as const, title: `Monte ${update.version} is ready`, detail: 'Download it from Settings', action: { kind: 'settings' as const } }] : []),
   ])
@@ -104,8 +110,25 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
     else if (a.kind === 'lineup') router.navigate('/lineup')
     // Only unrostered suggestions land here, so open where he can be claimed.
     else if (a.kind === 'player') openPlayer(a.id, a.name, 'trade')
+    else if (a.kind === 'ir') void moveIr(a)
     else router.navigate('/settings')
   }
+  const moveIr = async (a: Extract<InboxAction, { kind: 'ir' }>) => {
+    const leagueId = context?.league.league_id
+    if (!leagueId || me == null || irBusy) return
+    setIrBusy(a.id)
+    const r = await monte.moveIr({ leagueId, rosterId: me, playerId: a.id, to: a.to })
+    setIrBusy(null)
+    if (!r.ok) {
+      showToast(r.error)
+      if (r.needsConnect) void setSettings({ sleeperLink: undefined })
+      return
+    }
+    showToast(r.value.mismatch ?? `${a.name} ${a.to === 'ir' ? 'moved to IR' : 'moved off IR'}`)
+    waivers.load()
+    lineup.load()
+  }
+  const ctaOf = (i: InboxItem) => (i.action.kind === 'ir' && irBusy === i.action.id ? 'Moving…' : i.cta ?? 'Open')
   const refreshAll = () => {
     trades.load()
     lineup.load()
@@ -133,7 +156,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
           <T v="bold" size={18}>
             {top.lead ?? top.title}
           </T>
-          <Btn kind="primary" label={top.cta ?? 'Open'} onPress={() => run(top.action)} style={{ alignSelf: 'flex-start' }} />
+          <Btn kind="primary" label={ctaOf(top)} disabled={!!irBusy} onPress={() => run(top.action)} style={{ alignSelf: 'flex-start' }} />
         </View>
       )}
       {trades.res && !trades.res.ok && <ErrorBox message={trades.res.error} onRetry={trades.load} />}
@@ -148,7 +171,12 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
         <View style={{ gap: 8 }}>
           <Section title="Also needs you" />
           {rest.map(i => (
-            <WeekCard key={i.id} item={i} onPress={() => run(i.action)} />
+            <WeekCard
+              key={i.id}
+              item={i}
+              onPress={() => (i.action.kind === 'ir' ? openPlayer(i.action.id, i.action.name) : run(i.action))}
+              button={i.action.kind === 'ir' ? <Btn size="sm" label={ctaOf(i)} disabled={!!irBusy} onPress={() => run(i.action)} /> : null}
+            />
           ))}
         </View>
       )}
@@ -163,13 +191,13 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
           ))}
         </View>
       )}
-      {desk && <WaiverBlock desk={desk} />}
+      {desk && <WaiverBlock desk={desk} onChanged={waivers.load} />}
     </View>
   )
 }
 
 /** One thing on This week, on the same tinted card as the rest of the app. */
-function WeekCard({ item, onPress }: { item: InboxItem; onPress: () => void }) {
+function WeekCard({ item, onPress, button }: { item: InboxItem; onPress: () => void; button?: ReactNode }) {
   const t = useTheme()
   const f = item.face
   const color = f?.kind === 'player' ? nflColor(t, f.team) : f?.kind === 'team' ? teamColor(f.rid) : null
@@ -179,6 +207,7 @@ function WeekCard({ item, onPress }: { item: InboxItem; onPress: () => void }) {
       {f?.kind === 'team' && <TeamAvatar rid={f.rid} name={f.name} size={42} />}
       <Stack2 title={item.title} sub={item.detail} size={15} right={item.tag && <Tag label={item.tag.label} tone={item.tag.tone} />} />
       {item.rank != null && <HeatChip label={`#${item.rank}`} colors={rankHeat(t, item.rank, RANK_SPAN)} />}
+      {button}
     </GradCard>
   )
 }
@@ -203,8 +232,8 @@ function MoveFaces({ move, teamName }: { move: WaiverMove; teamName: string }) {
   )
 }
 
-/** The league's waivers at a glance. Read-only: claims are still made in Sleeper. */
-function WaiverBlock({ desk }: { desk: WaiverDesk }) {
+/** The league's waivers at a glance, with your pending claims to change or cancel. */
+function WaiverBlock({ desk, onChanged }: { desk: WaiverDesk; onChanged: () => void }) {
   const t = useTheme()
   const { openPlayer } = useApp()
   const x = useTrade()
@@ -228,11 +257,7 @@ function WaiverBlock({ desk }: { desk: WaiverDesk }) {
             </T>
           )}
           {desk.pending.map(m => (
-            <GradCard key={m.id} color={t.acc} minHeight={58} onPress={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} accessibilityLabel={moveTitle(m)}>
-              {m.adds[0] && <Headshot id={m.adds[0].id} name={m.adds[0].name} size={36} />}
-              <Stack2 title={moveTitle(m)} sub={moveDrop(m)} size={15} />
-              <HeatChip label={bidOf(m)} colors={neutral} height={30} size={14} minWidth={48} />
-            </GradCard>
+            <ClaimCard key={m.id} m={m} desk={desk} onChanged={onChanged} />
           ))}
         </View>
       )}
@@ -595,5 +620,88 @@ function TradeCard({ t: tx, onAnswered }: { t: TradeTx; onAnswered?: () => void 
       ))}
       {tx.status === 'proposed' && onAnswered && <OfferActions t={tx} onAnswered={onAnswered} />}
     </Card>
+  )
+}
+
+/** One of your pending claims, with its bid to change and a cancel that asks first. */
+function ClaimCard({ m, desk, onChanged }: { m: WaiverMove; desk: WaiverDesk; onChanged: () => void }) {
+  const t = useTheme()
+  const { context, openPlayer, setSettings } = useApp()
+  const { showToast } = useOverlay()
+  const [mode, setMode] = useState<'view' | 'bid' | 'cancel' | 'busy'>('view')
+  const [bidText, setBidText] = useState(String(m.bid ?? 0))
+  const [error, setError] = useState<string | null>(null)
+  const leagueId = context?.league.league_id
+  const rosterId = context?.myRosterId ?? null
+  const faab = desk.faab
+  const bid = bidText.trim() === '' ? null : Number(bidText)
+  const bad = faab ? bidProblem(bid, faab) : null
+  const ref = leagueId && rosterId != null ? { leagueId, rosterId, transactionId: m.id } : null
+  const finish = (r: Awaited<ReturnType<typeof monte.cancelWaiverClaim>>, done: string) => {
+    setMode('view')
+    if (r.ok) {
+      showToast(r.value.mismatch ?? done)
+      return onChanged()
+    }
+    setError(r.error)
+    if (r.needsConnect) void setSettings({ sleeperLink: undefined })
+  }
+  const cancel = async () => {
+    if (!ref) return
+    setMode('busy')
+    setError(null)
+    finish(await monte.cancelWaiverClaim(ref), `Claim on ${m.adds[0]?.name ?? 'him'} cancelled`)
+  }
+  const saveBid = async () => {
+    if (!ref || bid == null) return
+    setMode('busy')
+    setError(null)
+    finish(await monte.updateWaiverBid(ref, bid), `Bid changed to $${bid}`)
+  }
+  return (
+    <View style={{ gap: 6 }}>
+      <GradCard color={t.acc} minHeight={58} onPress={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} accessibilityLabel={moveTitle(m)}>
+        {m.adds[0] && <Headshot id={m.adds[0].id} name={m.adds[0].name} size={36} />}
+        <Stack2 title={moveTitle(m)} sub={moveDrop(m)} size={15} />
+        {mode === 'busy' ? (
+          <T v="small" c="mute">
+            Sending…
+          </T>
+        ) : (
+          mode === 'view' && (
+            <Row gap={6}>
+              {faab && <Btn size="sm" label={`$${m.bid ?? 0}`} onPress={() => setMode('bid')} />}
+              <Btn size="sm" label="Cancel" onPress={() => setMode('cancel')} />
+            </Row>
+          )
+        )}
+      </GradCard>
+      {mode === 'bid' && (
+        <View style={{ gap: 6 }}>
+          <Row gap={8}>
+            <Field value={bidText} onChangeText={setBidText} keyboardType="number-pad" accessibilityLabel="New bid in dollars" autoFocus boxStyle={{ flex: 1 }} />
+            <Btn kind="primary" label="Save" disabled={!!bad} onPress={() => void saveBid()} />
+            <Btn label="Back" onPress={() => setMode('view')} />
+          </Row>
+          {!!bad && bidText.trim() !== '' && (
+            <T v="small" color={t.neg}>
+              {bad}
+            </T>
+          )}
+        </View>
+      )}
+      {mode === 'cancel' && (
+        <View style={{ gap: 6 }}>
+          <T v="small" c="ink2">
+            Cancel this claim in Sleeper? You can claim him again afterwards.
+          </T>
+          <Row gap={8}>
+            <Btn kind="primary" label="Cancel claim" onPress={() => void cancel()} />
+            <Btn label="Keep it" onPress={() => setMode('view')} />
+          </Row>
+        </View>
+      )}
+      {error && <ErrorBox message={error} />}
+    </View>
   )
 }

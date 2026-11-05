@@ -554,8 +554,14 @@ export type MonteApi = {
   /** completed trades, and your open offers when Sleeper is connected */
   leagueTrades(leagueId: string): Promise<Result<LeagueTrades>>
   proposeTrade(p: TradeProposal): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>
-  /** Place a waiver claim that drops nobody. `needsConnect` means connect (again) and retry. */
-  sendWaiverClaim(c: import('./sleeperWaivers').WaiverClaim): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>
+  /** Add a player: at once if he's a free agent, else as a waiver claim. `needsConnect` means connect (again) and retry. */
+  sendWaiverClaim(c: import('./sleeperWaivers').WaiverClaim): Promise<Result<import('./sleeperWaivers').AddResult> & { needsConnect?: boolean }>
+  /** Cancel one of your pending claims. */
+  cancelWaiverClaim(ref: import('./sleeperWaivers').ClaimRef): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
+  /** Change the bid on one of your pending claims. */
+  updateWaiverBid(ref: import('./sleeperWaivers').ClaimRef, bid: number): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
+  /** Move a player on or off IR. */
+  moveIr(m: import('./sleeperWaivers').IrMove): Promise<Result<{ mismatch: string | null }> & { needsConnect?: boolean }>
   /** Accept or reject an offer made to you. `needsConnect` means connect (again) and retry. */
   answerOffer(a: import('./sleeperOffers').OfferAnswer): Promise<Result<{ status: string; mismatch: string | null }> & { needsConnect?: boolean }>
   /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */

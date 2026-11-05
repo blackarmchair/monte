@@ -11,7 +11,7 @@ import { buildOverview } from './overview'
 import { ownedPicks, pickOwners } from './picks'
 import { buildRanks, boardIndex } from './ranks'
 import { simCacheKey, simResultFresh } from './simCache'
-import { claimProblem, liveRosters, submitClaim, type WaiverClaim } from './sleeperWaivers'
+import { addFreeAgent, bidProblem, cancelClaim, claimProblem, irProblem, isOnWaivers, liveRosters, moveIr, submitClaim, updateClaimBid, type AddResult, type ClaimRef, type IrMove, type WaiverClaim } from './sleeperWaivers'
 import { buildWaiverDesk, fetchPendingClaims, type WaiverDesk } from './waivers'
 import { forecastGames, scoreForecasts, type ScoredGame, type TrackRecord } from './trackRecord'
 import { buildStartSit, type SeasonStats } from './startSit'
@@ -306,6 +306,13 @@ export function createMonteService(host: Host) {
   async function currentOverrides(settings: Settings) {
     const state = await sleeper<any>('/state/nfl')
     return overridesFor(settings.injuries, String(state.league_season || state.season))
+  }
+
+  /** The weeks a pending claim can sit in: this one, and last if waivers haven't run since. */
+  async function claimLegs() {
+    const state = await sleeper<any>('/state/nfl')
+    const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
+    return week > 1 ? [week - 1, week] : [week]
   }
 
   async function league4(leagueId: string, traded = true) {
@@ -603,7 +610,10 @@ export function createMonteService(host: Host) {
         playersMeta(),
         Promise.all(Array.from({ length: week }, (_, i) => sleeper<any[]>(`/league/${leagueId}/transactions/${i + 1}`).catch(() => [] as any[]))),
       ])
-      const roster = rosters.find(r => r.owner_id === userId || (r.co_owners ?? []).includes(userId)) ?? null
+      const mineIn = (rs: any[]) => rs.find(r => r.owner_id === userId || (r.co_owners ?? []).includes(userId)) ?? null
+      let roster = mineIn(rosters)
+      // The public rosters can be 5 minutes old, which shows a move Monte just made as not done yet.
+      if (token && roster) roster = mineIn(await liveRosters(leagueId, token).catch(() => [])) ?? roster
       let pending: any[] | null = null
       let pendingNote: string | null = null
       if (!token) pendingNote = 'Connect Sleeper in Settings to see your pending claims.'
@@ -622,14 +632,45 @@ export function createMonteService(host: Host) {
      * Place a waiver claim, after checking it against the league as it stands right now: what's on
      * screen can be hours old. Any problem throws, and nothing is sent.
      */
-    async sendWaiverClaim(c: WaiverClaim, token: string) {
-      const state = await sleeper<any>('/state/nfl')
-      const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
-      const legs = week > 1 ? [week - 1, week] : [week]
+    async sendWaiverClaim(c: WaiverClaim, token: string): Promise<AddResult> {
+      const legs = await claimLegs()
       const [league, rosters, open, meta] = await Promise.all([sleeper<any>(`/league/${c.leagueId}`), liveRosters(c.leagueId, token), fetchPendingClaims(c.leagueId, legs, c.rosterId, token), playersMeta()])
       const problem = claimProblem(c, league, rosters, open, meta)
       if (problem) throw new Error(problem)
-      return submitClaim(c, legs, token)
+      // A free agent is added at once. Sleeper refuses that for a player still on waivers, changing
+      // nothing, and only then does it become a claim: the same choice Sleeper's own Add button makes.
+      try {
+        return { kind: 'added', ...(await addFreeAgent(c, token)) }
+      } catch (e) {
+        if (!isOnWaivers(e)) throw e
+      }
+      return { kind: 'claimed', ...(await submitClaim(c, legs, token)) }
+    },
+
+    /** Cancel one of your pending claims, read fresh so a claim that already ran isn't touched. */
+    async cancelWaiverClaim(ref: ClaimRef, token: string) {
+      const legs = await claimLegs()
+      return cancelClaim(ref, await fetchPendingClaims(ref.leagueId, legs, ref.rosterId, token), legs, token)
+    },
+
+    /** Change the bid on one of your pending claims, checked against your budget as it is now. */
+    async updateWaiverBid(ref: ClaimRef, bid: number, token: string) {
+      const legs = await claimLegs()
+      const [league, rosters, open] = await Promise.all([sleeper<any>(`/league/${ref.leagueId}`), liveRosters(ref.leagueId, token), fetchPendingClaims(ref.leagueId, legs, ref.rosterId, token)])
+      const s = league.settings ?? {}
+      const used = Number(rosters.find(r => r.roster_id === ref.rosterId)?.settings?.waiver_budget_used ?? 0)
+      const bad = bidProblem(bid, Number(s.waiver_type) === 2 ? { left: Math.max(0, Number(s.waiver_budget ?? 0) - used), minBid: Number(s.waiver_bid_min ?? 0) } : null)
+      if (bad) throw new Error(bad)
+      return updateClaimBid(ref, bid, open, legs, token)
+    },
+
+    /** Move a player on or off IR, after checking the league's rules against the roster as it is now. */
+    async moveIr(m: IrMove, token: string) {
+      const [league, rosters, meta] = await Promise.all([sleeper<any>(`/league/${m.leagueId}`), liveRosters(m.leagueId, token), playersMeta()])
+      const mine = rosters.find(r => r.roster_id === m.rosterId)
+      const problem = irProblem(m, league, mine, meta)
+      if (problem) throw new Error(problem)
+      return moveIr(m, mine.reserve ?? [], token)
     },
 
     /**

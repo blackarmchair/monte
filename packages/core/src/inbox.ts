@@ -4,8 +4,9 @@ import type { TradeTx } from './leagueWeek'
 import { tagOf } from './startSitLogic'
 import type { Asset } from './tradeMath'
 import type { StartSitData } from './types'
+import type { IrPicture, IrPlayer } from './waivers'
 
-export type InboxAction = { kind: 'trades' } | { kind: 'lineup' } | { kind: 'player'; id: string; name: string } | { kind: 'settings' }
+export type InboxAction = { kind: 'trades' } | { kind: 'lineup' } | { kind: 'player'; id: string; name: string } | { kind: 'settings' } | { kind: 'ir'; id: string; name: string; to: 'ir' | 'bench' }
 
 export type InboxItem = {
   id: string
@@ -151,3 +152,36 @@ export function connectionItems(link: { expiresAt: number | null } | undefined, 
 
 /** Things to act on first; otherwise each source keeps its own order. */
 export const orderInbox = (items: InboxItem[]) => [...items.filter(i => i.tone === 'act'), ...items.filter(i => i.tone === 'note')]
+
+/**
+ * IR fixes: a player who no longer qualifies blocks every add and claim, so he comes first; then
+ * injured players using active spots while IR has room. Each fix is one IR move.
+ */
+export function irItems(ir: IrPicture | null): InboxItem[] {
+  if (!ir) return []
+  const face = (p: IrPlayer) => ({ kind: 'player' as const, id: p.id, name: p.name, team: p.team })
+  const blocked = ir.blockers.map(p => ({
+    id: `ir-off:${p.id}`,
+    tone: 'act' as const,
+    title: p.name,
+    detail: 'On IR but no longer eligible. Sleeper blocks your adds and claims until he moves off it',
+    action: { kind: 'ir' as const, id: p.id, name: p.name, to: 'bench' as const },
+    face: face(p),
+    tag: { label: p.tag ?? 'Healthy', tone: 'mid' as const },
+    lead: `${p.name} is on your IR but no longer qualifies, so Sleeper is blocking your adds and claims.`,
+    cta: 'Move off IR',
+  }))
+  const open = Math.max(0, ir.slots - ir.used)
+  const room = ir.eligible.slice(0, open).map(p => ({
+    id: `ir-on:${p.id}`,
+    tone: 'act' as const,
+    title: p.name,
+    detail: `Your IR has room. Moving him there frees a roster spot`,
+    action: { kind: 'ir' as const, id: p.id, name: p.name, to: 'ir' as const },
+    face: face(p),
+    tag: p.tag ? { label: p.tag, tone: 'bad' as const } : undefined,
+    lead: `${p.name} is tagged ${p.tag} and your IR has room. Moving him there frees a roster spot.`,
+    cta: 'Move to IR',
+  }))
+  return [...blocked, ...room]
+}

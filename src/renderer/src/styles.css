@@ -207,7 +207,8 @@ input[type='range'] {
   background: var(--surf);
 }
 .search-pill input,
-.field input {
+.field input,
+.field select {
   flex: 1;
   min-width: 0;
   border: 0;
@@ -352,6 +353,15 @@ input[type='range'] {
 }
 .field.on-surf {
   background: var(--surf2);
+}
+.field select {
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 44px;
+}
+.field select option {
+  background: var(--surf);
+  color: var(--ink);
 }
 
 /* ---- cards ------------------------------------------------------------------------------- */

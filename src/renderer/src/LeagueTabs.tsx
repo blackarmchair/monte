@@ -2,9 +2,10 @@
 // Monte's win chance and (click) the starters side by side. Trades: your open offers when Sleeper is
 // connected, then the league's completed trades this season, newest first.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { connectionItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@shared/inbox'
+import { connectionItems, irItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@shared/inbox'
 import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@shared/leagueWeek'
 import { offerRole } from '@shared/offers'
+import { bidProblem } from '@shared/sleeperWaivers'
 import { moveDrop, moveTitle, type WaiverDesk, type WaiverMove } from '@shared/waivers'
 import { basisLabel, compareBases, matchupBasis } from '@shared/projBasis'
 import type { Result, StartSitData } from '@shared/types'
@@ -65,8 +66,9 @@ const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'n
 
 /** What needs you this week in this league: the top thing first, then the rest, then waivers. */
 export function ThisWeek({ onTrades }: { onTrades: () => void }) {
-  const { context, sheet, settings, go, openPlayer, openSettings } = useApp()
+  const { context, sheet, settings, settingsSaved, showToast, go, openPlayer, openSettings } = useApp()
   const { rank } = useHeat()
+  const [irBusy, setIrBusy] = useState<string | null>(null)
   const x = useTrade()
   const me = context?.myRosterId ?? null
   const trades = useLoad(id => window.monte.leagueTrades(id))
@@ -77,7 +79,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const received = (lt?.pending ?? []).filter(t => offerRole(t, me) === 'received')
   const offers = offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'Another team', verdict: x.readOffer(tx).label })))
   const fixes = lineup.res?.ok ? lineupItems(lineup.res.value) : []
-  const items = orderInbox([...offers, ...fixes, ...connectionItems(settings.sleeperLink, lt?.pendingNote ?? null)])
+  const items = orderInbox([...irItems(desk?.ir ?? null).filter(i => i.id.startsWith('ir-off')), ...offers, ...fixes, ...irItems(desk?.ir ?? null).filter(i => !i.id.startsWith('ir-off')), ...connectionItems(settings.sleeperLink, lt?.pendingNote ?? null)])
   const acts = items.filter(i => i.tone === 'act')
   const notes = items.filter(i => i.tone === 'note')
   const worth = x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks, desk?.likelyOnWaivers) : []
@@ -90,8 +92,25 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
     if (a.kind === 'trades') onTrades()
     else if (a.kind === 'lineup') go('lineup')
     else if (a.kind === 'player') openPlayer(a.id, a.name)
+    else if (a.kind === 'ir') void moveIr(a)
     else openSettings()
   }
+  const moveIr = async (a: Extract<InboxAction, { kind: 'ir' }>) => {
+    const leagueId = context?.league.league_id
+    if (!leagueId || me == null || irBusy) return
+    setIrBusy(a.id)
+    const r = await window.monte.moveIr({ leagueId, rosterId: me, playerId: a.id, to: a.to })
+    setIrBusy(null)
+    if (!r.ok) {
+      showToast(r.error)
+      if (r.needsConnect) settingsSaved(await window.monte.getSettings())
+      return
+    }
+    showToast(r.value.mismatch ?? `${a.name} ${a.to === 'ir' ? 'moved to IR' : 'moved off IR'}`)
+    waivers.load()
+    lineup.load()
+  }
+  const ctaOf = (i: InboxItem) => (i.action.kind === 'ir' && irBusy === i.action.id ? 'Moving…' : i.cta ?? 'Open')
   const refreshAll = () => {
     trades.load()
     lineup.load()
@@ -116,7 +135,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
           <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, textWrap: 'pretty' }}>{top ? top.lead ?? top.title : loading ? 'Looking for your best next move…' : 'Nothing to do right now.'}</span>
           {top && (
             <div>
-              <Btn kind="primary" label={top.cta ?? 'Open'} onClick={() => run(top.action)} style={{ minHeight: 42 }} />
+              <Btn kind="primary" label={ctaOf(top)} disabled={!!irBusy} onClick={() => run(top.action)} style={{ minHeight: 42 }} />
             </div>
           )}
         </div>
@@ -137,7 +156,19 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
             <section className="stack" style={{ gap: 8 }}>
               <span className="title-l">Also needs you</span>
               {rest.map(i => (
-                <WeekCard key={i.id} item={i} onClick={() => run(i.action)} chip={null} />
+                <WeekCard
+                  key={i.id}
+                  item={i}
+                  onClick={() => (i.action.kind === 'ir' ? openPlayer(i.action.id, i.action.name) : run(i.action))}
+                  div={i.action.kind === 'ir'}
+                  chip={
+                    i.action.kind === 'ir' ? (
+                      <span onClick={e => e.stopPropagation()}>
+                        <Btn size="sm" label={ctaOf(i)} disabled={!!irBusy} onClick={() => run(i.action)} />
+                      </span>
+                    ) : null
+                  }
+                />
               ))}
             </section>
           )}
@@ -153,18 +184,18 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
             </section>
           )}
         </div>
-        {desk && <WaiverBlock desk={desk} />}
+        {desk && <WaiverBlock desk={desk} onChanged={waivers.load} />}
       </div>
     </div>
   )
 }
 
 /** One thing on This week, on the same tinted card as the rest of the app. */
-function WeekCard({ item, onClick, chip }: { item: InboxItem; onClick: () => void; chip: ReactNode }) {
+function WeekCard({ item, onClick, chip, div }: { item: InboxItem; onClick: () => void; chip: ReactNode; div?: boolean }) {
   const f = item.face
   const color = f?.kind === 'player' ? nflColor(f.team) : f?.kind === 'team' ? teamColor(f.rid) : null
   return (
-    <GradCard color={color} minHeight={68} onClick={onClick} style={{ gap: 14 }}>
+    <GradCard div={div} color={color} minHeight={68} onClick={onClick} style={{ gap: 14 }}>
       {f?.kind === 'player' && <Headshot id={f.id} name={f.name} />}
       {f?.kind === 'team' && <TeamAvatar rid={f.rid} name={f.name} />}
       <Stack2 title={item.title} sub={item.detail} size={16} right={item.tag && <Tag label={item.tag.label} tone={item.tag.tone} />} />
@@ -191,8 +222,8 @@ function MoveFaces({ move, teamName }: { move: WaiverMove; teamName: string }) {
   )
 }
 
-/** The league's waivers at a glance. Read-only: claims are still made in Sleeper. */
-function WaiverBlock({ desk }: { desk: WaiverDesk }) {
+/** The league's waivers at a glance, with your pending claims to change or cancel. */
+function WaiverBlock({ desk, onChanged }: { desk: WaiverDesk; onChanged: () => void }) {
   const { openPlayer } = useApp()
   const x = useTrade()
   const bidOf = (m: WaiverMove) => (m.kind === 'free_agent' ? 'FA' : desk.faab ? `$${m.bid}` : 'Claim')
@@ -210,11 +241,7 @@ function WaiverBlock({ desk }: { desk: WaiverDesk }) {
           <span className="label">Your claims</span>
           {desk.pending.length === 0 && <span className="sub">You have no pending claims.</span>}
           {desk.pending.map(m => (
-            <GradCard key={m.id} color="var(--acc)" minHeight={60} onClick={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} style={{ gap: 12 }}>
-              {m.adds[0] && <Headshot id={m.adds[0].id} name={m.adds[0].name} size={38} />}
-              <Stack2 title={moveTitle(m)} sub={moveDrop(m)} size={15} />
-              <HeatChip label={bidOf(m)} colors={NEUTRAL_CHIP} height={30} size={14} minWidth={48} />
-            </GradCard>
+            <ClaimCard key={m.id} m={m} desk={desk} onChanged={onChanged} />
           ))}
         </div>
       )}
@@ -551,6 +578,77 @@ function TradeCard({ t, onAnswered }: { t: TradeTx; onAnswered?: () => void }) {
         ))}
       </div>
       {t.status === 'proposed' && onAnswered && <OfferActions t={t} onAnswered={onAnswered} />}
+    </div>
+  )
+}
+
+/** One of your pending claims, with its bid to change and a cancel that asks first. */
+function ClaimCard({ m, desk, onChanged }: { m: WaiverMove; desk: WaiverDesk; onChanged: () => void }) {
+  const { context, openPlayer, showToast, settingsSaved } = useApp()
+  const [mode, setMode] = useState<'view' | 'bid' | 'cancel' | 'busy'>('view')
+  const [bidText, setBidText] = useState(String(m.bid ?? 0))
+  const [error, setError] = useState<string | null>(null)
+  const leagueId = context?.league.league_id
+  const rosterId = context?.myRosterId ?? null
+  const faab = desk.faab
+  const bid = bidText.trim() === '' ? null : Number(bidText)
+  const bad = faab ? bidProblem(bid, faab) : null
+  const ref = leagueId && rosterId != null ? { leagueId, rosterId, transactionId: m.id } : null
+  const finish = async (r: Awaited<ReturnType<typeof window.monte.cancelWaiverClaim>>, done: string) => {
+    if (r.ok) {
+      showToast(r.value.mismatch ?? done)
+      setMode('view')
+      return onChanged()
+    }
+    setError(r.error)
+    if (r.needsConnect) settingsSaved(await window.monte.getSettings())
+    setMode('view')
+  }
+  const cancel = async () => {
+    if (!ref) return
+    setMode('busy')
+    setError(null)
+    await finish(await window.monte.cancelWaiverClaim(ref), `Claim on ${m.adds[0]?.name ?? 'him'} cancelled`)
+  }
+  const saveBid = async () => {
+    if (!ref || bid == null) return
+    setMode('busy')
+    setError(null)
+    await finish(await window.monte.updateWaiverBid(ref, bid), `Bid changed to $${bid}`)
+  }
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <GradCard div color="var(--acc)" minHeight={60} onClick={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} style={{ gap: 12 }}>
+        {m.adds[0] && <Headshot id={m.adds[0].id} name={m.adds[0].name} size={38} />}
+        <Stack2 title={moveTitle(m)} sub={moveDrop(m)} size={15} />
+        <span className="row" style={{ gap: 6, flex: 'none' }} onClick={stop}>
+          {mode === 'bid' ? (
+            <>
+              <label className="field on-surf" style={{ width: 80, minHeight: 34 }}>
+                <input inputMode="numeric" aria-label="New bid in dollars" value={bidText} autoFocus onChange={e => setBidText(e.target.value)} onKeyDown={e => e.key === 'Enter' && !bad && void saveBid()} />
+              </label>
+              <Btn size="sm" kind="primary" label="Save" disabled={!!bad} onClick={() => void saveBid()} />
+              <Btn size="sm" label="Back" onClick={() => setMode('view')} />
+            </>
+          ) : mode === 'cancel' ? (
+            <>
+              <Btn size="sm" kind="primary" label="Cancel claim" onClick={() => void cancel()} />
+              <Btn size="sm" label="Keep it" onClick={() => setMode('view')} />
+            </>
+          ) : mode === 'busy' ? (
+            <span className="small mute">Sending…</span>
+          ) : (
+            <>
+              {faab && <Btn size="sm" label={`$${m.bid ?? 0}`} title="Change the bid" onClick={() => setMode('bid')} />}
+              <Btn size="sm" label="Cancel" onClick={() => setMode('cancel')} />
+            </>
+          )}
+        </span>
+      </GradCard>
+      {mode === 'bid' && bad && bidText.trim() !== '' && <span className="small" style={{ color: 'var(--neg)' }}>{bad}</span>}
+      {mode === 'cancel' && <span className="small mute">Cancel this claim in Sleeper? It can't be undone, but you can claim him again.</span>}
+      {error && <ErrorBox message={error} />}
     </div>
   )
 }

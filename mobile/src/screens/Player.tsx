@@ -351,7 +351,7 @@ function TradeTab({ id, name, owner }: { id: string; name: string; owner: number
   const v = deal && verdictText(deal.verdict)
   const line =
     owner == null
-      ? `${name} is a free agent.`
+      ? `${name} is not on a team here.`
       : yours
       ? `${first} is yours. ${a && marketTag(a).label === 'Sell high' ? 'Now is a good time to shop him.' : 'Hold unless the return is clear.'}`
       : `${name} is on ${x.teamName(owner)}.`

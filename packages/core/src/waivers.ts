@@ -32,7 +32,59 @@ export type WaiverDesk = {
   recent: WaiverMove[]
   /** players dropped recently enough that they're likely still on waivers */
   likelyOnWaivers: string[]
+  /** your IR against the league's rules; null when the league has no IR or you have no team */
+  ir: IrPicture | null
+  /** your active roster, for picking a drop */
+  roster: { slots: number; active: number; players: IrPlayer[] } | null
 }
+
+export type IrPlayer = { id: string; name: string; pos: string; team: string; tag: string | null }
+
+export type IrPicture = {
+  slots: number
+  used: number
+  /** on IR but no longer eligible: Sleeper blocks adds and claims until they're moved off */
+  blockers: IrPlayer[]
+  /** on the active roster and eligible for IR */
+  eligible: IrPlayer[]
+}
+
+/** The injury tags this league lets onto IR. */
+export function irAllowed(league: any): Set<string> {
+  const s = league.settings ?? {}
+  const allowed = new Set(['IR'])
+  for (const [setting, tag] of [['reserve_allow_out', 'Out'], ['reserve_allow_doubtful', 'Doubtful'], ['reserve_allow_sus', 'Sus'], ['reserve_allow_na', 'NA'], ['reserve_allow_dnr', 'DNR'], ['reserve_allow_cov', 'COV']])
+    if (Number(s[setting])) allowed.add(tag)
+  return allowed
+}
+
+/** Players on IR who no longer qualify under this league's rules, by id. Sleeper blocks adds and claims until they're off it. */
+export function irBlockerIds(roster: any, league: any, meta: Record<string, any>): string[] {
+  const allowed = irAllowed(league)
+  // A player missing from the table can't be judged, so he's left for Sleeper to decide.
+  return ((roster.reserve ?? []) as string[]).filter(id => meta[id] && !allowed.has(meta[id].injury_status ?? ''))
+}
+
+/** How many players this league's IR holds. */
+export const irSlots = (league: any) => Number(league.settings?.reserve_slots ?? 0)
+
+const OFF_ROSTER = new Set(['IR', 'TAXI'])
+
+function irPicture(league: any, roster: any, meta: Record<string, any>): IrPicture | null {
+  const slots = irSlots(league)
+  const reserve: string[] = roster.reserve ?? []
+  if (!slots && !reserve.length) return null
+  const allowed = irAllowed(league)
+  const away = new Set([...reserve, ...((roster.taxi ?? []) as string[])])
+  return {
+    slots,
+    used: reserve.length,
+    blockers: irBlockerIds(roster, league, meta).map(id => playerOf(id, meta)),
+    eligible: ((roster.players ?? []) as string[]).filter(id => !away.has(id) && allowed.has(meta[id]?.injury_status ?? '')).map(id => playerOf(id, meta)),
+  }
+}
+
+const playerOf = (id: string, meta: Record<string, any>): IrPlayer => ({ id, name: nameOf(id, meta[id]), pos: meta[id]?.position ?? '', team: meta[id]?.team ?? 'FA', tag: meta[id]?.injury_status ?? null })
 
 const FAAB_TYPE = 2
 const DAY_MS = 86400000
@@ -55,6 +107,12 @@ function toMove(t: any, meta: Record<string, any>): WaiverMove {
     bid: t.type === 'waiver' ? Number(bid ?? 0) : null,
     at: Number(t.status_updated ?? t.created ?? 0),
   }
+}
+
+function activeRoster(league: any, roster: any, meta: Record<string, any>) {
+  const away = new Set([...((roster.reserve ?? []) as string[]), ...((roster.taxi ?? []) as string[])])
+  const players = ((roster.players ?? []) as string[]).filter(id => !away.has(id)).map(id => playerOf(id, meta))
+  return { slots: ((league.roster_positions ?? []) as string[]).filter(p => !OFF_ROSTER.has(p)).length, active: players.length, players }
 }
 
 export function buildWaiverDesk(o: {
@@ -113,6 +171,8 @@ export function buildWaiverDesk(o: {
       .sort((a, b) => b.at - a.at)
       .slice(0, RECENT_LIMIT),
     likelyOnWaivers: [...dropped].filter(([, at]) => now - at < clearMs).map(([id]) => id),
+    ir: o.roster ? irPicture(o.league, o.roster, o.meta) : null,
+    roster: o.roster ? activeRoster(o.league, o.roster, o.meta) : null,
   }
 }
 

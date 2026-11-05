@@ -237,10 +237,10 @@ export default function Players() {
             open={swiped === l.key}
             onOpen={() => setSwiped(l.key)}
             onClose={() => swiped === l.key && setSwiped(null)}
-            action={l.owner == null ? 'Claim' : l.owner === me ? 'Offer' : 'Trade for'}
+            action={l.owner == null ? 'Add' : l.owner === me ? 'Offer' : 'Trade for'}
             onAction={() => act(l)}
             onPress={() => (swiped ? setSwiped(null) : openPlayer(l.id, l.name))}
-            onLongPress={() => (l.owner == null ? showToast(`${l.name} is a free agent: claim him in Sleeper.`) : act(l))}
+            onLongPress={() => act(l)}
           >
             <Headshot id={l.id} name={l.name} />
             <Stack2

@@ -3,7 +3,7 @@
 // a sample-strength mark and a label framed by who holds him) as one list, a card a row so it
 // reads top to bottom, under one sticky header row (click a Usage column to sort by it; its (?)
 // opens what each column means, and clicking a verdict opens why that player got it). The top bar's search filters it live. Click a card for his page; its button adds him to the trade (or
-// claims a free agent in Sleeper).
+// opens his page to add him).
 import { sheetName } from '@shared/names'
 import { useEffect, useMemo, useState } from 'react'
 import { tepBoardFor, type RanksData, type Result } from '@shared/types'
@@ -363,7 +363,7 @@ export default function Players() {
                 act(l)
               }}
             >
-              {l.owner == null ? 'Claim' : l.owner === me ? 'Offer' : 'Trade for'}
+              {l.owner == null ? 'Add' : l.owner === me ? 'Offer' : 'Trade for'}
             </button>
           </GradCard>
         ))}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { connectionItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems } from '../src/inbox.ts'
+import { connectionItems, irItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems } from '../src/inbox.ts'
 import { matchupPollMs, type LeagueWeek, type TradeTx } from '../src/leagueWeek.ts'
 import type { Asset } from '../src/tradeMath.ts'
 import type { SSPlayer, SSSlot, StartSitData } from '../src/types.ts'
@@ -118,4 +118,25 @@ describe('matchupPollMs', () => {
   it('polls slowly until kickoff', () => assert.equal(matchupPollMs(week('done', 'pre')), 300000))
   it('stops when the week is over', () => assert.equal(matchupPollMs(week('done', 'bye', 'empty')), null))
   it('has nothing to poll without data', () => assert.equal(matchupPollMs(null), null))
+})
+
+describe('irItems', () => {
+  const p = (id: string, tag: string | null) => ({ id, name: id.toUpperCase(), pos: 'RB', team: 'KC', tag })
+  it('puts a blocker first, with a button to move him off', () => {
+    const items = irItems({ slots: 1, used: 1, blockers: [p('well', null)], eligible: [p('hurt', 'IR')] })
+    assert.deepEqual(
+      items.map(i => [i.id, i.cta]),
+      [['ir-off:well', 'Move off IR']],
+    )
+    assert.deepEqual(items[0].action, { kind: 'ir', id: 'well', name: 'WELL', to: 'bench' })
+    assert.match(items[0].lead ?? '', /blocking your adds and claims/)
+  })
+  it('suggests IR only while there is room', () => {
+    assert.deepEqual(
+      irItems({ slots: 2, used: 1, blockers: [], eligible: [p('a', 'IR'), p('b', 'IR')] }).map(i => i.id),
+      ['ir-on:a'],
+    )
+    assert.deepEqual(irItems({ slots: 1, used: 1, blockers: [], eligible: [p('a', 'IR')] }), [])
+  })
+  it('is empty without IR', () => assert.deepEqual(irItems(null), []))
 })

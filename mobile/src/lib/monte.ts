@@ -13,7 +13,7 @@ import { fileName } from '@monte/core/paths'
 import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
 import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
 import { answerOffer, type OfferAnswer } from '@monte/core/sleeperOffers'
-import type { WaiverClaim } from '@monte/core/sleeperWaivers'
+import type { ClaimRef, IrMove, WaiverClaim } from '@monte/core/sleeperWaivers'
 import * as storage from './storage'
 
 /** A phone runs the sim on the UI's JS thread, so it defaults to fewer sims than desktop. */
@@ -208,8 +208,11 @@ export const monte = {
   /** Accept or reject an offer made to you. `needsConnect` means connect (again) and retry. */
   answerOffer: (a: OfferAnswer) => withSleeper(token => answerOffer(a, token)),
 
-  /** Place a waiver claim that drops nobody. `needsConnect` means connect (again) and retry. */
+  /** Add a player: at once if he's a free agent, else as a waiver claim. `needsConnect` means connect (again) and retry. */
   sendWaiverClaim: (c: WaiverClaim) => withSleeper(token => service.sendWaiverClaim(c, token)),
+  cancelWaiverClaim: (r: ClaimRef) => withSleeper(token => service.cancelWaiverClaim(r, token)),
+  updateWaiverBid: (r: ClaimRef, bid: number) => withSleeper(token => service.updateWaiverBid(r, bid, token)),
+  moveIr: (m: IrMove) => withSleeper(token => service.moveIr(m, token)),
 
   /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */
   setLineup: (w: LineupWrite) => withSleeper(token => setStarters(w, token)),

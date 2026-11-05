@@ -124,3 +124,18 @@ describe('likely on waivers', () => {
     assert.doesNotMatch(y.detail, /likely on waivers/)
   })
 })
+
+describe('IR and roster on the desk', () => {
+  const irMeta = { ...meta, hurt: { first_name: 'Hurt', last_name: 'Guy', position: 'RB', team: 'KC', injury_status: 'IR' }, well: { first_name: 'Well', last_name: 'Guy', position: 'WR', team: 'NE' }, sit: { first_name: 'Sit', last_name: 'Guy', position: 'TE', team: 'SF', injury_status: 'IR' } }
+  const lg = { ...league({ reserve_slots: 2 }), roster_positions: ['QB', 'RB', 'BN', 'IR', 'IR', 'TAXI'] }
+  const roster = { settings: {}, players: ['hurt', 'well', 'sit', 'tx'], reserve: ['well'], taxi: ['tx'] }
+  const d = desk({ league: lg, roster, meta: irMeta })
+  it('finds a healthy player blocking IR', () => assert.deepEqual(d.ir?.blockers.map(p => p.name), ['Well Guy']))
+  it('finds injured players on the active roster', () => assert.deepEqual(d.ir?.eligible.map(p => p.id), ['hurt', 'sit']))
+  it('counts IR slots', () => assert.deepEqual([d.ir?.slots, d.ir?.used], [2, 1]))
+  it('lists the active roster for a drop, leaving out IR and taxi', () => {
+    assert.deepEqual(d.roster?.players.map(p => p.id), ['hurt', 'sit'])
+    assert.deepEqual([d.roster?.active, d.roster?.slots], [2, 3])
+  })
+  it('has no IR picture in a league without IR', () => assert.equal(desk({ roster: { ...roster, reserve: [] } }).ir, null))
+})
