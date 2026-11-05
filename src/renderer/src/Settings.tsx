@@ -1,7 +1,7 @@
 // Settings (sidebar): the rankings file, theme, Hide names, simulations, trade values, injury
 // overrides (set on a player's Injury tab, listed and cleared here), the Sleeper account, and the
 // app version with its update check.
-import { injurySeason, isCurrentInjury, isExpiredInjury } from '@shared/injuries'
+import { injuryLabel, injurySeason, isAvailableOverride, isCurrentInjury, isExpiredInjury } from '@shared/injuries'
 import TrackRecord from './TrackRecord'
 import { useState } from 'react'
 import type { Theme } from '@shared/types'
@@ -155,8 +155,8 @@ export default function Settings() {
                 <span className="trunc" style={{ fontWeight: 600 }}>
                   {i.name} <span className="small mute">{i.pos} · {i.team}</span>
                 </span>
-                <span className="small" style={{ color: expired.includes(i) ? 'var(--mute)' : 'var(--warn)' }}>
-                  {i.returnWeek == null ? 'Out for the season' : `Out until week ${i.returnWeek}`}
+                <span className="small" style={{ color: expired.includes(i) ? 'var(--mute)' : isAvailableOverride(i) ? 'var(--pos)' : 'var(--warn)' }}>
+                  {injuryLabel(i)}
                   {!isCurrentInjury(i, season) && ` (${injurySeason(i)})`}
                 </span>
               </button>

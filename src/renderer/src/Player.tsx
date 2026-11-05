@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import Claim from './Claim'
 import { gameTable } from '@shared/gameLog'
-import { isCurrentInjury } from '@shared/injuries'
+import { injuryLabel, isAvailableOverride, isCurrentInjury } from '@shared/injuries'
 import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
@@ -299,9 +299,10 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
   const save = (returnWeek: number | null) => {
     const entry: ManualInjury = { id, name, pos, team, returnWeek, season, addedAt: new Date().toISOString() }
     void setSettings({ injuries: [...injuries.filter(i => i.id !== id), entry] })
-    showToast(returnWeek == null ? `${name} out for the season` : `${name} out until week ${returnWeek}`)
+    showToast(returnWeek === 0 ? `${name} marked available` : returnWeek == null ? `${name} out for the season` : `${name} out until week ${returnWeek}`)
   }
-  const status = o ? (o.returnWeek == null ? 'Out for the season (your override)' : `Out until week ${o.returnWeek} (your override)`) : sleeperTag ? `${sleeperTag}, per Sleeper` : 'Healthy'
+  const available = !!o && isAvailableOverride(o)
+  const status = o ? `${injuryLabel(o)} (your override)` : sleeperTag ? `${sleeperTag}, per Sleeper` : 'Healthy'
   // A healthy player gets a link rather than a return-week stepper he doesn't need.
   const [editing, setEditing] = useState(false)
   const showControls = !!o || !!sleeperTag || editing
@@ -309,7 +310,7 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
     <div className="stack" style={{ gap: 12, padding: '20px 22px 22px', borderRadius: 22, background: 'var(--card)' }}>
       <div className="stack" style={{ gap: 2 }}>
         <span className="label">Injury status</span>
-        <span style={{ fontSize: 18, fontWeight: 700, color: o || sleeperTag ? 'var(--warn)' : 'var(--pos)' }}>{status}</span>
+        <span style={{ fontSize: 18, fontWeight: 700, color: (o && !available) || (!o && sleeperTag) ? 'var(--warn)' : 'var(--pos)' }}>{status}</span>
       </div>
       {showControls ? (
         <>
@@ -321,11 +322,13 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
             <Btn kind="primary" label="Save" onClick={() => save(wk)} style={{ flex: 1, minHeight: 42 }} />
             <Btn label="Out for season" onClick={() => save(null)} style={{ flex: 1, minHeight: 42 }} />
           </div>
+          {/* Sleeper (or your own override) says he's out, but you know he plays. */}
+          {!available && (!!o || !!sleeperTag) && <Btn label="Mark available" onClick={() => save(0)} style={{ minHeight: 42 }} />}
         </>
       ) : (
         <Link label="Set an override" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing(true)} />
       )}
-      <span className="small mute">Overrides outrank Sleeper's tag and ESPN's estimate in Pick odds, Usage and Lineup.</span>
+      <span className="small mute">Overrides outrank Sleeper's tag, the sheet's injured list and ESPN's estimate in Pick odds, Usage and Lineup.</span>
       {o && (
         <Link
           label="Clear override"

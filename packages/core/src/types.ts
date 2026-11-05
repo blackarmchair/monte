@@ -7,13 +7,14 @@ import type { LeagueTrades, LeagueWeek } from './leagueWeek'
 
 export type Theme = 'light' | 'dark' | 'system'
 
-/** A player the user has marked out, overriding Sleeper tags and ESPN's return estimate. */
+/** A player the user has marked out (or available), overriding Sleeper tags, the sheet's injured
+ *  table and ESPN's return estimate. */
 export type ManualInjury = {
   id: string
   name: string
   pos: string
   team: string
-  /** first NFL week he plays again; null = out for the season */
+  /** first NFL week he plays again; null = out for the season; 0 = available now */
   returnWeek: number | null
   /** the season this applies to; older entries go by addedAt (see injuries.ts) */
   season?: string

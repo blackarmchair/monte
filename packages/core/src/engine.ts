@@ -7,7 +7,8 @@ import { getBBProjections, type BBSnapshot } from 'sleeper-standings/dist/bbProj
 import { getPWOPRProjections } from 'sleeper-standings/dist/pwoprProjections.js'
 import { getLeague, getRosters, getUsers, getNFLState, getWeekMatchups } from 'sleeper-standings/dist/fetchers.js'
 
-/** Manual injury overrides by Sleeper id: return week, 99 = out for the season. */
+/** Manual injury overrides by Sleeper id: return week, 99 = out for the season, 0 = available
+ *  (any return week at or before the projected week means healthy, Sleeper tag ignored). */
 export type Overrides = Record<string, number>
 
 export type EngineJob =

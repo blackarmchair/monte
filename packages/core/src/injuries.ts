@@ -17,12 +17,19 @@ export function isCurrentInjury(i: ManualInjury, season: string | null | undefin
   return !season || !own || own === season
 }
 
+/** Marked available: plays now, whatever Sleeper's tag, the sheet or ESPN say. Lasts the season. */
+export const isAvailableOverride = (i: ManualInjury): boolean => i.returnWeek === 0
+
 /** From an earlier season, or a return week that has arrived: safe to offer for clearing. */
 export function isExpiredInjury(i: ManualInjury, season: string | null | undefined, week: number): boolean {
-  return !isCurrentInjury(i, season) || (i.returnWeek != null && i.returnWeek <= week)
+  return !isCurrentInjury(i, season) || (i.returnWeek != null && !isAvailableOverride(i) && i.returnWeek <= week)
 }
 
-/** Sleeper id -> return week (99 = season) for this season, the shape the engine's resolver takes. */
+/** "Available", "Out for the season" or "Out until week N". */
+export const injuryLabel = (i: ManualInjury): string =>
+  isAvailableOverride(i) ? 'Available' : i.returnWeek == null ? 'Out for the season' : `Out until week ${i.returnWeek}`
+
+/** Sleeper id -> return week (99 = season, 0 = available) for this season, the shape the engine's resolver takes. */
 export function overridesFor(injuries: ManualInjury[] | undefined, season: string): Record<string, number> {
   const out: Record<string, number> = {}
   for (const i of injuries ?? []) if (isCurrentInjury(i, season)) out[i.id] = i.returnWeek ?? 99

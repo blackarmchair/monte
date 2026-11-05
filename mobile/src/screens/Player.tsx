@@ -8,7 +8,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
 import { gameTable } from '@monte/core/gameLog'
-import { isCurrentInjury } from '@monte/core/injuries'
+import { injuryLabel, isAvailableOverride, isCurrentInjury } from '@monte/core/injuries'
 import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
@@ -405,12 +405,11 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
   const save = (returnWeek: number | null) => {
     const entry: ManualInjury = { id, name, pos, team, returnWeek, season, addedAt: new Date().toISOString() }
     void setSettings({ injuries: [...injuries.filter(i => i.id !== id), entry] })
-    showToast(returnWeek == null ? `${name} out for the season` : `${name} out until week ${returnWeek}`)
+    showToast(returnWeek === 0 ? `${name} marked available` : returnWeek == null ? `${name} out for the season` : `${name} out until week ${returnWeek}`)
   }
+  const available = !!o && isAvailableOverride(o)
   const status = o
-    ? o.returnWeek == null
-      ? 'Out for the season (your override)'
-      : `Out until week ${o.returnWeek} (your override)`
+    ? `${injuryLabel(o)} (your override)`
     : sleeperTag
     ? `${sleeperTag}, per Sleeper`
     : 'Healthy'
@@ -423,12 +422,12 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
         <T v="small" c="mute">
           Status Monte is using
         </T>
-        <T v="bold" size={19} color={o || sleeperTag ? t.warn : t.pos}>
+        <T v="bold" size={19} color={(o && !available) || (!o && sleeperTag) ? t.warn : t.pos}>
           {status}
         </T>
       </Card>
       <T size={14} c="ink2">
-        Overrides outrank Sleeper's tag and ESPN's estimate in Pick odds, Usage and Lineup.
+        Overrides outrank Sleeper's tag, the sheet's injured list and ESPN's estimate in Pick odds, Usage and Lineup.
       </T>
       {showControls ? (
         <>
@@ -442,6 +441,8 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
             <Btn kind="primary" label="Save" onPress={() => save(wk)} style={{ flex: 1, minHeight: 48 }} />
             <Btn label="Out for season" onPress={() => save(null)} style={{ flex: 1, minHeight: 48 }} />
           </Row>
+          {/* Sleeper (or your own override) says he's out, but you know he plays. */}
+          {!available && (!!o || !!sleeperTag) && <Btn label="Mark available" onPress={() => save(0)} style={{ minHeight: 48 }} />}
         </>
       ) : (
         <Btn kind="link" label="Set an override" style={{ alignSelf: 'center' }} onPress={() => setEditing(true)} />

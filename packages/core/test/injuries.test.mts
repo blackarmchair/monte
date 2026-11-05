@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { injurySeason, isCurrentInjury, isExpiredInjury, overridesFor } from '../src/injuries.ts'
+import { injuryLabel, injurySeason, isCurrentInjury, isExpiredInjury, overridesFor } from '../src/injuries.ts'
 import type { ManualInjury } from '../src/types.ts'
 
 const injury = (o: Partial<ManualInjury>): ManualInjury => ({ id: 'p1', name: 'P', pos: 'RB', team: 'DAL', returnWeek: null, addedAt: '2026-10-01T00:00:00Z', ...o })
@@ -39,5 +39,19 @@ describe('isExpiredInjury', () => {
   it('keeps out-for-season all season, then expires it', () => {
     assert.equal(isExpiredInjury(injury({ season: '2026' }), '2026', 18), false)
     assert.equal(isExpiredInjury(injury({ season: '2026' }), '2027', 1), true)
+  })
+})
+
+describe('marked available', () => {
+  const avail = injury({ season: '2026', returnWeek: 0 })
+  it('reaches the engine as week 0, so he plays every week', () => assert.deepEqual(overridesFor([avail], '2026'), { p1: 0 }))
+  it('lasts the season, then expires', () => {
+    assert.equal(isExpiredInjury(avail, '2026', 18), false)
+    assert.equal(isExpiredInjury(avail, '2027', 1), true)
+  })
+  it('reads as Available', () => {
+    assert.equal(injuryLabel(avail), 'Available')
+    assert.equal(injuryLabel(injury({ returnWeek: 9 })), 'Out until week 9')
+    assert.equal(injuryLabel(injury({})), 'Out for the season')
   })
 })

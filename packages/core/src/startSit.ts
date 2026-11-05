@@ -225,7 +225,7 @@ export function buildStartSit(o: {
   meta: Meta
   userId: string
   week: number
-  /** manual injury overrides by Sleeper id: return week, 99 = out for the season */
+  /** manual injury overrides by Sleeper id: return week, 99 = out for the season, 0 = available */
   overrides: Record<string, number>
 }): StartSitData {
   const scoring = o.league.scoring_settings ?? {}
@@ -275,6 +275,8 @@ export function buildStartSit(o: {
     // A manual override is the user's own newer information, so it outranks the board.
     else if (o.overrides[id] != null && week < o.overrides[id])
       [startable, flag] = [false, o.overrides[id] >= 99 ? 'Out for season (manual)' : `Out until wk ${o.overrides[id]} (manual)`]
+    // Marked available: he plays, whatever the sheet's injured table or Sleeper's tag says.
+    else if (o.overrides[id] === 0) flag = 'Available (manual)'
     else if (listed && rank == null) [startable, flag] = [false, `${listed.status || 'Out'} — ${listed.reason || 'injury'} (sheet)`]
     else if (listed) flag = `${listed.status || 'Listed'} — ${listed.reason || 'injury'} (sheet)`
     else if (rank == null) conflict = sleeperTag ? `Sleeper tags him ${sleeperTag} and he isn’t on the board` : null

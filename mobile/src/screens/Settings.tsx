@@ -3,7 +3,7 @@
 import { appVersion, useAppUpdate } from '@/lib/appUpdate'
 import TrackRecord from './TrackRecord'
 import { disableOfferAlerts, enableOfferAlerts } from '@/lib/offerWatch'
-import { injurySeason, isCurrentInjury, isExpiredInjury } from '@monte/core/injuries'
+import { injuryLabel, injurySeason, isAvailableOverride, isCurrentInjury, isExpiredInjury } from '@monte/core/injuries'
 import { useState } from 'react'
 import { Linking, Pressable, ScrollView, View } from 'react-native'
 import type { Theme } from '@monte/core/types'
@@ -189,8 +189,8 @@ export default function Settings() {
                     {i.pos} · {i.team}
                   </T>
                 </T>
-                <T v="small" c={expired.includes(i) ? 'mute' : 'warn'}>
-                  {i.returnWeek == null ? 'Out for the season' : `Out until week ${i.returnWeek}`}
+                <T v="small" c={expired.includes(i) ? 'mute' : isAvailableOverride(i) ? 'pos' : 'warn'}>
+                  {injuryLabel(i)}
                   {!isCurrentInjury(i, season) && ` (${injurySeason(i)})`}
                 </T>
               </Pressable>
