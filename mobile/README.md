@@ -71,9 +71,11 @@ session token the page saves and never sees the password. The web view is incogn
 of the login stays. `react-native-webview` is a native module, so an installed APK needs a rebuild
 first. Pasting a token still works if Sleeper's page ever refuses the web view.
 
-## New-offer alerts
+## Alerts
 
-Turn them on in Settings, under Sleeper connection. They use `expo-notifications` and
+New offers and offers about to end, starters who are hurt or on bye, empty lineup slots, waiver
+results, claims that will fail, trade deadlines and a Sleeper session about to end. Each is sent
+once. Turn them on in Settings, under Sleeper connection. They use `expo-notifications` and
 `expo-background-task`, which are native modules, so an installed APK needs a rebuild (prebuild,
 then build, as above) before they exist. Android chooses when the check runs, 15 minutes apart at
 best and only with network and battery to spare, and it stops after a force-stop. Monte also checks
