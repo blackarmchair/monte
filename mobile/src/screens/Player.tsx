@@ -3,7 +3,8 @@
 // every cell heat-coloured within its column. Trade: who has him, the one action, and a deal
 // Monte found. Injury: the override that every model uses (this replaces the Overrides screen).
 import { useEffect, useMemo, useState } from 'react'
-import { Linking, Pressable, ScrollView, Text, View } from 'react-native'
+import Claim from './Claim'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
 import { gameTable } from '@monte/core/gameLog'
@@ -28,21 +29,23 @@ const n1 = (x: number | null | undefined) => (x == null ? '—' : x.toFixed(1))
 const sgn1 = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x).toFixed(1)}`
 
 export default function Player() {
-  const { id, name } = useLocalSearchParams<{ id: string; name?: string }>()
+  const { id, name, tab: startTab } = useLocalSearchParams<{ id: string; name?: string; tab?: string }>()
   return (
     <View style={{ flex: 1 }}>
       <AppHeader title={name ?? ''} />
-      {!!id && <PlayerBody key={id} id={id} fallbackName={name ?? ''} />}
+      {!!id && <PlayerBody key={id} id={id} fallbackName={name ?? ''} startTab={startTab} />}
     </View>
   )
 }
 
-function PlayerBody({ id, fallbackName }: { id: string; fallbackName: string }) {
+function PlayerBody({ id, fallbackName, startTab }: { id: string; fallbackName: string; startTab?: string }) {
   const t = useTheme()
   const { context, pw, settings } = useApp()
   const { byId, me, teamName, d } = useTrade()
   const [info, setInfo] = useState<Result<PlayerInfo> | null>(null)
   const [tab, setTab] = useState<Tab>('value')
+  // The page stays mounted between players, so a tab asked for arrives by effect.
+  useEffect(() => setTab(startTab === 'trade' ? 'trade' : 'value'), [id, startTab])
   useEffect(() => {
     let live = true
     void monte.playerInfo(id).then(r => live && setInfo(r))
@@ -360,7 +363,7 @@ function TradeTab({ id, name, owner }: { id: string; name: string; owner: number
       {owner != null && a ? (
         <Btn full size="lg" kind="primary" label={yours ? 'Offer him in a trade' : `Trade for ${last}`} onPress={() => add(a.id, owner, a.name)} />
       ) : owner == null && context ? (
-        <Btn full size="lg" kind="primary" label="Claim in Sleeper ↗" onPress={() => void Linking.openURL(`https://sleeper.com/leagues/${context.league.league_id}/players`)} />
+        <Claim id={id} name={name} />
       ) : null}
       {deal && v && (
         <Card

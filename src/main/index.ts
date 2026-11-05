@@ -16,6 +16,7 @@ import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/serv
 import { checkToken, proposeTrade, readToken, SleeperAuthError, type TradeProposal } from '@monte/core/sleeperTrade'
 import { setStarters, type LineupWrite } from '@monte/core/sleeperLineup'
 import { answerOffer, type OfferAnswer } from '@monte/core/sleeperOffers'
+import type { WaiverClaim } from '@monte/core/sleeperWaivers'
 import { readRanksFile, watchRanksFile } from './ranksFile'
 import { createSettingsStore } from './settingsStore'
 import { loadWorkbook } from './workbook'
@@ -444,6 +445,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('sleeper:propose', (_e, p: TradeProposal) => sendTrade(p))
   ipcMain.handle('sleeper:lineup', (_e, w: LineupWrite) => sendLineup(w))
   ipcMain.handle('sleeper:answer', (_e, a: OfferAnswer) => sendAnswer(a))
+  ipcMain.handle('sleeper:claim', (_e, c: WaiverClaim) => withSleeper(token => monte.sendWaiverClaim(c, token)))
   const updater = createUpdater(state => broadcast('update:changed', state))
   ipcMain.handle('update:state', () => updater.state())
   ipcMain.handle('update:check', () => updater.check())

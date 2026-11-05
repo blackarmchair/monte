@@ -220,7 +220,7 @@ export default function Players() {
 
   const act = (l: Line) => {
     if (l.owner == null) {
-      if (context) window.open(`https://sleeper.com/leagues/${context.league.league_id}/players`, '_blank')
+      openPlayer(l.id, l.name)
       return
     }
     if (!l.assetId) return showToast(`${l.name} isn't in the trade pool.`)

@@ -35,7 +35,9 @@ A standalone, signed APK: no Expo Go, no computer needed once installed.
    `plugins/withReleaseSigning.js`). **Back both up**: an update installs over the app only if
    it's signed with the same key.
 2. Regenerate the native project when native config changes (new native package, app.json):
-   `npx expo prebuild --platform android --no-install`.
+   `npx expo prebuild --no-clean --platform android --no-install`. Without `--no-clean` this SDK
+   deletes `android\` first, which fails with EBUSY if anything has that folder open, and also
+   takes `local.properties` with it.
 3. Build from the real path. The C++ step writes object files whose names embed the full source
    path, past Windows' 260-character limit, so it needs:
    - Windows long paths on (one-time, admin PowerShell, then a new terminal):

@@ -11,6 +11,7 @@ import { buildOverview } from './overview'
 import { ownedPicks, pickOwners } from './picks'
 import { buildRanks, boardIndex } from './ranks'
 import { simCacheKey, simResultFresh } from './simCache'
+import { claimProblem, liveRosters, submitClaim, type WaiverClaim } from './sleeperWaivers'
 import { buildWaiverDesk, fetchPendingClaims, type WaiverDesk } from './waivers'
 import { forecastGames, scoreForecasts, type ScoredGame, type TrackRecord } from './trackRecord'
 import { buildStartSit, type SeasonStats } from './startSit'
@@ -615,6 +616,20 @@ export function createMonteService(host: Host) {
         }
       }
       return buildWaiverDesk({ league, roster, transactions: byLeg.flat(), pending, pendingNote, meta })
+    },
+
+    /**
+     * Place a waiver claim, after checking it against the league as it stands right now: what's on
+     * screen can be hours old. Any problem throws, and nothing is sent.
+     */
+    async sendWaiverClaim(c: WaiverClaim, token: string) {
+      const state = await sleeper<any>('/state/nfl')
+      const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
+      const legs = week > 1 ? [week - 1, week] : [week]
+      const [league, rosters, open, meta] = await Promise.all([sleeper<any>(`/league/${c.leagueId}`), liveRosters(c.leagueId, token), fetchPendingClaims(c.leagueId, legs, c.rosterId, token), playersMeta()])
+      const problem = claimProblem(c, league, rosters, open, meta)
+      if (problem) throw new Error(problem)
+      return submitClaim(c, legs, token)
     },
 
     /**

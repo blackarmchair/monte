@@ -28,6 +28,7 @@ const api: MonteApi = {
   proposeTrade: p => ipcRenderer.invoke('sleeper:propose', p),
   setLineup: w => ipcRenderer.invoke('sleeper:lineup', w),
   answerOffer: a => ipcRenderer.invoke('sleeper:answer', a),
+  sendWaiverClaim: c => ipcRenderer.invoke('sleeper:claim', c),
   updateState: () => ipcRenderer.invoke('update:state'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),

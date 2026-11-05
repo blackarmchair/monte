@@ -554,6 +554,8 @@ export type MonteApi = {
   /** completed trades, and your open offers when Sleeper is connected */
   leagueTrades(leagueId: string): Promise<Result<LeagueTrades>>
   proposeTrade(p: TradeProposal): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>
+  /** Place a waiver claim that drops nobody. `needsConnect` means connect (again) and retry. */
+  sendWaiverClaim(c: import('./sleeperWaivers').WaiverClaim): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>
   /** Accept or reject an offer made to you. `needsConnect` means connect (again) and retry. */
   answerOffer(a: import('./sleeperOffers').OfferAnswer): Promise<Result<{ status: string; mismatch: string | null }> & { needsConnect?: boolean }>
   /** Set this week's starters in Sleeper. `needsConnect` means connect (again) and retry. */

@@ -3,6 +3,7 @@
 // model uses) and Trade (who has him, the one action and a deal Monte found) as two cards under it.
 // Stats run the full width below: this season's games, every cell heat-coloured within its column.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import Claim from './Claim'
 import { gameTable } from '@shared/gameLog'
 import { isCurrentInjury } from '@shared/injuries'
 import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
@@ -264,7 +265,7 @@ function TradeTab({ id, name, owner }: { id: string; name: string; owner: number
         {owner != null && a ? (
           <Btn kind="primary" label={yours ? 'Offer him in a trade' : `Trade for ${last}`} onClick={() => add(a.id, owner, a.name)} />
         ) : owner == null && context ? (
-          <Btn kind="primary" label="Claim in Sleeper ↗" onClick={() => window.open(`https://sleeper.com/leagues/${context.league.league_id}/players`, '_blank')} />
+          <Claim id={id} name={name} />
         ) : null}
       </div>
       {deal && v && (

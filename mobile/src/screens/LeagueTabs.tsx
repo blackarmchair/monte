@@ -103,7 +103,7 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
     if (a.kind === 'trades') onTrades()
     else if (a.kind === 'lineup') router.navigate('/lineup')
     // Only unrostered suggestions land here, so open where he can be claimed.
-    else if (a.kind === 'player') openPlayer(a.id, a.name)
+    else if (a.kind === 'player') openPlayer(a.id, a.name, 'trade')
     else router.navigate('/settings')
   }
   const refreshAll = () => {

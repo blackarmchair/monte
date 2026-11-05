@@ -4,7 +4,7 @@
 // his page.
 import { sheetName } from '@monte/core/names'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Animated, FlatList, Linking, PanResponder, Pressable, ScrollView, Text, View } from 'react-native'
+import { Animated, FlatList, PanResponder, Pressable, ScrollView, Text, View } from 'react-native'
 import { tepBoardFor, type RanksData, type Result } from '@monte/core/types'
 import { teamLabel } from '@monte/core/names'
 import { value as rankValue } from '@monte/core/tradeMath'
@@ -156,7 +156,7 @@ export default function Players() {
   const act = (l: Line) => {
     setSwiped(null)
     if (l.owner == null) {
-      if (context) void Linking.openURL(`https://sleeper.com/leagues/${context.league.league_id}/players`)
+      openPlayer(l.id, l.name, 'trade')
       return
     }
     if (!l.assetId) return showToast(`${l.name} isn't in the trade pool.`)

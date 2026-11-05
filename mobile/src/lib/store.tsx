@@ -74,7 +74,8 @@ type App = {
   /** push the Team page */
   openTeam: (rid: number) => void
   /** push the Player page (name shows in the header while he loads) */
-  openPlayer: (id: string, name: string) => void
+  /** `tab` opens on that tab of his page, as Claim does for the box on Trade */
+  openPlayer: (id: string, name: string, tab?: 'trade') => void
   switchUser: () => Promise<void>
   /** connect Sleeper for sending trade offers; resolves to an error message, or null */
   connectSleeper: (token: string) => Promise<string | null>
@@ -255,8 +256,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openTeam(rid) {
       router.navigate({ pathname: '/team', params: { rid: String(rid) } })
     },
-    openPlayer(id, name) {
-      router.navigate({ pathname: '/player', params: { id, name } })
+    openPlayer(id, name, tab) {
+      router.navigate({ pathname: '/player', params: { id, name, ...(tab ? { tab } : {}) } })
     },
     async connectSleeper(token) {
       const r = await monte.connectSleeper(token)
