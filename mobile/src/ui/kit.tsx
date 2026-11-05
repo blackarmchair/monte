@@ -242,6 +242,8 @@ export function Seg<V extends string | number>(props: {
   options: Array<{ value: V; label: string }>
   onChange: (v: V) => void
   fill?: boolean
+  /** with `fill`: size each option to its label, so a long one isn't cut off to keep them equal */
+  fit?: boolean
   /** track colour; surf2 inside a surf card */
   track?: string
   style?: StyleProp<ViewStyle>
@@ -258,9 +260,10 @@ export function Seg<V extends string | number>(props: {
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
             style={{
-              flex: props.fill ? 1 : undefined,
+              flex: props.fill && !props.fit ? 1 : undefined,
+              flexGrow: props.fit ? 1 : undefined,
               minHeight: props.fill ? 38 : 34,
-              paddingHorizontal: 12,
+              paddingHorizontal: props.fit ? 8 : 12,
               alignItems: 'center',
               justifyContent: 'center',
               borderRadius: 19,

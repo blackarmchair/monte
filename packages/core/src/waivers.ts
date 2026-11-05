@@ -118,7 +118,7 @@ export function buildWaiverDesk(o: {
 
 const CLAIMS = `query claims($league_id: Snowflake!, $leg: Int!) {
   league_transactions(league_id: $league_id, leg: $leg) {
-    transaction_id type status created status_updated creator roster_ids adds drops settings player_map
+    transaction_id type status created status_updated creator leg roster_ids adds drops settings player_map
   }
 }`
 
@@ -137,8 +137,10 @@ export async function fetchPendingClaims(leagueId: string, legs: number[], myRos
   })
 }
 
-/** "Add X, drop Y", for a claim or a move. */
-export function moveText(m: Pick<WaiverMove, 'adds' | 'drops'>): string {
-  const names = (xs: WaiverMove['adds']) => xs.map(x => x.name).join(', ')
-  return [m.adds.length ? `Add ${names(m.adds)}` : '', m.drops.length ? `${m.adds.length ? 'drop' : 'Drop'} ${names(m.drops)}` : ''].filter(Boolean).join(', ')
-}
+const names = (xs: WaiverMove['adds']) => xs.map(x => x.name).join(', ')
+
+/** The headline of a claim or move: who comes in, or who goes when nobody does. */
+export const moveTitle = (m: Pick<WaiverMove, 'adds' | 'drops'>) => (m.adds.length ? `Add ${names(m.adds)}` : `Drop ${names(m.drops)}`)
+
+/** Who goes, when someone also comes in. */
+export const moveDrop = (m: Pick<WaiverMove, 'adds' | 'drops'>) => (m.adds.length && m.drops.length ? `drop ${names(m.drops)}` : '')

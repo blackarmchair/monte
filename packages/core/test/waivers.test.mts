@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { waiverItems } from '../src/inbox.ts'
 import type { Asset } from '../src/tradeMath.ts'
-import { buildWaiverDesk, fetchPendingClaims, moveText } from '../src/waivers.ts'
+import { buildWaiverDesk, fetchPendingClaims, moveDrop, moveTitle } from '../src/waivers.ts'
 
 const NOW = Date.parse('2026-11-04T12:00:00Z')
 const days = (n: number) => NOW - n * 86400000
@@ -63,9 +63,11 @@ describe('moves', () => {
   it('leaves out commissioner and trade entries', () => assert.deepEqual(desk({ transactions: [waiver({ type: 'trade' }), waiver({ type: 'commissioner' })] }).recent, []))
   it('writes a claim out', () => {
     const [m] = desk({ transactions: [waiver()] }).recent
-    assert.equal(moveText(m), 'Add Add Ed, drop Drop Ped')
-    assert.equal(moveText({ adds: [], drops: m.drops }), 'Drop Drop Ped')
-    assert.equal(moveText({ adds: m.adds, drops: [] }), 'Add Add Ed')
+    assert.equal(moveTitle(m), 'Add Add Ed')
+    assert.equal(moveDrop(m), 'drop Drop Ped')
+    assert.equal(moveTitle({ adds: [], drops: m.drops }), 'Drop Drop Ped')
+    assert.equal(moveDrop({ adds: [], drops: m.drops }), '')
+    assert.equal(moveDrop({ adds: m.adds, drops: [] }), '')
   })
 })
 
@@ -118,7 +120,7 @@ describe('likely on waivers', () => {
     const a = (id: string) => ({ id, name: id, kind: 'player', pos: 'WR', team: 'DAL', sheet: 1 }) as Asset
     const ranks = { low: { sheetRank: 300 }, fresh: { sheetRank: 100 }, other: { sheetRank: 120 } }
     const [x, y] = waiverItems([a('fresh'), a('other')], [a('low')], ranks, ['fresh'])
-    assert.match(x.detail, /Recently dropped, so likely on waivers/)
-    assert.doesNotMatch(y.detail, /Recently dropped/)
+    assert.match(x.detail, /likely on waivers/)
+    assert.doesNotMatch(y.detail, /likely on waivers/)
   })
 })

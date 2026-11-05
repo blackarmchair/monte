@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { connectionItems, lineupItems, offerItems, orderInbox, waiverItems } from '../src/inbox.ts'
+import { connectionItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems } from '../src/inbox.ts'
 import { matchupPollMs, type LeagueWeek, type TradeTx } from '../src/leagueWeek.ts'
 import type { Asset } from '../src/tradeMath.ts'
 import type { SSPlayer, SSSlot, StartSitData } from '../src/types.ts'
@@ -24,8 +24,11 @@ describe('lineupItems', () => {
 
   it('flags an unstartable starter with the reason', () => {
     const [i] = lineupItems(ss({ slots: [slot({ current: player('a', { startable: false, flag: 'Out' }), best: player('b') })] }), NOW)
-    assert.match(i.title, /A is in your lineup/)
-    assert.match(i.detail, /Out\. Start B/)
+    assert.equal(i.title, 'A')
+    assert.match(i.detail, /In your lineup: Out\. Start B/)
+    assert.deepEqual(i.tag, { label: 'Out', tone: 'bad' })
+    assert.equal(i.cta, 'Fix lineup')
+    assert.match(i.lead ?? '', /A is in your lineup: Out\. Start B/)
   })
 
   it('says so when the bench has nobody better', () => {
@@ -71,10 +74,12 @@ describe('waiverItems', () => {
     assert.deepEqual(ids(waiverItems(['x', 'p1', 'p2', 'p3', 'p4'].map(i => a(i)), mine, ranks)), ['waiver:p2', 'waiver:p3', 'waiver:p4'])
   })
 
-  it('says it in sheet ranks, where lower is better', () => {
+  it('carries the sheet rank, where lower is better, never the value score', () => {
     const [i] = waiverItems([a('p2', { sheet: 608 })], [a('star', { sheet: 9000 }), a('low', { sheet: 103 })], ranks)
-    assert.match(i.detail, /ranks him #100. Your lowest is low at #320./)
+    assert.equal(i.rank, 100)
+    assert.equal(i.title, 'p2')
     assert.doesNotMatch(i.detail, /608|103/)
+    assert.equal(lowestNote(mine, ranks), 'Ranked ahead of your lowest, low (#320).')
   })
 
   it('goes by rank even when scoring adjustments put value the other way', () => {
@@ -82,8 +87,9 @@ describe('waiverItems', () => {
   })
 
   it('counts an unranked player of yours as your lowest', () => {
-    const [i] = waiverItems([a('p1')], [a('star'), a('off')], ranks)
-    assert.match(i.detail, /off, your lowest, isn't on the sheet/)
+    const you = [a('star'), a('off')]
+    assert.equal(waiverItems([a('p1')], you, ranks).length, 1)
+    assert.match(lowestNote(you, ranks) ?? '', /Your lowest, off, isn't on it/)
   })
 
   it('skips free agents the sheet does not rank', () => assert.deepEqual(waiverItems([a('nobody')], mine, ranks), []))
@@ -93,7 +99,7 @@ describe('waiverItems', () => {
 })
 
 describe('connectionItems', () => {
-  it('passes on why offers are hidden', () => assert.match(connectionItems(undefined, 'Connect Sleeper', NOW)[0].detail, /Connect Sleeper/))
+  it('passes on why offers are hidden', () => assert.equal(connectionItems(undefined, 'Connect Sleeper', NOW)[0].title, 'Connect Sleeper'))
   it('is quiet with a healthy token', () => assert.deepEqual(connectionItems({ expiresAt: NOW + 30 * 86400000 }, null, NOW), []))
   it('warns before the token ends', () => assert.match(connectionItems({ expiresAt: NOW + 2 * 86400000 }, null, NOW)[0].title, /in 2 days/))
   it('is quiet when the token has no date', () => assert.deepEqual(connectionItems({ expiresAt: null }, null, NOW), []))

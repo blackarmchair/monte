@@ -2,10 +2,10 @@
 // Monte's win chance and (click) the starters side by side. Trades: your open offers when Sleeper is
 // connected, then the league's completed trades this season, newest first.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { connectionItems, lineupItems, offerItems, orderInbox, waiverItems, type InboxAction } from '@shared/inbox'
+import { connectionItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@shared/inbox'
 import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@shared/leagueWeek'
 import { offerRole } from '@shared/offers'
-import { moveText, type WaiverDesk } from '@shared/waivers'
+import { moveDrop, moveTitle, type WaiverDesk, type WaiverMove } from '@shared/waivers'
 import { basisLabel, compareBases, matchupBasis } from '@shared/projBasis'
 import type { Result, StartSitData } from '@shared/types'
 import { teamLabel } from './names'
@@ -13,7 +13,7 @@ import { BasisLine, ProjCompare } from './ProjCompare'
 import { normCdf, WIN_SD } from '@shared/startSitLogic'
 import { useApp } from './store'
 import { mineOf, useTrade } from './tradeModel'
-import { Btn, ErrorBox, GradCard, Headshot, kfmt, Link, Loading, nflColor, Notice, ORD, RING_SOFT, Stack2, TeamAvatar, teamColor } from './ui'
+import { Btn, ErrorBox, GradCard, Headshot, HeatChip, kfmt, Link, Loading, nflColor, Notice, ORD, RING_SOFT, Stack2, StatTile, Tag, TeamAvatar, teamColor, useHeat } from './ui'
 
 /** Load once per league, with a manual refresh. */
 function useLoad<T>(fetcher: (leagueId: string) => Promise<Result<T>>) {
@@ -57,10 +57,16 @@ function TabHead({ title, sub, busy, onRefresh }: { title: string; sub?: string;
 }
 
 const SHEET_NEEDED: Result<StartSitData> = { ok: false, error: 'Add your rankings sheet to check your lineup.' }
+/** Sheet ranks run about this deep, for colouring a rank chip. */
+const RANK_SPAN = 350
+const NEUTRAL_CHIP = { bg: 'var(--surf2)', fg: 'var(--ink)' }
+const shortDate = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' })
+const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
-/** What needs you this week in this league: offers to answer, lineup problems, then what's worth knowing. */
+/** What needs you this week in this league: the top thing first, then the rest, then waivers. */
 export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const { context, sheet, settings, go, openPlayer, openSettings } = useApp()
+  const { rank } = useHeat()
   const x = useTrade()
   const me = context?.myRosterId ?? null
   const trades = useLoad(id => window.monte.leagueTrades(id))
@@ -69,14 +75,17 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const desk = waivers.res?.ok ? waivers.res.value : null
   const lt = trades.res?.ok ? trades.res.value : null
   const received = (lt?.pending ?? []).filter(t => offerRole(t, me) === 'received')
-  const items = orderInbox([
-    ...offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'another team', verdict: x.readOffer(tx).label }))),
-    ...(lineup.res?.ok ? lineupItems(lineup.res.value) : []),
-    ...connectionItems(settings.sleeperLink, lt?.pendingNote ?? null),
-    ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks, desk?.likelyOnWaivers) : []),
-  ])
-  const act = items.filter(i => i.tone === 'act').length
+  const offers = offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'Another team', verdict: x.readOffer(tx).label })))
+  const fixes = lineup.res?.ok ? lineupItems(lineup.res.value) : []
+  const items = orderInbox([...offers, ...fixes, ...connectionItems(settings.sleeperLink, lt?.pendingNote ?? null)])
+  const acts = items.filter(i => i.tone === 'act')
+  const notes = items.filter(i => i.tone === 'note')
+  const worth = x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks, desk?.likelyOnWaivers) : []
+  const [top, ...rest] = acts
   const loading = !trades.res || !lineup.res
+  const mine = context?.rosters.find(r => r.roster_id === me)
+  const kicker = [context && context.week > 0 ? `Week ${context.week}` : null, mine ? `${mine.wins}-${mine.losses}` : null].filter(Boolean).join(' · ')
+  const summary = [offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'} to answer` : '', fixes.filter(i => i.tone === 'act').length ? `${fixes.filter(i => i.tone === 'act').length} lineup fix${fixes.filter(i => i.tone === 'act').length === 1 ? '' : 'es'}` : ''].filter(Boolean).join(' · ')
   const run = (a: InboxAction) => {
     if (a.kind === 'trades') onTrades()
     else if (a.kind === 'lineup') go('lineup')
@@ -89,70 +98,138 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
     waivers.load()
   }
   return (
-    <div className="stack" style={{ gap: 12, maxWidth: 860 }}>
-      <TabHead
-        title={context && context.week > 0 ? `Week ${context.week}` : 'This week'}
-        sub={loading ? undefined : act ? `${act} to deal with` : 'Nothing needs you'}
-        busy={trades.busy || lineup.busy}
-        onRefresh={refreshAll}
-      />
+    <div className="stack" style={{ gap: 20, maxWidth: 1520 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 16 }}>
+        <div className="hero" style={{ padding: 24 }}>
+          <div className="row" style={{ justifyContent: 'space-between', gap: 10 }}>
+            <span className="small mute">{kicker}</span>
+            <Link label={trades.busy || lineup.busy || waivers.busy ? 'Refreshing…' : 'Refresh'} onClick={refreshAll} />
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.15, letterSpacing: '-.01em', textWrap: 'pretty' }}>
+            {loading ? 'Checking your league…' : acts.length ? `${acts.length} thing${acts.length === 1 ? ' needs' : 's need'} you this week.` : "You're all set this week."}
+          </div>
+          <div className="sub" style={{ fontSize: 15 }}>
+            {loading ? '' : summary || 'No offers waiting and no lineup fixes.'}
+          </div>
+        </div>
+        <div className="hero" style={{ padding: 24, background: top ? 'var(--acc-tint)' : 'var(--surf)', justifyContent: 'center', gap: 12 }}>
+          <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, textWrap: 'pretty' }}>{top ? top.lead ?? top.title : loading ? 'Looking for your best next move…' : 'Nothing to do right now.'}</span>
+          {top && (
+            <div>
+              <Btn kind="primary" label={top.cta ?? 'Open'} onClick={() => run(top.action)} style={{ minHeight: 42 }} />
+            </div>
+          )}
+        </div>
+      </div>
+
       {trades.res && !trades.res.ok && <ErrorBox message={trades.res.error} onRetry={trades.load} />}
-      {lineup.res && !lineup.res.ok && <div className="small mute">Lineup check unavailable: {lineup.res.error}</div>}
-      {items.map(i => (
-        <button key={i.id} className="row" onClick={() => run(i.action)} style={{ gap: 14, padding: '14px 18px', borderRadius: 18, background: 'var(--card)', textAlign: 'left', width: '100%' }}>
-          <span style={{ width: 10, height: 10, flexShrink: 0, borderRadius: 5, background: i.tone === 'act' ? 'var(--acc)' : 'var(--mute)' }} />
-          <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-            <span style={{ fontWeight: 700 }}>{i.title}</span>
-            <span className="small mute">{i.detail}</span>
-          </span>
+      {lineup.res && !lineup.res.ok && <Notice tone="mute" message={`Lineup check unavailable: ${lineup.res.error}`} />}
+      {waivers.res && !waivers.res.ok && <Notice tone="mute" message={`Waivers unavailable: ${waivers.res.error}`} />}
+      {notes.map(n => (
+        <button key={n.id} onClick={() => run(n.action)} style={{ textAlign: 'left' }}>
+          <Notice message={n.detail ? `${n.title}. ${n.detail}.` : n.title} />
         </button>
       ))}
-      {loading && <Loading label="Checking your league…" />}
-      {!loading && items.length === 0 && <div className="mute">All clear. Nothing needs you in this league right now.</div>}
-      {waivers.res && !waivers.res.ok && <div className="small mute">Waivers unavailable: {waivers.res.error}</div>}
-      {desk && <WaiverBlock desk={desk} />}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr)', gap: 24, alignItems: 'start' }}>
+        <div className="stack" style={{ gap: 20, minWidth: 0 }}>
+          {rest.length > 0 && (
+            <section className="stack" style={{ gap: 8 }}>
+              <span className="title-l">Also needs you</span>
+              {rest.map(i => (
+                <WeekCard key={i.id} item={i} onClick={() => run(i.action)} chip={null} />
+              ))}
+            </section>
+          )}
+          {worth.length > 0 && x.d && (
+            <section className="stack" style={{ gap: 8 }}>
+              <div className="stack" style={{ gap: 2 }}>
+                <span className="title-l">Worth a look</span>
+                <span className="sub">Unrostered. {lowestNote(x.mine, x.d.ranks)}</span>
+              </div>
+              {worth.map(i => (
+                <WeekCard key={i.id} item={i} onClick={() => run(i.action)} chip={i.rank != null ? <HeatChip label={`#${i.rank}`} colors={rank(i.rank, RANK_SPAN)} /> : null} />
+              ))}
+            </section>
+          )}
+        </div>
+        {desk && <WaiverBlock desk={desk} />}
+      </div>
     </div>
   )
 }
 
-const shortDate = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+/** One thing on This week, on the same tinted card as the rest of the app. */
+function WeekCard({ item, onClick, chip }: { item: InboxItem; onClick: () => void; chip: ReactNode }) {
+  const f = item.face
+  const color = f?.kind === 'player' ? nflColor(f.team) : f?.kind === 'team' ? teamColor(f.rid) : null
+  return (
+    <GradCard color={color} minHeight={68} onClick={onClick} style={{ gap: 14 }}>
+      {f?.kind === 'player' && <Headshot id={f.id} name={f.name} />}
+      {f?.kind === 'team' && <TeamAvatar rid={f.rid} name={f.name} />}
+      <Stack2 title={item.title} sub={item.detail} size={16} right={item.tag && <Tag label={item.tag.label} tone={item.tag.tone} />} />
+      {chip}
+    </GradCard>
+  )
+}
+
+const MOVE_FACE = 38
+const MOVE_FACE_OVERLAP = 10
+
+/** A move's team, with the player it's about overlapping on top. */
+function MoveFaces({ move, teamName }: { move: WaiverMove; teamName: string }) {
+  const player = move.adds[0] ?? move.drops[0]
+  return (
+    <span className="row" style={{ flex: 'none' }}>
+      {move.rosterId != null && <TeamAvatar rid={move.rosterId} name={teamName} size={MOVE_FACE} />}
+      {player && (
+        <span style={{ display: 'flex', position: 'relative', marginLeft: move.rosterId != null ? -MOVE_FACE_OVERLAP : 0, borderRadius: '50%', boxShadow: '0 0 0 2px var(--card)' }}>
+          <Headshot id={player.id} name={player.name} size={MOVE_FACE} />
+        </span>
+      )}
+    </span>
+  )
+}
 
 /** The league's waivers at a glance. Read-only: claims are still made in Sleeper. */
 function WaiverBlock({ desk }: { desk: WaiverDesk }) {
+  const { openPlayer } = useApp()
   const x = useTrade()
-  const facts = [
-    desk.faab ? `FAAB: $${desk.faab.left} of $${desk.faab.budget} left` : desk.priority != null ? `Waiver priority: #${desk.priority}` : null,
-    `Waivers run ${desk.cadence}${desk.lastRun ? `, last on ${shortDate(desk.lastRun)}` : ''}`,
-    desk.bids ? `Winning bids this season: ${desk.bids.count} paid, median $${desk.bids.median}, high $${desk.bids.high}` : null,
-  ].filter(Boolean)
+  const bidOf = (m: WaiverMove) => (m.kind === 'free_agent' ? 'FA' : desk.faab ? `$${m.bid}` : 'Claim')
   return (
-    <section className="stack" style={{ gap: 8, paddingTop: 12 }}>
-      <span className="label">Waivers</span>
-      <div className="stack" style={{ gap: 4, padding: '14px 18px', borderRadius: 18, background: 'var(--card)' }}>
-        {facts.map(f => (
-          <span key={f} style={{ fontWeight: 600, fontSize: 14 }}>
-            {f}
-          </span>
-        ))}
-        {desk.pendingNote && <span className="small mute">{desk.pendingNote}</span>}
-        {desk.pending?.map(c => (
-          <span key={c.id} className="small">
-            Your claim: {moveText(c)}{c.bid != null && desk.faab ? ` · $${c.bid}` : ''}
-          </span>
-        ))}
-        {desk.pending?.length === 0 && <span className="small mute">You have no pending claims.</span>}
+    <section className="stack" style={{ gap: 8, minWidth: 0 }}>
+      <span className="title-l">Waivers</span>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
+        {desk.faab ? <StatTile k="FAAB left" v={`$${desk.faab.left}`} sub={`of $${desk.faab.budget}`} size={26} /> : <StatTile k="Your priority" v={desk.priority != null ? `#${desk.priority}` : '—'} sub="waiver order" size={26} />}
+        <StatTile k="Median winning bid" v={desk.bids ? `$${desk.bids.median}` : '—'} sub={desk.bids ? `${desk.bids.count} paid, high $${desk.bids.high}` : 'none paid yet'} size={26} />
+        <StatTile k="Last run" v={desk.lastRun ? shortDate(desk.lastRun) : '—'} sub={desk.lastRun ? `${desk.cadence} · ${shortTime(desk.lastRun)}` : desk.cadence} size={26} />
       </div>
-      {desk.recent.length > 0 && <span className="small mute">Recent moves</span>}
-      {desk.recent.map(m => (
-        <div key={m.id} className="row" style={{ gap: 10, justifyContent: 'space-between', padding: '8px 18px', borderRadius: 14, background: 'var(--surf)' }}>
-          <span className="small" style={{ minWidth: 0 }}>
-            <b>{m.rosterId != null ? x.teamName(m.rosterId) : 'A team'}:</b> {moveText(m)}
-          </span>
-          <span className="small mute" style={{ flexShrink: 0 }}>
-            {m.kind === 'waiver' ? (desk.faab ? `$${m.bid}` : 'waiver') : 'free agent'}
-          </span>
+      {desk.pendingNote && <Notice tone="mute" message={desk.pendingNote} />}
+      {desk.pending && (
+        <div className="stack" style={{ gap: 8, paddingTop: 8 }}>
+          <span className="label">Your claims</span>
+          {desk.pending.length === 0 && <span className="sub">You have no pending claims.</span>}
+          {desk.pending.map(m => (
+            <GradCard key={m.id} color="var(--acc)" minHeight={60} onClick={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} style={{ gap: 12 }}>
+              {m.adds[0] && <Headshot id={m.adds[0].id} name={m.adds[0].name} size={38} />}
+              <Stack2 title={moveTitle(m)} sub={moveDrop(m)} size={15} />
+              <HeatChip label={bidOf(m)} colors={NEUTRAL_CHIP} height={30} size={14} minWidth={48} />
+            </GradCard>
+          ))}
         </div>
-      ))}
+      )}
+      {desk.recent.length > 0 && (
+        <div className="stack" style={{ gap: 8, paddingTop: 8 }}>
+          <span className="label">Recent moves</span>
+          {desk.recent.map(m => (
+            <GradCard key={m.id} color={m.rosterId != null ? teamColor(m.rosterId) : null} minHeight={60} onClick={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} style={{ gap: 12 }}>
+              <MoveFaces move={m} teamName={m.rosterId != null ? x.teamName(m.rosterId) : ''} />
+              <Stack2 title={moveTitle(m)} sub={[m.rosterId != null ? x.teamName(m.rosterId) : '', moveDrop(m)].filter(Boolean).join(' · ')} size={15} />
+              <HeatChip label={bidOf(m)} colors={NEUTRAL_CHIP} height={30} size={14} minWidth={48} />
+            </GradCard>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

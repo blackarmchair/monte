@@ -5,10 +5,10 @@
 import { useFocusEffect, router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AppState, Linking, Pressable, View } from 'react-native'
-import { connectionItems, lineupItems, offerItems, orderInbox, waiverItems, type InboxAction } from '@monte/core/inbox'
+import { connectionItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@monte/core/inbox'
 import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@monte/core/leagueWeek'
 import { offerRole } from '@monte/core/offers'
-import { moveText, type WaiverDesk } from '@monte/core/waivers'
+import { moveDrop, moveTitle, type WaiverDesk, type WaiverMove } from '@monte/core/waivers'
 import { teamLabel } from '@monte/core/names'
 import { basisLabel, compareBases, matchupBasis } from '@monte/core/projBasis'
 import type { Result, StartSitData } from '@monte/core/types'
@@ -16,9 +16,9 @@ import { useAppUpdate } from '@/lib/appUpdate'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { mineOf, useTrade } from '@/lib/trade'
-import { Btn, Card, ErrorBox, GradCard, Headshot, kfmt, Loading, Notice, ORD, Row, Section, Stack2, T, TeamAvatar } from '@/ui/kit'
+import { Btn, Card, ErrorBox, GradCard, Headshot, HeatChip, Hero, kfmt, Loading, Notice, ORD, Row, Section, Stack2, StatTile, T, Tag, TeamAvatar } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
-import { nflColor, R, ring, teamColor, useTheme } from '@/ui/theme'
+import { nflColor, R, rankHeat, ring, teamColor, useTheme } from '@/ui/theme'
 import { BasisLine, ProjCompare } from './ProjCompare'
 import { normCdf, WIN_SD } from '@monte/core/startSitLogic'
 
@@ -65,8 +65,11 @@ function Head({ title, busy, onRefresh }: { title: string; busy: boolean; onRefr
 }
 
 const SHEET_NEEDED: Result<StartSitData> = { ok: false, error: 'Add your rankings sheet to check your lineup.' }
+/** Sheet ranks run about this deep, for colouring a rank chip. */
+const RANK_SPAN = 350
+const shortDate = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' })
 
-/** What needs you this week in this league: offers to answer, lineup problems, then what's worth knowing. */
+/** What needs you this week in this league: the top thing first, then the rest, then waivers. */
 export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const t = useTheme()
   const { context, sheet, settings, openPlayer } = useApp()
@@ -79,18 +82,27 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   const desk = waivers.res?.ok ? waivers.res.value : null
   const lt = trades.res?.ok ? trades.res.value : null
   const received = (lt?.pending ?? []).filter(tx => offerRole(tx, me) === 'received')
+  const offers = offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'Another team', verdict: x.readOffer(tx).label })))
+  const fixes = lineup.res?.ok ? lineupItems(lineup.res.value) : []
   const items = orderInbox([
-    ...offerItems(received.map(tx => ({ tx, from: x.teamName(tx.creator) || 'another team', verdict: x.readOffer(tx).label }))),
-    ...(lineup.res?.ok ? lineupItems(lineup.res.value) : []),
+    ...offers,
+    ...fixes,
     ...connectionItems(settings?.sleeperLink, lt?.pendingNote ?? null),
-    ...(update ? [{ id: 'app-update', tone: 'note' as const, title: `Monte ${update.version} is ready`, detail: 'Download it from Settings.', action: { kind: 'settings' as const } }] : []),
-    ...(x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks, desk?.likelyOnWaivers) : []),
+    ...(update ? [{ id: 'app-update', tone: 'note' as const, title: `Monte ${update.version} is ready`, detail: 'Download it from Settings', action: { kind: 'settings' as const } }] : []),
   ])
-  const act = items.filter(i => i.tone === 'act').length
+  const acts = items.filter(i => i.tone === 'act')
+  const notes = items.filter(i => i.tone === 'note')
+  const worth = x.d ? waiverItems(x.d.freeAgents, x.mine, x.d.ranks, desk?.likelyOnWaivers) : []
+  const [top, ...rest] = acts
   const loading = !trades.res || !lineup.res
+  const mine = context?.rosters.find(r => r.roster_id === me)
+  const kicker = [context && context.week > 0 ? `Week ${context.week}` : null, mine ? `${mine.wins}-${mine.losses}` : null].filter(Boolean).join(' · ')
+  const fixCount = fixes.filter(i => i.tone === 'act').length
+  const summary = [offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'} to answer` : '', fixCount ? `${fixCount} lineup fix${fixCount === 1 ? '' : 'es'}` : ''].filter(Boolean).join(' · ')
   const run = (a: InboxAction) => {
     if (a.kind === 'trades') onTrades()
     else if (a.kind === 'lineup') router.navigate('/lineup')
+    // Only unrostered suggestions land here, so open where he can be claimed.
     else if (a.kind === 'player') openPlayer(a.id, a.name)
     else router.navigate('/settings')
   }
@@ -99,95 +111,143 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
     lineup.load()
     waivers.load()
   }
+  const busy = trades.busy || lineup.busy || waivers.busy
   return (
-    <View style={{ gap: 10 }}>
-      <Head title={context && context.week > 0 ? `Week ${context.week}${loading ? '' : act ? ` · ${act} to deal with` : ''}` : 'This week'} busy={trades.busy || lineup.busy} onRefresh={refreshAll} />
-      {trades.res && !trades.res.ok && <ErrorBox message={trades.res.error} onRetry={trades.load} />}
-      {lineup.res && !lineup.res.ok && (
-        <T v="small" c="mute">
-          Lineup check unavailable: {lineup.res.error}
+    <View style={{ gap: 18 }}>
+      <Hero>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <T v="small" c="mute">
+            {kicker}
+          </T>
+          <T v="smallSemi" c="acc" onPress={busy ? undefined : refreshAll}>
+            {busy ? 'Refreshing…' : 'Refresh'}
+          </T>
+        </Row>
+        <T v="head" size={26}>
+          {loading ? 'Checking your league…' : acts.length ? `${acts.length} thing${acts.length === 1 ? ' needs' : 's need'} you this week.` : "You're all set this week."}
         </T>
+        {!loading && <T c="ink2">{summary || 'No offers waiting and no lineup fixes.'}</T>}
+      </Hero>
+      {top && (
+        <View style={{ gap: 12, padding: 18, borderRadius: R.hero, backgroundColor: t.accTint }}>
+          <T v="bold" size={18}>
+            {top.lead ?? top.title}
+          </T>
+          <Btn kind="primary" label={top.cta ?? 'Open'} onPress={() => run(top.action)} style={{ alignSelf: 'flex-start' }} />
+        </View>
       )}
-      {items.map(i => (
-        <Pressable key={i.id} onPress={() => run(i.action)} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: R.card, backgroundColor: t.card }}>
-          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: i.tone === 'act' ? t.acc : t.mute }} />
-          <View style={{ flex: 1, gap: 2 }}>
-            <T v="bold" size={15}>
-              {i.title}
-            </T>
-            <T v="small" c="mute">
-              {i.detail}
-            </T>
-          </View>
+      {trades.res && !trades.res.ok && <ErrorBox message={trades.res.error} onRetry={trades.load} />}
+      {lineup.res && !lineup.res.ok && <Notice tone="mute" message={`Lineup check unavailable: ${lineup.res.error}`} />}
+      {waivers.res && !waivers.res.ok && <Notice tone="mute" message={`Waivers unavailable: ${waivers.res.error}`} />}
+      {notes.map(n => (
+        <Pressable key={n.id} onPress={() => run(n.action)} accessibilityRole="button">
+          <Notice message={n.detail ? `${n.title}. ${n.detail}.` : n.title} />
         </Pressable>
       ))}
-      {loading && <Loading label="Checking your league…" />}
-      {!loading && items.length === 0 && (
-        <T c="mute" size={14}>
-          All clear. Nothing needs you in this league right now.
-        </T>
+      {rest.length > 0 && (
+        <View style={{ gap: 8 }}>
+          <Section title="Also needs you" />
+          {rest.map(i => (
+            <WeekCard key={i.id} item={i} onPress={() => run(i.action)} />
+          ))}
+        </View>
       )}
-      {waivers.res && !waivers.res.ok && (
-        <T v="small" c="mute">
-          Waivers unavailable: {waivers.res.error}
-        </T>
+      {worth.length > 0 && x.d && (
+        <View style={{ gap: 8 }}>
+          <Section title="Worth a look" />
+          <T v="small" c="ink2">
+            Unrostered. {lowestNote(x.mine, x.d.ranks)}
+          </T>
+          {worth.map(i => (
+            <WeekCard key={i.id} item={i} onPress={() => run(i.action)} />
+          ))}
+        </View>
       )}
       {desk && <WaiverBlock desk={desk} />}
     </View>
   )
 }
 
-const shortDate = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+/** One thing on This week, on the same tinted card as the rest of the app. */
+function WeekCard({ item, onPress }: { item: InboxItem; onPress: () => void }) {
+  const t = useTheme()
+  const f = item.face
+  const color = f?.kind === 'player' ? nflColor(t, f.team) : f?.kind === 'team' ? teamColor(f.rid) : null
+  return (
+    <GradCard color={color} minHeight={66} onPress={onPress} accessibilityLabel={item.title}>
+      {f?.kind === 'player' && <Headshot id={f.id} name={f.name} size={42} />}
+      {f?.kind === 'team' && <TeamAvatar rid={f.rid} name={f.name} size={42} />}
+      <Stack2 title={item.title} sub={item.detail} size={15} right={item.tag && <Tag label={item.tag.label} tone={item.tag.tone} />} />
+      {item.rank != null && <HeatChip label={`#${item.rank}`} colors={rankHeat(t, item.rank, RANK_SPAN)} />}
+    </GradCard>
+  )
+}
+
+const MOVE_FACE = 38
+const MOVE_FACE_OVERLAP = 10
+const MOVE_FACE_RING = 2
+
+/** A move's team, with the player it's about overlapping on top. */
+function MoveFaces({ move, teamName }: { move: WaiverMove; teamName: string }) {
+  const t = useTheme()
+  const player = move.adds[0] ?? move.drops[0]
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      {move.rosterId != null && <TeamAvatar rid={move.rosterId} name={teamName} size={MOVE_FACE} />}
+      {player && (
+        <View style={{ marginLeft: move.rosterId != null ? -MOVE_FACE_OVERLAP : 0, padding: MOVE_FACE_RING, borderRadius: MOVE_FACE, backgroundColor: t.card }}>
+          <Headshot id={player.id} name={player.name} size={MOVE_FACE} />
+        </View>
+      )}
+    </View>
+  )
+}
 
 /** The league's waivers at a glance. Read-only: claims are still made in Sleeper. */
 function WaiverBlock({ desk }: { desk: WaiverDesk }) {
+  const t = useTheme()
+  const { openPlayer } = useApp()
   const x = useTrade()
-  const facts = [
-    desk.faab ? `FAAB: $${desk.faab.left} of $${desk.faab.budget} left` : desk.priority != null ? `Waiver priority: #${desk.priority}` : null,
-    `Waivers run ${desk.cadence}${desk.lastRun ? `, last on ${shortDate(desk.lastRun)}` : ''}`,
-    desk.bids ? `Winning bids this season: ${desk.bids.count} paid, median $${desk.bids.median}, high $${desk.bids.high}` : null,
-  ].filter(Boolean)
+  const neutral = { bg: t.surf2, fg: t.ink }
+  const bidOf = (m: WaiverMove) => (m.kind === 'free_agent' ? 'FA' : desk.faab ? `$${m.bid}` : 'Claim')
   return (
-    <View style={{ gap: 8, paddingTop: 12 }}>
-      <T v="label">Waivers</T>
-      <Card gap={4}>
-        {facts.map(f => (
-          <T key={f} v="semi" size={14}>
-            {f}
-          </T>
-        ))}
-        {!!desk.pendingNote && (
-          <T v="small" c="mute">
-            {desk.pendingNote}
-          </T>
-        )}
-        {desk.pending?.map(c => (
-          <T key={c.id} v="small">
-            Your claim: {moveText(c)}
-            {c.bid != null && desk.faab ? ` · $${c.bid}` : ''}
-          </T>
-        ))}
-        {desk.pending?.length === 0 && (
-          <T v="small" c="mute">
-            You have no pending claims.
-          </T>
-        )}
-      </Card>
-      {desk.recent.length > 0 && (
-        <T v="small" c="mute">
-          Recent moves
-        </T>
+    <View style={{ gap: 8 }}>
+      <Section title="Waivers" />
+      <Row gap={8} style={{ alignItems: 'stretch' }}>
+        {desk.faab ? <StatTile k="FAAB left" v={`$${desk.faab.left}`} sub={`of $${desk.faab.budget}`} size={22} /> : <StatTile k="Your priority" v={desk.priority != null ? `#${desk.priority}` : '—'} sub="waiver order" size={22} />}
+        <StatTile k="Median bid" v={desk.bids ? `$${desk.bids.median}` : '—'} sub={desk.bids ? `high $${desk.bids.high}` : 'none paid'} size={22} />
+        <StatTile k="Last run" v={desk.lastRun ? shortDate(desk.lastRun) : '—'} sub={desk.cadence} size={22} />
+      </Row>
+      {!!desk.pendingNote && <Notice tone="mute" message={desk.pendingNote} />}
+      {desk.pending && (
+        <View style={{ gap: 8, paddingTop: 8 }}>
+          <T v="label">Your claims</T>
+          {desk.pending.length === 0 && (
+            <T v="small" c="ink2">
+              You have no pending claims.
+            </T>
+          )}
+          {desk.pending.map(m => (
+            <GradCard key={m.id} color={t.acc} minHeight={58} onPress={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} accessibilityLabel={moveTitle(m)}>
+              {m.adds[0] && <Headshot id={m.adds[0].id} name={m.adds[0].name} size={36} />}
+              <Stack2 title={moveTitle(m)} sub={moveDrop(m)} size={15} />
+              <HeatChip label={bidOf(m)} colors={neutral} height={30} size={14} minWidth={48} />
+            </GradCard>
+          ))}
+        </View>
       )}
-      {desk.recent.map(m => (
-        <Card key={m.id} gap={2}>
-          <T v="small">
-            {m.rosterId != null ? x.teamName(m.rosterId) : 'A team'}: {moveText(m)}
-          </T>
-          <T v="small" c="mute">
-            {m.kind === 'waiver' ? (desk.faab ? `$${m.bid}` : 'waiver') : 'free agent'}
-          </T>
-        </Card>
-      ))}
+      {desk.recent.length > 0 && (
+        <View style={{ gap: 8, paddingTop: 8 }}>
+          <T v="label">Recent moves</T>
+          {desk.recent.map(m => (
+            <GradCard key={m.id} color={m.rosterId != null ? teamColor(m.rosterId) : null} minHeight={58} onPress={m.adds[0] ? () => openPlayer(m.adds[0].id, m.adds[0].name) : undefined} accessibilityLabel={moveTitle(m)}>
+              <MoveFaces move={m} teamName={m.rosterId != null ? x.teamName(m.rosterId) : ''} />
+              <Stack2 title={moveTitle(m)} sub={[m.rosterId != null ? x.teamName(m.rosterId) : '', moveDrop(m)].filter(Boolean).join(' · ')} size={15} />
+              <HeatChip label={bidOf(m)} colors={neutral} height={30} size={14} minWidth={48} />
+            </GradCard>
+          ))}
+        </View>
+      )}
     </View>
   )
 }

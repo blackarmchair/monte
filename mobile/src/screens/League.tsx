@@ -38,6 +38,7 @@ export default function League() {
     <ScrollView ref={scroll} style={{ flex: 1, backgroundColor: t.bg }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 28, gap: 20 }}>
       <Seg
         fill
+        fit
         value={tab}
         onChange={setTab}
         options={[
