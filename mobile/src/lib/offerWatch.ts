@@ -6,9 +6,11 @@ import * as BackgroundTask from 'expo-background-task'
 import * as Notifications from 'expo-notifications'
 import * as TaskManager from 'expo-task-manager'
 import { AppState, Linking } from 'react-native'
+import { compareVersions } from '@monte/core/appUpdate'
 import { offerMessage } from '@monte/core/offerWatch'
-import { unannouncedUpdate } from './appUpdate'
+import { appVersion, unannouncedUpdate } from './appUpdate'
 import { monte } from './monte'
+import { cacheRead, cacheWrite } from './storage'
 
 const TASK = 'monte-offer-check'
 const CHANNEL = 'offers'
@@ -18,6 +20,8 @@ const ALERT_CHANNEL = 'alerts'
 const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000
 let updateCheckedAt = 0
 const INTERVAL_MIN = 15
+/** The last tapped notification already acted on (Android keeps returning it on every launch). */
+const HANDLED_KEY = 'notification-handled.txt'
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
@@ -74,16 +78,27 @@ export async function disableOfferAlerts(): Promise<void> {
 /** While the app runs: check on each return to the front, and open the league a tapped alert is about. */
 export function watchOffers(openLeague: (leagueId: string) => void): () => void {
   const check = () => void checkAndNotify().catch(() => undefined)
-  const open = (r: Notifications.NotificationResponse | null) => {
-    const data = r?.notification.request.content.data
-    if (typeof data?.url === 'string' && data.url.startsWith('https://github.com/')) return void Linking.openURL(data.url)
+  // getLastNotificationResponseAsync returns the last tap on every launch, however old: acting on
+  // it each time reopened a stale "Monte 1.7.1 is ready" download after 1.7.2 was out. So a tap is
+  // handled once, and an update link only opens while its version is newer than this app.
+  const open = async (r: Notifications.NotificationResponse | null) => {
+    if (!r) return
+    const id = r.notification.request.identifier
+    if ((await cacheRead(HANDLED_KEY).catch(() => null)) === id) return
+    await cacheWrite(HANDLED_KEY, id).catch(() => undefined)
+    const data = r.notification.request.content.data
+    if (typeof data?.url === 'string' && data.url.startsWith('https://github.com/')) {
+      const version = /Monte-(\d+\.\d+\.\d+)\.apk$/i.exec(data.url)?.[1]
+      if (!version || compareVersions(version, appVersion) > 0) void Linking.openURL(data.url)
+      return
+    }
     const leagueId = data?.leagueId
     if (typeof leagueId === 'string') openLeague(leagueId)
   }
   check()
   void Notifications.getLastNotificationResponseAsync().then(open)
   const state = AppState.addEventListener('change', s => s === 'active' && check())
-  const tap = Notifications.addNotificationResponseReceivedListener(open)
+  const tap = Notifications.addNotificationResponseReceivedListener(r => void open(r))
   return () => {
     state.remove()
     tap.remove()
