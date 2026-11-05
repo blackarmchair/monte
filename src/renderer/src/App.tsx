@@ -64,6 +64,8 @@ function Shell() {
   const kicker = [context && context.week > 0 ? `wk ${context.week}` : null, me ? `${me.wins}-${me.losses}` : null, league ? formatLabel(league) : null]
     .filter(Boolean)
     .join(' · ')
+    // no-break spaces except beside a "·", so a wrap falls between parts ("0.5 TEP" stays whole)
+    .replace(/(?<!·) (?!·)/g, '\u00a0')
   const title = page
     ? page.kind === 'player'
       ? page.name
@@ -99,7 +101,8 @@ function Shell() {
             <span className="trunc" style={{ fontWeight: 700, fontSize: 14 }}>
               {league?.name ?? 'Choose a league'}
             </span>
-            <span className="trunc" style={{ fontSize: 12, color: 'var(--ink2)' }}>
+            {/* wraps to a second line rather than cutting off the format (the TE premium is last) */}
+            <span style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
               {kicker}
             </span>
           </span>

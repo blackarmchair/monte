@@ -469,6 +469,8 @@ function IdeasView({ onOpen }: { onOpen: () => void }) {
           You’re {direction.mode === 'middle' ? 'in between' : direction.mode === 'contend' ? 'contending' : 'rebuilding'}
         </T>
         <Pills
+          wrap
+          small
           value={direction.override ?? 'auto'}
           onChange={v => x.setMode(v === 'auto' ? null : (v as Mode))}
           options={[{ value: 'auto', label: `Auto: ${MODE_LABEL[direction.auto.mode]}` }, ...MODES.map(m => ({ value: m, label: MODE_LABEL[m] }))]}
@@ -569,7 +571,7 @@ function IdeaCard({ i, onOpen }: { i: Idea; onOpen: () => void }) {
       <View style={{ gap: 4 }}>
         {[...i.reasons.map(r => [r.rule, r.text]), ...i.partnerWhy.map(w => ['Partner', w])].map(([rule, text]) => (
           <T key={text} v="small" c="ink2">
-            <T v="small" c="acc" style={{ fontFamily: font.sansBold }}>
+            <T v="small" c="ink" style={{ fontFamily: font.sansBold }}>
               {rule}.
             </T>{' '}
             {text}
@@ -628,7 +630,7 @@ function ChainCard({ ch, onOpen }: { ch: Chain; onOpen: () => void }) {
       <View style={{ gap: 4 }}>
         {ch.why.map(w => (
           <T key={w} v="small" c="ink2">
-            <T v="small" c="acc" style={{ fontFamily: font.sansBold }}>
+            <T v="small" c="ink" style={{ fontFamily: font.sansBold }}>
               Why it works.
             </T>{' '}
             {w}

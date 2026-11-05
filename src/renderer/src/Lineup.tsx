@@ -246,7 +246,8 @@ export default function Lineup() {
 
       {d && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 16 }}>
+          {/* The side card is for a change to make; an optimal lineup is a status line instead. */}
+          <div style={{ display: 'grid', gridTemplateColumns: best || differs || changed ? 'minmax(0,1fr) minmax(0,1fr)' : 'minmax(0,1fr)', gap: 16 }}>
             <div className="hero row" style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
               <div className="stack" style={{ gap: 4 }}>
                 <span className="small mute">
@@ -283,6 +284,7 @@ export default function Lineup() {
                 {opp && <Btn size="sm" label={sim.busy ? 'Simulating…' : sim.text ?? `Run ${num(settings.sims ?? 1000)} sims`} onClick={runSim} />}
               </div>
             </div>
+            {(best || differs || changed) && (
             <div className="hero" style={{ background: best || differs ? 'var(--acc-tint)' : 'var(--surf)', justifyContent: 'center', gap: 12 }}>
               <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, textWrap: 'pretty' }}>
                 {best
@@ -306,7 +308,11 @@ export default function Lineup() {
                 )}
               </div>
             </div>
+            )}
           </div>
+          {!best && !differs && !changed && (
+            <Notice tone="pos" message={`Your lineup is optimal for this week.${opp && total < opp.total ? " You're the underdog on paper." : ''}`} />
+          )}
           {cmpOpen && (
             <ProjCompare
               here="lineup"

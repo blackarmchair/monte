@@ -1,7 +1,7 @@
 // Player (pushed from anywhere a player shows): the profile card (NFL-colour hero with his headshot,
 // name, chips and a 3×2 bio) beside Value (sheet against market), with Injury (the override every
 // model uses) and Trade (who has him, the one action and a deal Monte found) as two cards under it.
-// Stats run the full width below: this season's games, every cell heat-coloured within its column.
+// Stats run the full width below: this season's games, points and finish heat-coloured within each column.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import Claim from './Claim'
 import { gameTable } from '@shared/gameLog'
@@ -220,7 +220,7 @@ function StatsTab({ p, usage }: { p: PlayerInfo; usage: Usage | undefined }) {
             {tb.cols.map((h, j) => head(h, `h${j}`))}
             {tb.rows.flatMap((r, i) =>
               r.cells.map((c, j) => {
-                const h = c.heat == null ? { bg: 'var(--surf)', fg: 'var(--mute)' } : heat(c.heat)
+                const h = c.heat == null ? { bg: 'var(--surf)', fg: c.text === '–' ? 'var(--mute)' : 'var(--ink)' } : heat(c.heat)
                 return cell(h.bg, h.fg, j === 0 ? 700 : 600, c.text, `${i}:${j}`)
               }),
             )}
@@ -229,7 +229,7 @@ function StatsTab({ p, usage }: { p: PlayerInfo; usage: Usage | undefined }) {
         </div>
       )}
       <div className="small mute">
-        Brighter cells are his best weeks in that stat. RK is his PPR finish at {p.pos} that week; SNP% his share of offensive snaps; FL fumbles lost.
+        Coloured cells rank his weeks by points and finish: brighter is better. RK is his PPR finish at {p.pos} that week; SNP% his share of offensive snaps; FL fumbles lost.
         {usage?.usagePPG != null ? ` Usage ${n1(usage.usagePPG)} PPG vs projection ${n1(usage.sleeperPPG)}.` : ''}
       </div>
     </section>
@@ -302,20 +302,29 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
     showToast(returnWeek == null ? `${name} out for the season` : `${name} out until week ${returnWeek}`)
   }
   const status = o ? (o.returnWeek == null ? 'Out for the season (your override)' : `Out until week ${o.returnWeek} (your override)`) : sleeperTag ? `${sleeperTag}, per Sleeper` : 'Healthy'
+  // A healthy player gets a link rather than a return-week stepper he doesn't need.
+  const [editing, setEditing] = useState(false)
+  const showControls = !!o || !!sleeperTag || editing
   return (
     <div className="stack" style={{ gap: 12, padding: '20px 22px 22px', borderRadius: 22, background: 'var(--card)' }}>
       <div className="stack" style={{ gap: 2 }}>
         <span className="label">Injury status</span>
         <span style={{ fontSize: 18, fontWeight: 700, color: o || sleeperTag ? 'var(--warn)' : 'var(--pos)' }}>{status}</span>
       </div>
-      <div className="row" style={{ gap: 10, padding: '6px 6px 6px 16px', borderRadius: 16, background: 'var(--surf)' }}>
-        <span style={{ flex: 1, fontWeight: 600 }}>Back in week</span>
-        <Stepper value={wk} onDec={() => setWk(w => Math.max(first, w - 1))} onInc={() => setWk(w => Math.min(18, w + 1))} />
-      </div>
-      <div className="row" style={{ gap: 8 }}>
-        <Btn kind="primary" label="Save" onClick={() => save(wk)} style={{ flex: 1, minHeight: 42 }} />
-        <Btn label="Out for season" onClick={() => save(null)} style={{ flex: 1, minHeight: 42 }} />
-      </div>
+      {showControls ? (
+        <>
+          <div className="row" style={{ gap: 10, padding: '6px 6px 6px 16px', borderRadius: 16, background: 'var(--surf)' }}>
+            <span style={{ flex: 1, fontWeight: 600 }}>Back in week</span>
+            <Stepper value={wk} onDec={() => setWk(w => Math.max(first, w - 1))} onInc={() => setWk(w => Math.min(18, w + 1))} />
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <Btn kind="primary" label="Save" onClick={() => save(wk)} style={{ flex: 1, minHeight: 42 }} />
+            <Btn label="Out for season" onClick={() => save(null)} style={{ flex: 1, minHeight: 42 }} />
+          </div>
+        </>
+      ) : (
+        <Link label="Set an override" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing(true)} />
+      )}
       <span className="small mute">Overrides outrank Sleeper's tag and ESPN's estimate in Pick odds, Usage and Lineup.</span>
       {o && (
         <Link

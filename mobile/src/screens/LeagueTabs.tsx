@@ -6,7 +6,7 @@ import { useFocusEffect, router } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AppState, Linking, Pressable, View } from 'react-native'
 import { connectionItems, irItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@monte/core/inbox'
-import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@monte/core/leagueWeek'
+import { hasKickedOff, matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@monte/core/leagueWeek'
 import { offerRole } from '@monte/core/offers'
 import { bidProblem } from '@monte/core/sleeperWaivers'
 import { moveDrop, moveTitle, type WaiverDesk, type WaiverMove } from '@monte/core/waivers'
@@ -247,7 +247,7 @@ function WaiverBlock({ desk, onChanged }: { desk: WaiverDesk; onChanged: () => v
         <StatTile k="Median bid" v={desk.bids ? `$${desk.bids.median}` : '—'} sub={desk.bids ? `high $${desk.bids.high}` : 'none paid'} size={22} />
         <StatTile k="Last run" v={desk.lastRun ? shortDate(desk.lastRun) : '—'} sub={desk.cadence} size={22} />
       </Row>
-      {!!desk.pendingNote && <Notice tone="mute" message={desk.pendingNote} />}
+      {!!desk.pendingNote && <Notice message={desk.pendingNote} />}
       {desk.pending && (
         <View style={{ gap: 8, paddingTop: 8 }}>
           <T v="label">Your claims</T>
@@ -328,12 +328,13 @@ export function Matchups() {
       )}
       {pairs.map(m => {
         const [a, b] = m.sides
+        const live = hasKickedOff(m.sides)
         const isOpen = shownOpen === m.id
         return (
           <View key={m.id} style={[{ borderRadius: R.card, backgroundColor: t.surf, overflow: 'hidden' }, a.rosterId === me && ring(t, true)]}>
             <Pressable onPress={() => setOpen(isOpen ? -1 : m.id)} style={({ pressed }) => [{ padding: 14, gap: 10 }, pressed && { opacity: 0.8 }]}>
-              <SideRow s={a} name={label(a)} lead={a.winPct >= b.winPct} />
-              <SideRow s={b} name={label(b)} lead={b.winPct > a.winPct} />
+              <SideRow s={a} name={label(a)} lead={a.winPct >= b.winPct} live={live} />
+              <SideRow s={b} name={label(b)} lead={b.winPct > a.winPct} live={live} />
               <WinBar a={a} b={b} />
             </Pressable>
             {a.rosterId === me && (
@@ -348,7 +349,7 @@ export function Matchups() {
                 )}
               </View>
             )}
-            {isOpen && <StarterRows a={a} b={b} />}
+            {isOpen && <StarterRows a={a} b={b} live={live} />}
           </View>
         )
       })}
@@ -362,14 +363,16 @@ export function Matchups() {
   )
 }
 
-function SideRow({ s, name, lead }: { s: MatchSide; name: string; lead: boolean }) {
+// Before kickoff the big number is the projection; once games start it's the score.
+function SideRow({ s, name, lead, live }: { s: MatchSide; name: string; lead: boolean; live: boolean }) {
   const { hide } = useApp()
+  const pct = `${Math.round(s.winPct * 100)}% to win`
   return (
     <Row gap={12}>
       <TeamAvatar rid={s.rosterId} name={name} size={38} src={hide ? null : s.avatar} />
-      <Stack2 title={name} sub={`proj ${s.projected.toFixed(1)} · ${Math.round(s.winPct * 100)}% to win`} subC={lead ? 'pos' : 'mute'} size={15} />
+      <Stack2 title={name} sub={live ? `proj ${s.projected.toFixed(1)} · ${pct}` : `projected · ${pct}`} subC={lead ? 'pos' : 'mute'} size={15} />
       <T v="bold" size={24} num>
-        {s.points.toFixed(1)}
+        {(live ? s.points : s.projected).toFixed(1)}
       </T>
     </Row>
   )
@@ -388,7 +391,7 @@ function WinBar({ a, b }: { a: MatchSide; b: MatchSide }) {
 
 const STATE_LABEL: Record<MatchPlayer['state'], string> = { pre: '', live: 'Live', done: 'Final', bye: 'Bye', empty: '' }
 
-function StarterRows({ a, b }: { a: MatchSide; b: MatchSide }) {
+function StarterRows({ a, b, live }: { a: MatchSide; b: MatchSide; live: boolean }) {
   const t = useTheme()
   const { openPlayer } = useApp()
   const n = Math.max(a.starters.length, b.starters.length)
@@ -397,12 +400,20 @@ function StarterRows({ a, b }: { a: MatchSide; b: MatchSide }) {
     const empty = p.state === 'empty'
     const score = (
       <View style={{ alignItems: right ? 'flex-start' : 'flex-end', minWidth: 40 }}>
-        <T v="bold" size={14} num c={p.state === 'pre' ? 'mute' : 'ink'}>
-          {p.state === 'pre' ? '–' : p.points.toFixed(1)}
-        </T>
-        <T v="small" c="mute" num>
-          {p.proj.toFixed(1)}
-        </T>
+        {live ? (
+          <>
+            <T v="bold" size={14} num c={p.state === 'pre' ? 'mute' : 'ink'}>
+              {p.state === 'pre' ? '–' : p.points.toFixed(1)}
+            </T>
+            <T v="small" c="mute" num>
+              {p.proj.toFixed(1)}
+            </T>
+          </>
+        ) : (
+          <T v="bold" size={14} num c="ink2">
+            {p.proj.toFixed(1)}
+          </T>
+        )}
       </View>
     )
     return (

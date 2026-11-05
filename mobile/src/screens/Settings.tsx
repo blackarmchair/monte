@@ -200,7 +200,7 @@ export default function Settings() {
         )}
         <Row gap={14} wrap>
           {expired.length > 0 && <Btn kind="link" label={`Clear ${expired.length} expired`} onPress={() => void setSettings({ injuries: injuries.filter(i => !expired.includes(i)) })} />}
-          {sorted.length === 0 && <Btn kind="link" label="Import from sleeperStandings config" onPress={doImport} />}
+          {sorted.length === 0 && <Btn kind="link" label="Import the bundled injury list" onPress={doImport} />}
         </Row>
         {msg && (
           <T v="small" c="mute">

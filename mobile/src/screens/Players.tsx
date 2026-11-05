@@ -247,7 +247,7 @@ export default function Players() {
               title={l.name}
               sub={
                 <>
-                  {!!l.rank && <Text style={{ fontFamily: font.sansBold, color: t.acc }}>{l.rank} · </Text>}
+                  {!!l.rank && <Text style={{ fontFamily: font.sansBold, color: t.ink }}>{l.rank} · </Text>}
                   {l.meta}
                 </>
               }

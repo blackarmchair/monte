@@ -166,7 +166,7 @@ export default function Settings() {
         )}
         <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
           {expired.length > 0 && <Link label={`Clear ${expired.length} expired`} onClick={() => void setSettings({ injuries: injuries.filter(i => !expired.includes(i)) })} />}
-          {sorted.length === 0 && <Link label="Import from sleeperStandings config" onClick={doImport} />}
+          {sorted.length === 0 && <Link label="Import the bundled injury list" onClick={doImport} />}
         </div>
         {msg && <span className="small mute">{msg}</span>}
       </div>

@@ -22,7 +22,9 @@ export const dark = {
   neg: '#EC6A57',
   warn: '#E0A14A',
   /** gradient strength: how much of the card colour the gradient starts with */
-  gs: 42,
+  gs: 28, // a third lighter than it was: dark rows competed with the value chips
+  /** where a row gradient has faded into the card, % of its width */
+  gstop: 72,
   /** heat text turns dark past this distance from the middle */
   heatCut: 0.36,
 }
@@ -45,7 +47,9 @@ export const light: Palette = {
   pos: '#2F6B3B',
   neg: '#B4301F',
   warn: '#9A6210',
-  gs: 26,
+  // soft in light: cool team colours running into the warm cream clashed at 26/72
+  gs: 14,
+  gstop: 60,
   heatCut: 0.2,
 }
 
@@ -122,10 +126,14 @@ export function alpha(c: string, a: number): string {
 const bgImage = (g: string): ViewStyle =>
   (Platform.OS === 'web' ? { backgroundImage: g } : { experimental_backgroundImage: g }) as ViewStyle
 
-/** The gradient card: the colour fading into the card from the left by 72%. */
+/** A horizontal fade from transparent to `c`, for the edge of a row that scrolls sideways. */
+export const edgeFade = (c: string, side: 'left' | 'right'): ViewStyle =>
+  bgImage(`linear-gradient(${side === 'right' ? 90 : 270}deg, ${alpha(c, 0)} 0%, ${c} 85%)`)
+
+/** The gradient card: the colour fading into the card from the left (by 60% in light, 72% in dark). */
 export const grad = (t: Palette, c: string): ViewStyle => ({
   backgroundColor: t.card,
-  ...bgImage(`linear-gradient(100deg, ${mix(c, t.card, t.gs)} 0%, ${t.card} 72%)`),
+  ...bgImage(`linear-gradient(100deg, ${mix(c, t.card, t.gs)} 0%, ${t.card} ${t.gstop}%)`),
 })
 
 /** The player hero: a stronger, steeper NFL-colour gradient. */

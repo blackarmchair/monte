@@ -19,7 +19,10 @@
   --pos: #2f6b3b;
   --neg: #b4301f;
   --warn: #9a6210;
-  --gs: 26%;
+  /* row gradients: colour strength and where it has faded into the card. Light is kept soft:
+     cool team colours running into the warm cream clashed at 26%/72%. */
+  --gs: 14%;
+  --gstop: 60%;
   --shadow: 0 8px 24px rgba(40, 30, 20, 0.12);
   --on-color: #16140f;
   --sans: 'IBM Plex Sans', system-ui, sans-serif;
@@ -44,7 +47,8 @@
     --pos: #6dbe7e;
     --neg: #ec6a57;
     --warn: #e0a14a;
-    --gs: 42%;
+    --gs: 28%; /* a third lighter than it was: dark rows competed with the value chips */
+    --gstop: 72%;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }

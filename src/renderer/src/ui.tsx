@@ -18,8 +18,8 @@ export const NFL: Record<string, string> = {
 }
 export const nflColor = (team: string | null | undefined) => (team && NFL[team]) || 'var(--mute)'
 
-/** The gradient card: the colour fading into the card from the left by 72%. */
-export const grad = (c: string) => `linear-gradient(100deg, color-mix(in oklab, ${c} var(--gs), var(--card)) 0%, var(--card) 72%)`
+/** The gradient card: the colour fading into the card from the left (by 60% in light, 72% in dark). */
+export const grad = (c: string) => `linear-gradient(100deg, color-mix(in oklab, ${c} var(--gs), var(--card)) 0%, var(--card) var(--gstop))`
 /** The player hero's stronger, steeper gradient. */
 export const heroGrad = (c: string) => `linear-gradient(160deg, color-mix(in oklab, ${c} 55%, var(--card)) 0%, var(--card) 75%)`
 /** Selected / yours: a 2px accent ring; a candidate (or a quieter "yours") gets 1px. */

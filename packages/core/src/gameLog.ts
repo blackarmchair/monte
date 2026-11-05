@@ -96,6 +96,9 @@ const show = (c: Col, x: number | null, mean = false) =>
 export function gameTable(pos: string, games: GameLog[]): GameTable {
   const groups = groupsFor(pos).filter(g => !g.optional || games.some(gm => g.cols.some(c => (c.get(gm.stats) ?? 0) !== 0)))
   const cols = groups.flatMap(g => g.cols)
+  // Only the fantasy outcome (points and finish) is heat-coloured, and only where the weeks differ:
+  // colouring every cell, a near-solid column of 100% snaps included, left nothing standing out.
+  const hot = groups.flatMap(g => g.cols.map(c => g === fantasy && c.k !== 'SNP%'))
   const vals = games.map(gm => cols.map(c => c.get(gm.stats)))
   const col = (j: number) => vals.map(v => v[j]).filter((x): x is number => x != null)
   const lo = cols.map((_, j) => Math.min(...col(j)))
@@ -109,7 +112,8 @@ export function gameTable(pos: string, games: GameLog[]): GameTable {
       cells: cols.map((c, j) => {
         const x = vals[i][j]
         if (x == null) return { text: '–', heat: null }
-        const v = hi[j] === lo[j] ? 0.5 : (x - lo[j]) / (hi[j] - lo[j])
+        if (!hot[j] || hi[j] === lo[j]) return { text: show(c, x), heat: null }
+        const v = (x - lo[j]) / (hi[j] - lo[j])
         return { text: show(c, x), heat: c.low ? 1 - v : v }
       }),
     })),

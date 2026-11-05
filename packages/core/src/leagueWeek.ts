@@ -30,6 +30,11 @@ export type MatchSide = {
 
 export type Matchup = { id: number; sides: [MatchSide, MatchSide] }
 
+/** Whether any starter on either side has played or is playing. Before then a matchup leads with
+ *  projections, since every score is 0.0. */
+export const hasKickedOff = (sides: readonly MatchSide[]): boolean =>
+  sides.some(s => s.points > 0 || s.starters.some(p => p.state === 'live' || p.state === 'done'))
+
 /** `playoffs`: the week is at or past the league's playoff start, where only bracket games pair up. */
 export type LeagueWeek = { season: string; week: number; playoffs: boolean; matchups: Matchup[]; builtAt: string }
 

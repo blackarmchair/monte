@@ -141,7 +141,7 @@ export default function Players() {
             injury: r.injury || a?.injury || '',
             stats: [
               { k: 'Market', v: a?.market == null ? '—' : kfmt(a.val), color: tag?.tone === 'acc' ? 'var(--acc)' : tag?.tone === 'pos' ? 'var(--pos)' : undefined },
-              { k: 'Season PPG', v: a?.ppgRank ? `${r.pos}${a.ppgRank}` : '—' },
+              { k: 'PPG rank', v: a?.ppgRank ? `${r.pos}${a.ppgRank}` : '—' },
               {
                 k: 'KTC move',
                 v: move == null ? '—' : move > 0 ? `▲ ${move}` : move < 0 ? `▼ ${-move}` : '–',
@@ -317,7 +317,7 @@ export default function Players() {
               }
               sub={
                 <>
-                  {l.rank && <b style={{ color: 'var(--acc)' }}>{l.rank} · </b>}
+                  {l.rank && <b style={{ color: 'var(--ink)' }}>{l.rank} · </b>}
                   {l.meta}
                 </>
               }

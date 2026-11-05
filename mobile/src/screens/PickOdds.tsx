@@ -149,9 +149,15 @@ export default function PickOdds() {
                   onPress={() => open(p.originalRosterId)}
                   style={({ pressed }) => [{ width: 128, gap: 6, padding: 14, borderRadius: R.card, opacity: pressed ? 0.8 : 1 }, grad(t, teamColor(p.originalRosterId))]}
                 >
-                  <T v="small" size={12} c="ink2" lines={1}>
-                    Rd {p.round} · {p.originalRosterId === me ? 'own' : `via ${p.originalName}`}
-                  </T>
+                  {/* two lines, so "via <team>" isn't cut off on a 128px card */}
+                  <View>
+                    <T v="small" size={12} c="ink2" lines={1}>
+                      Rd {p.round}
+                    </T>
+                    <T v="small" size={12} c="ink2" lines={1}>
+                      {p.originalRosterId === me ? 'own' : `via ${p.originalName}`}
+                    </T>
+                  </View>
                   <T v="bold" size={28} num style={{ lineHeight: 30 }}>
                     {p.round}.{pad2(slotOf.get(p.originalRosterId) ?? 0)}
                   </T>

@@ -418,7 +418,7 @@ function IdeaCard({ i, onOpen }: { i: Idea; onOpen: () => void }) {
       <div className="stack" style={{ gap: 4 }}>
         {[...i.reasons.map(r => [r.rule, r.text]), ...i.partnerWhy.map(w => ['Partner', w])].map(([rule, text]) => (
           <span key={text} className="small" style={{ lineHeight: 1.4 }}>
-            <b style={{ color: 'var(--acc)' }}>{rule}.</b> {text}
+            <b style={{ color: 'var(--ink)' }}>{rule}.</b> {text}
           </span>
         ))}
       </div>
@@ -463,7 +463,7 @@ function ChainCard({ ch, onOpen }: { ch: Chain; onOpen: () => void }) {
       <div className="stack" style={{ gap: 4 }}>
         {ch.why.map(w => (
           <span key={w} className="small" style={{ lineHeight: 1.4 }}>
-            <b style={{ color: 'var(--acc)' }}>Why it works.</b> {w}
+            <b style={{ color: 'var(--ink)' }}>Why it works.</b> {w}
           </span>
         ))}
       </div>

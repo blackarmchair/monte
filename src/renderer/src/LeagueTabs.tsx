@@ -3,7 +3,7 @@
 // connected, then the league's completed trades this season, newest first.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { connectionItems, irItems, lineupItems, lowestNote, offerItems, orderInbox, waiverItems, type InboxAction, type InboxItem } from '@shared/inbox'
-import { matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@shared/leagueWeek'
+import { hasKickedOff, matchupPollMs, type LeagueTrades, type LeagueWeek, type MatchPlayer, type MatchSide, type TradeTx } from '@shared/leagueWeek'
 import { offerRole } from '@shared/offers'
 import { bidProblem } from '@shared/sleeperWaivers'
 import { moveDrop, moveTitle, type WaiverDesk, type WaiverMove } from '@shared/waivers'
@@ -118,7 +118,8 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
   }
   return (
     <div className="stack" style={{ gap: 20, maxWidth: 1520 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 16 }}>
+      {/* The side card is the top action; with nothing to do the hero says so on its own. */}
+      <div style={{ display: 'grid', gridTemplateColumns: top || loading ? 'minmax(0,1fr) minmax(0,1fr)' : 'minmax(0,1fr)', gap: 16 }}>
         <div className="hero" style={{ padding: 24 }}>
           <div className="row" style={{ justifyContent: 'space-between', gap: 10 }}>
             <span className="small mute">{kicker}</span>
@@ -131,14 +132,16 @@ export function ThisWeek({ onTrades }: { onTrades: () => void }) {
             {loading ? '' : summary || 'No offers waiting and no lineup fixes.'}
           </div>
         </div>
-        <div className="hero" style={{ padding: 24, background: top ? 'var(--acc-tint)' : 'var(--surf)', justifyContent: 'center', gap: 12 }}>
-          <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, textWrap: 'pretty' }}>{top ? top.lead ?? top.title : loading ? 'Looking for your best next move…' : 'Nothing to do right now.'}</span>
-          {top && (
-            <div>
-              <Btn kind="primary" label={ctaOf(top)} disabled={!!irBusy} onClick={() => run(top.action)} style={{ minHeight: 42 }} />
-            </div>
-          )}
-        </div>
+        {(top || loading) && (
+          <div className="hero" style={{ padding: 24, background: top ? 'var(--acc-tint)' : 'var(--surf)', justifyContent: 'center', gap: 12 }}>
+            <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, textWrap: 'pretty' }}>{top ? top.lead ?? top.title : 'Looking for your best next move…'}</span>
+            {top && (
+              <div>
+                <Btn kind="primary" label={ctaOf(top)} disabled={!!irBusy} onClick={() => run(top.action)} style={{ minHeight: 42 }} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {trades.res && !trades.res.ok && <ErrorBox message={trades.res.error} onRetry={trades.load} />}
@@ -235,7 +238,7 @@ function WaiverBlock({ desk, onChanged }: { desk: WaiverDesk; onChanged: () => v
         <StatTile k="Median winning bid" v={desk.bids ? `$${desk.bids.median}` : '—'} sub={desk.bids ? `${desk.bids.count} paid, high $${desk.bids.high}` : 'none paid yet'} size={26} />
         <StatTile k="Last run" v={desk.lastRun ? shortDate(desk.lastRun) : '—'} sub={desk.lastRun ? `${desk.cadence} · ${shortTime(desk.lastRun)}` : desk.cadence} size={26} />
       </div>
-      {desk.pendingNote && <Notice tone="mute" message={desk.pendingNote} />}
+      {desk.pendingNote && <Notice message={desk.pendingNote} />}
       {desk.pending && (
         <div className="stack" style={{ gap: 8, paddingTop: 8 }}>
           <span className="label">Your claims</span>
@@ -306,6 +309,7 @@ export function Matchups() {
       {pairs.map(m => {
         const [a, b] = m.sides
         const isOpen = shownOpen === m.id
+        const live = hasKickedOff(m.sides)
         return (
           <div key={m.id} className="stack" style={{ borderRadius: 20, background: 'var(--card)', overflow: 'hidden', boxShadow: a.rosterId === me ? RING_SOFT : undefined }}>
             <button
@@ -314,9 +318,9 @@ export function Matchups() {
               style={{ background: 'transparent', padding: '16px 18px', flexDirection: 'column', alignItems: 'stretch', gap: 12, borderRadius: 0 }}
             >
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 16, alignItems: 'center' }}>
-                <SideHead s={a} name={label(a)} />
+                <SideHead s={a} name={label(a)} live={live} />
                 <span className="small mute">vs</span>
-                <SideHead s={b} name={label(b)} right />
+                <SideHead s={b} name={label(b)} live={live} right />
               </div>
               <WinBar a={a} b={b} />
             </button>
@@ -332,7 +336,7 @@ export function Matchups() {
                 )}
               </div>
             )}
-            {isOpen && <StarterRows a={a} b={b} />}
+            {isOpen && <StarterRows a={a} b={b} live={live} />}
           </div>
         )
       })}
@@ -346,7 +350,8 @@ export function Matchups() {
   )
 }
 
-function SideHead({ s, name, right }: { s: MatchSide; name: string; right?: boolean }) {
+// Before kickoff the big number is the projection; once games start it's the score.
+function SideHead({ s, name, right, live }: { s: MatchSide; name: string; right?: boolean; live: boolean }) {
   const { hide } = useApp()
   return (
     <div className="row" style={{ gap: 12, minWidth: 0, flexDirection: right ? 'row-reverse' : 'row', textAlign: right ? 'right' : 'left' }}>
@@ -355,10 +360,10 @@ function SideHead({ s, name, right }: { s: MatchSide; name: string; right?: bool
         <span className="trunc" style={{ fontWeight: 700, fontSize: 16, maxWidth: '100%' }}>
           {name}
         </span>
-        <span className="small mute num">proj {s.projected.toFixed(1)}</span>
+        <span className="small mute num">{live ? `proj ${s.projected.toFixed(1)}` : 'projected'}</span>
       </div>
       <span className="num" style={{ fontSize: 28, fontWeight: 700 }}>
-        {s.points.toFixed(1)}
+        {(live ? s.points : s.projected).toFixed(1)}
       </span>
     </div>
   )
@@ -385,7 +390,7 @@ function WinBar({ a, b }: { a: MatchSide; b: MatchSide }) {
 
 const STATE_LABEL: Record<MatchPlayer['state'], string> = { pre: '', live: 'Live', done: 'Final', bye: 'Bye', empty: '' }
 
-function StarterRows({ a, b }: { a: MatchSide; b: MatchSide }) {
+function StarterRows({ a, b, live }: { a: MatchSide; b: MatchSide; live: boolean }) {
   const { openPlayer } = useApp()
   const n = Math.max(a.starters.length, b.starters.length)
   const cell = (p: MatchPlayer | undefined, right: boolean) => {
@@ -419,8 +424,14 @@ function StarterRows({ a, b }: { a: MatchSide; b: MatchSide }) {
           <span className="small mute">{[p.pos, p.team, STATE_LABEL[p.state]].filter(Boolean).join(' · ')}</span>
         </span>
         <span className="stack num" style={{ alignItems: right ? 'flex-start' : 'flex-end', minWidth: 52 }}>
-          <span style={{ fontWeight: 700, fontSize: 15, color: p.state === 'pre' ? 'var(--mute)' : 'var(--ink)' }}>{p.state === 'pre' ? '–' : p.points.toFixed(1)}</span>
-          <span className="small mute">{p.proj.toFixed(1)}</span>
+          {live ? (
+            <>
+              <span style={{ fontWeight: 700, fontSize: 15, color: p.state === 'pre' ? 'var(--mute)' : 'var(--ink)' }}>{p.state === 'pre' ? '–' : p.points.toFixed(1)}</span>
+              <span className="small mute">{p.proj.toFixed(1)}</span>
+            </>
+          ) : (
+            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--ink2)' }}>{p.proj.toFixed(1)}</span>
+          )}
         </span>
       </button>
     )

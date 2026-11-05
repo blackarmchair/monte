@@ -69,6 +69,16 @@ app.on('browser-window-created', (_e, win) => {
       fs.writeFileSync(path.join(out, `${name}.png`), (await wc.capturePage()).toPNG())
       done.push(name)
     }
+    // Long pages: also capture the next screenfuls (up to two more), named -p2, -p3.
+    const shotLong = async name => {
+      await shot(name)
+      for (let i = 2; i <= 3; i++) {
+        const moved = await js(`(() => { const s = document.querySelector('.scroll'); const y = s.scrollTop; s.scrollBy(0, s.clientHeight - 80); return s.scrollTop > y + 40 })()`)
+        if (!moved) break
+        await shot(`${name}-p${i}`)
+      }
+      await top()
+    }
     const top = () => js(`document.querySelector('.scroll').scrollTo(0, 0)`)
     const scrollToText = text =>
       js(`[...document.querySelectorAll('.title-l')].find(e => e.textContent.trim() === ${JSON.stringify(text)})?.scrollIntoView({ block: 'start' })`)
@@ -91,38 +101,52 @@ app.on('browser-window-created', (_e, win) => {
           await sleep(600)
         }
 
+        await go('League', 'This week')
+        await shotLong(`00-league-this-week${t}`)
+        // league switcher
+        await js(`document.querySelector('.lg-switch').click()`)
+        await sleep(600)
+        await shot(`00b-league-switcher${t}`)
+        await js(`document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+        await sleep(400)
         await go('League', 'Standings')
-        await shot(`01-league-standings${t}`)
+        await shotLong(`01-league-standings${t}`)
         await go('League', 'Matchups')
-        await shot(`02-league-matchups${t}`)
+        await shotLong(`02-league-matchups${t}`)
         await go('League', 'Trades')
-        await shot(`03-league-trades${t}`)
+        await shotLong(`03-league-trades${t}`)
         await go('League', 'Standings')
         // a team other than yours: the second card in the standings
         await js(`document.querySelectorAll('.scroll button.gcard')[1]?.click()`)
         await settle()
-        await shot(`04-team${t}`)
+        await shotLong(`04-team${t}`)
 
         await go('Lineup')
-        await shot(`05-lineup${t}`)
+        await shotLong(`05-lineup${t}`)
 
         await go('Trade', 'Build')
         await shot(`06-trade-build${t}`)
         await go('Trade', 'Ideas')
-        await shot(`07-trade-ideas${t}`)
+        await shotLong(`07-trade-ideas${t}`)
+        // load the first idea into Build
+        await js(`document.querySelector('.scroll button.gcard')?.click()`)
+        await settle()
+        await top()
+        await shotLong(`07b-trade-build-loaded${t}`)
+        await clickIn('.scroll button', 'Clear')
         await go('Trade', 'Vacuum')
         await shot(`08-trade-vacuum${t}`)
         await tab('Build')
 
         await go('Players', 'Value')
-        await shot(`09-players-value${t}`)
+        await shotLong(`09-players-value${t}`)
         await go('Players', 'Usage')
         await shot(`10-players-usage${t}`)
         await tab('Value')
         await sleep(300)
         await js(`document.querySelector('.scroll .gcard.click, .scroll button.gcard')?.click()`)
         await settle()
-        await shot(`11-player${t}`)
+        await shotLong(`11-player${t}`)
 
         await go('Picks')
         await shot(`12-pick-odds${t}`)
@@ -144,7 +168,7 @@ app.on('browser-window-created', (_e, win) => {
         await clickIn('.nav-item', 'Settings')
         await settle()
         await top()
-        await shot(`17-settings${t}`)
+        await shotLong(`17-settings${t}`)
       }
 
       if (showNames) throw new Error('SHOW_NAMES_DONE')
@@ -187,7 +211,10 @@ app.on('browser-window-created', (_e, win) => {
       if (String(e).indexOf('SHOW_NAMES_DONE') < 0) fs.writeFileSync(path.join(out, 'error.txt'), String(e && e.stack ? e.stack : e))
     }
     fs.writeFileSync(path.join(out, 'shots.json'), JSON.stringify(done, null, 2))
-    fs.rmSync(userData, { recursive: true, force: true })
+    // Windows can still hold a file in the profile; a leftover temp folder mustn't stop the quit.
+    try {
+      fs.rmSync(userData, { recursive: true, force: true })
+    } catch {}
     app.quit()
   })
 })

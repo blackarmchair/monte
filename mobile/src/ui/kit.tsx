@@ -20,7 +20,8 @@ import SliderBase from '@react-native-community/slider'
 import { Image } from 'expo-image'
 import { useFocusEffect } from 'expo-router'
 import { useApp } from '@/lib/store'
-import { font, grad, heat, ON_COLOR, R, rankHeat, ring, teamColor, useTheme, type Palette } from './theme'
+import { edgeFade, font, grad, heat, ON_COLOR, R, rankHeat, ring, teamColor, useTheme, type Palette } from './theme'
+import { Icon } from './icons'
 
 export type Tone = 'ink' | 'ink2' | 'mute' | 'acc' | 'pos' | 'neg' | 'warn'
 
@@ -288,8 +289,13 @@ export function Pills<V extends string>(props: {
   padX?: number
   bare?: boolean
   small?: boolean
+  /** wrap onto more lines instead of scrolling sideways (short sets inside a card) */
+  wrap?: boolean
+  /** what the row sits on, for the fade at a clipped edge; defaults to the page background */
+  on?: string
 }) {
   const t = useTheme()
+  const [view, setView] = useState({ w: 0, content: 0, x: 0 })
   const pills = props.options.map(o => {
     const on = o.value === props.value
     return (
@@ -313,10 +319,29 @@ export function Pills<V extends string>(props: {
     )
   })
   if (props.bare) return <>{pills}</>
+  if (props.wrap) return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{pills}</View>
+  // A row that runs off the screen gets a fade at the clipped edge, so it reads as scrollable.
+  const bg = props.on ?? t.bg
+  const moreRight = view.content - view.w - view.x > 4
+  const moreLeft = view.x > 4
+  const fade = { position: 'absolute', top: 0, bottom: 0, width: 32 } as const
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 6, paddingHorizontal: props.padX ?? 0 }}>
-      {pills}
-    </ScrollView>
+    <View style={{ flexGrow: 0 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0 }}
+        contentContainerStyle={{ gap: 6, paddingHorizontal: props.padX ?? 0 }}
+        scrollEventThrottle={32}
+        onLayout={e => setView(v => ({ ...v, w: e.nativeEvent.layout.width }))}
+        onContentSizeChange={w => setView(v => ({ ...v, content: w }))}
+        onScroll={e => setView(v => ({ ...v, x: e.nativeEvent.contentOffset.x }))}
+      >
+        {pills}
+      </ScrollView>
+      {moreLeft && <View pointerEvents="none" style={[fade, { left: 0 }, edgeFade(bg, 'left')]} />}
+      {moreRight && <View pointerEvents="none" style={[fade, { right: 0 }, edgeFade(bg, 'right')]} />}
+    </View>
   )
 }
 
@@ -436,12 +461,12 @@ export function Stepper(props: { value: number; onDec: () => void; onInc: () => 
   )
 }
 
-/** A check circle: accent with ✓ when on. */
+/** A check circle: accent with a drawn check when on (the ✓ glyph renders as a root sign in some Android fonts). */
 export function Check({ on, off }: { on: boolean; off?: string }) {
   const t = useTheme()
   return (
     <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: on ? t.acc : off ?? 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-      {on && <Text style={{ fontFamily: font.sansBold, fontSize: 14, color: t.accInk }}>✓</Text>}
+      {on && <Icon name="check" size={16} stroke={2.6} color={t.accInk} />}
     </View>
   )
 }

@@ -802,7 +802,7 @@ export function createMonteService(host: Host) {
       const entry = (name: string, returnWeek: number | null): ManualInjury | null => {
         const id = byName.get(normName(name))
         const p = id ? meta[id] : null
-        return id && p ? { id, name: nameOf(p), pos: p.position, team: p.team ?? 'FA', returnWeek, season, note: 'imported from sleeperStandings config', addedAt: now } : null
+        return id && p ? { id, name: nameOf(p), pos: p.position, team: p.team ?? 'FA', returnWeek, season, note: 'imported from the bundled list', addedAt: now } : null
       }
       return [
         ...Object.entries(BUNDLED_INJURIES.returnWeek).map(([n, w]) => entry(n, w)),

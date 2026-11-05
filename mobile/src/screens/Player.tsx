@@ -1,6 +1,6 @@
 // Player (a full page, pushed from anywhere a player shows): an NFL-colour hero with his headshot
 // and a six-cell bio, then sticky tabs. Value: sheet against market. Stats: this season's games,
-// every cell heat-coloured within its column. Trade: who has him, the one action, and a deal
+// points and finish heat-coloured within each column. Trade: who has him, the one action, and a deal
 // Monte found. Injury: the override that every model uses (this replaces the Overrides screen).
 import { useEffect, useMemo, useState } from 'react'
 import Claim from './Claim'
@@ -126,16 +126,20 @@ function PlayerBody({ id, fallbackName, startTab }: { id: string; fallbackName: 
         </View>
       </View>
 
-      <View style={{ flexDirection: 'row', paddingTop: 10, paddingHorizontal: 16, backgroundColor: t.bg }}>
-        {TABS.map(([k, label]) => {
-          const on = tab === k
-          return (
-            <Pressable key={k} onPress={() => setTab(k)} accessibilityRole="tab" accessibilityState={{ selected: on }} style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontFamily: font.sansSemi, fontSize: 15, color: on ? t.ink : t.mute }}>{label}</Text>
-              <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: on ? 3 : 1, backgroundColor: on ? t.acc : t.surf2 }} />
-            </Pressable>
-          )
-        })}
+      {/* Sticky child: React Native moves this View's style onto its own wrapper and gives the
+          child a plain fill, so the row direction has to live on an inner View or the tabs stack. */}
+      <View style={{ backgroundColor: t.bg }}>
+        <View style={{ flexDirection: 'row', paddingTop: 10, paddingHorizontal: 16 }}>
+          {TABS.map(([k, label]) => {
+            const on = tab === k
+            return (
+              <Pressable key={k} onPress={() => setTab(k)} accessibilityRole="tab" accessibilityState={{ selected: on }} style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontFamily: font.sansSemi, fontSize: 15, color: on ? t.ink : t.mute }}>{label}</Text>
+                <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: on ? 3 : 1, backgroundColor: on ? t.acc : t.surf2 }} />
+              </Pressable>
+            )
+          })}
+        </View>
       </View>
 
       <View style={{ paddingTop: 18, paddingHorizontal: 16, gap: 14 }}>
@@ -305,7 +309,7 @@ function StatsTab({ p, usage, proj }: { p: PlayerInfo; usage: number | null; pro
               {tb.rows.map(r => (
                 <View key={r.week} style={{ flexDirection: 'row', gap }}>
                   {r.cells.map((c, j) => {
-                    const h = c.heat == null ? { bg: t.surf, fg: t.mute } : heat(t, c.heat)
+                    const h = c.heat == null ? { bg: t.surf, fg: c.text === '–' ? t.mute : t.ink } : heat(t, c.heat)
                     return (
                       <View key={j} style={[cell, { width: CW, backgroundColor: h.bg }]}>
                         <Text style={{ fontFamily: j === 0 ? font.sansBold : font.sansSemi, fontSize: 14, color: h.fg, fontVariant: ['tabular-nums'] }}>{c.text}</Text>
@@ -326,7 +330,7 @@ function StatsTab({ p, usage, proj }: { p: PlayerInfo; usage: number | null; pro
         </View>
       )}
       <T v="small" c="mute">
-        Brighter cells are his best weeks in that stat. Swipe for more. RK is his PPR finish at {p.pos} that week; SNP% his share of offensive snaps; FL fumbles lost.
+        Coloured cells rank his weeks by points and finish: brighter is better. Swipe for more. RK is his PPR finish at {p.pos} that week; SNP% his share of offensive snaps; FL fumbles lost.
         {usage != null ? ` Usage ${n1(usage)} PPG vs projection ${n1(proj)}.` : ''}
       </T>
     </>
@@ -410,6 +414,9 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
     : sleeperTag
     ? `${sleeperTag}, per Sleeper`
     : 'Healthy'
+  // A healthy player gets a link rather than a return-week stepper he doesn't need.
+  const [editing, setEditing] = useState(false)
+  const showControls = !!o || !!sleeperTag || editing
   return (
     <>
       <Card gap={4}>
@@ -423,16 +430,22 @@ function InjuryTab({ id, name, pos, team, sleeperTag }: { id: string; name: stri
       <T size={14} c="ink2">
         Overrides outrank Sleeper's tag and ESPN's estimate in Pick odds, Usage and Lineup.
       </T>
-      <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}>
-        <T v="semi" style={{ flex: 1 }}>
-          Back in week
-        </T>
-        <Stepper value={wk} onDec={() => setWk(w => Math.max(first, w - 1))} onInc={() => setWk(w => Math.min(18, w + 1))} />
-      </Card>
-      <Row gap={8}>
-        <Btn kind="primary" label="Save" onPress={() => save(wk)} style={{ flex: 1, minHeight: 48 }} />
-        <Btn label="Out for season" onPress={() => save(null)} style={{ flex: 1, minHeight: 48 }} />
-      </Row>
+      {showControls ? (
+        <>
+          <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}>
+            <T v="semi" style={{ flex: 1 }}>
+              Back in week
+            </T>
+            <Stepper value={wk} onDec={() => setWk(w => Math.max(first, w - 1))} onInc={() => setWk(w => Math.min(18, w + 1))} />
+          </Card>
+          <Row gap={8}>
+            <Btn kind="primary" label="Save" onPress={() => save(wk)} style={{ flex: 1, minHeight: 48 }} />
+            <Btn label="Out for season" onPress={() => save(null)} style={{ flex: 1, minHeight: 48 }} />
+          </Row>
+        </>
+      ) : (
+        <Btn kind="link" label="Set an override" style={{ alignSelf: 'center' }} onPress={() => setEditing(true)} />
+      )}
       {o && (
         <Btn
           kind="link"

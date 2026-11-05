@@ -190,12 +190,17 @@ export default function DraftPanel() {
           })}
         </div>
       )}
-      <label className="field" style={{ width: 280 }}>
+      {/* An outlined input with its own label, so it doesn't read as another draft pill. */}
+      <label className="field" style={{ width: 300, minHeight: 40, borderRadius: 12, background: 'transparent', border: '1px solid var(--surf2)', padding: '0 12px' }}>
+        <span className="small mute" style={{ whiteSpace: 'nowrap' }}>
+          Mock draft
+        </span>
         <input
           value={otherId}
           onChange={e => setOtherId(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && otherId.trim() && pickDraft(otherId.trim(), false)}
-          placeholder="Other draft ID (mocks), then Enter"
+          placeholder="paste its ID, then Enter"
+          style={{ fontSize: 14 }}
         />
       </label>
     </>
