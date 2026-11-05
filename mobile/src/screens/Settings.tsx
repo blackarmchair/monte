@@ -248,7 +248,7 @@ export default function Settings() {
             </T>
             <T size={14} c="ink2">
               {settings.notifyOffers
-                ? "Monte alerts you to new trade offers in any league. Android decides when it checks, usually every 15 minutes or more, and it can't check after a force-stop."
+                ? "Monte alerts you to new trade offers in any league, and to new versions of Monte. Android decides when it checks, usually every 15 minutes or more, and it can't check after a force-stop."
                 : 'New-offer alerts are off.'}
             </T>
             <Btn
