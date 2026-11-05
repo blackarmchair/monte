@@ -205,7 +205,7 @@ export function normaliseTrade(t: any, meta: Meta, creatorRoster: (userId: strin
 // Source: github.com/Filip-Kin/sleeper-graphql (docs/queries.md: league_transactions_by_status).
 const PENDING = `query pending($league_id: Snowflake!, $leg: Int!) {
   league_transactions_by_status(league_id: $league_id, leg: $leg, status: "proposed") {
-    transaction_id type status created creator leg roster_ids consenter_ids adds drops draft_picks player_map
+    transaction_id type status created creator leg roster_ids consenter_ids adds drops draft_picks player_map settings
   }
 }`
 

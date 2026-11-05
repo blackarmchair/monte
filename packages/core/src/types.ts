@@ -99,10 +99,13 @@ export type Settings = {
   sheetCheckedAt?: string
   /** desktop: closing the window keeps Monte in the tray, so offer notifications keep coming */
   keepRunning?: boolean
-  /** alerts for new trade offers. Desktop: on unless turned off. Phone: off until turned on, since it needs permission. */
+  /** alerts: new trade offers, lineup trouble, waiver results, failing claims, trade deadlines.
+   *  Desktop: on unless turned off. Phone: off until turned on, since it needs permission. */
   notifyOffers?: boolean
   /** offers already alerted about, oldest first */
   seenOffers?: string[]
+  /** other alerts already sent, by key, oldest first */
+  seenAlerts?: string[]
   /** players marked taken by hand on a draft's Board, by draft id (the few most recent drafts) */
   draftMarks?: Record<string, string[]>
 }

@@ -199,7 +199,7 @@ export default function Settings() {
               {settings.sleeperLink.expiresAt ? ` The session ends ${new Date(settings.sleeperLink.expiresAt).toLocaleDateString()}.` : ''}
             </span>
             <span className="sub" style={{ fontSize: 14 }}>
-              {settings.notifyOffers === false ? 'New-offer notifications are off.' : 'Monte notifies you of new trade offers in any league while it is running, checking every 5 minutes.'}
+              {settings.notifyOffers === false ? 'Notifications are off.' : "Monte notifies you of new trade offers and offers about to end, starters who are hurt or on bye, empty lineup slots, waiver results, claims that will fail and trade deadlines in any league while it is running, checking every 5 minutes."}
               {settings.keepRunning ? ' Closing the window keeps it running in the tray; quit from the tray icon.' : ''}
             </span>
             <div className="row" style={{ gap: 8 }}>

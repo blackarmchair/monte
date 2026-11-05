@@ -12,7 +12,8 @@ import { ownedPicks, pickOwners } from './picks'
 import { buildRanks, boardIndex } from './ranks'
 import { simCacheKey, simResultFresh } from './simCache'
 import { addFreeAgent, bidProblem, cancelClaim, claimProblem, irProblem, isOnWaivers, liveRosters, moveIr, submitClaim, updateClaimBid, type AddResult, type ClaimRef, type IrMove, type WaiverClaim } from './sleeperWaivers'
-import { buildWaiverDesk, fetchPendingClaims, type WaiverDesk } from './waivers'
+import { buildWaiverDesk, fetchLegTransactions, fetchPendingClaims, pendingClaimsIn, type WaiverDesk } from './waivers'
+import { claimAlerts, deadlineAlerts, faabLeft, lineupAlerts, tokenAlerts, waiverResultAlerts, type Alert, type WeekPlayer } from './alerts'
 import { forecastGames, scoreForecasts, type ScoredGame, type TrackRecord } from './trackRecord'
 import { buildStartSit, type SeasonStats } from './startSit'
 import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
@@ -287,20 +288,30 @@ export function createMonteService(host: Host) {
     return { source: 'FantasyCalc', rows: fromFantasyCalc(fc.rows), asOf: fc.asOf, stale: fc.stale, scoring: FC_SCORING }
   }
 
-  // Sleeper's weekly projections, as stat lines by player. They shift through the week (injury news), so 30 minutes.
-  const projMem = new Map<string, { at: number; lines: Record<string, Record<string, number>> }>()
-  async function weekProjections(season: string, week: number) {
+  // Sleeper's weekly projections, as stat lines by player, plus who each player is: the rows carry
+  // fresh injury tags without the whole player table. They shift through the week (injury news), so 30 minutes.
+  const projMem = new Map<string, { at: number; lines: Record<string, Record<string, number>>; players: Record<string, WeekPlayer> }>()
+  async function projectionsFor(season: string, week: number) {
     const key = `${season}|${week}`
     const hit = projMem.get(key)
-    if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.lines
+    if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit
     const pos = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].map(p => `position%5B%5D=${p}`).join('&')
     const res = await get(`https://api.sleeper.com/projections/nfl/${season}/${week}?season_type=regular&${pos}`)
     if (!res.ok) throw new Error(`Sleeper's projections returned ${res.status}`)
     const lines: Record<string, Record<string, number>> = {}
-    for (const r of (await res.json()) as any[]) if (r?.player_id && r.stats) lines[String(r.player_id)] = r.stats
-    projMem.set(key, { at: Date.now(), lines })
-    return lines
+    const players: Record<string, WeekPlayer> = {}
+    for (const r of (await res.json()) as any[]) {
+      if (!r?.player_id) continue
+      const id = String(r.player_id)
+      if (r.stats) lines[id] = r.stats
+      const p = r.player ?? {}
+      players[id] = { name: `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || id, team: p.team ?? r.team ?? null, injury: p.injury_status ?? null }
+    }
+    const entry = { at: Date.now(), lines, players }
+    projMem.set(key, entry)
+    return entry
   }
+  const weekProjections = async (season: string, week: number) => (await projectionsFor(season, week)).lines
 
   /** The user's injury overrides that apply to the current NFL season. */
   async function currentOverrides(settings: Settings) {
@@ -727,6 +738,45 @@ export function createMonteService(host: Host) {
           if (!pending.length) continue
           const [rosters, users] = await Promise.all([sleeper<any[]>(`/league/${league.league_id}/rosters`), sleeper<any[]>(`/league/${league.league_id}/users`)])
           out.push(...offersInLeague({ league, rosters, users, pending, userId }))
+        } catch (e) {
+          if (e instanceof SleeperAuthError) throw e
+        }
+      }
+      return out
+    },
+
+    /**
+     * Lineup trouble, waiver results, failing claims and trade deadlines in every league that's in
+     * season, plus a Sleeper session about to end. Light enough for a background check: no player
+     * table, one projections read, and per league its live rosters, this week's matchups and two
+     * weeks of transactions. One league failing doesn't cost the others; a refused token throws.
+     */
+    async alerts(userId: string, token: string, expiresAt: number | null): Promise<Alert[]> {
+      const out = tokenAlerts(expiresAt)
+      const state = await sleeper<any>('/state/nfl')
+      const season = String(state.league_season || state.season)
+      const week = Math.max(1, Math.min(18, Number(state.display_week || state.week) || 1))
+      const nflWeek = state.season_type === 'regular' || state.season_type === 'post' ? Number(state.week) || null : null
+      const legs = week > 1 ? [week - 1, week] : [week]
+      const leagues = ((await sleeper<any[]>(`/user/${userId}/leagues/nfl/${season}`)) ?? []).filter(l => l.status === 'in_season' || l.status === 'post_season')
+      if (!leagues.length) return out
+      const [{ players }, games] = await Promise.all([projectionsFor(season, week), nflSchedule(season).catch(() => null)])
+      for (const league of leagues) {
+        try {
+          const [rosters, matchups, txs] = await Promise.all([
+            liveRosters(league.league_id, token),
+            sleeper<any[]>(`/league/${league.league_id}/matchups/${week}`),
+            fetchLegTransactions(league.league_id, legs, token),
+          ])
+          const mine = rosters.find(r => r.owner_id === userId || (r.co_owners ?? []).includes(userId))
+          if (!mine) continue
+          const left = faabLeft(league, mine)
+          if (games) out.push(...lineupAlerts({ league, rosterId: mine.roster_id, matchups: matchups ?? [], week, players, games }))
+          out.push(
+            ...waiverResultAlerts({ league, rosterId: mine.roster_id, transactions: txs, players, faabLeft: left }),
+            ...claimAlerts({ league, rosterId: mine.roster_id, rosters, pending: pendingClaimsIn(txs, mine.roster_id), players, faabLeft: left }),
+            ...deadlineAlerts(league, nflWeek),
+          )
         } catch (e) {
           if (e instanceof SleeperAuthError) throw e
         }

@@ -182,19 +182,27 @@ const CLAIMS = `query claims($league_id: Snowflake!, $leg: Int!) {
   }
 }`
 
+/** Every transaction in these weeks, as the GraphQL read gives them: with names, and with pending
+ *  claims the public API hides. Needs the session token; it sends nothing. */
+export async function fetchLegTransactions(leagueId: string, legs: number[], token: string, fetchFn: typeof fetch = fetch): Promise<any[]> {
+  const out = await Promise.all(legs.map(leg => gql<{ league_transactions: any[] | null }>(CLAIMS, { league_id: leagueId, leg }, token, fetchFn).then(d => d.league_transactions ?? [])))
+  const seen = new Set<string>()
+  return out.flat().filter(t => {
+    const id = String(t?.transaction_id)
+    return !!t && !seen.has(id) && !!seen.add(id)
+  })
+}
+
+/** Your open claims among transactions read with `fetchLegTransactions`. */
+export const pendingClaimsIn = (txs: any[], myRosterId: number) => txs.filter(t => t?.type === 'waiver' && t.status === 'pending' && (t.roster_ids ?? []).map(Number).includes(myRosterId))
+
 /**
  * Your open waiver claims. Sleeper's public API hides these, so this needs the session token. A read:
  * it sends nothing. Source: github.com/bealmot/sleeper-mcp (API-NOTES.md: read back with
  * league_transactions; a pending claim has status "pending" and its bid in settings.waiver_bid).
  */
 export async function fetchPendingClaims(leagueId: string, legs: number[], myRosterId: number, token: string, fetchFn: typeof fetch = fetch): Promise<any[]> {
-  const out = await Promise.all(legs.map(leg => gql<{ league_transactions: any[] | null }>(CLAIMS, { league_id: leagueId, leg }, token, fetchFn).then(d => d.league_transactions ?? [])))
-  const seen = new Set<string>()
-  return out.flat().filter(t => {
-    if (t?.type !== 'waiver' || t.status !== 'pending' || !(t.roster_ids ?? []).map(Number).includes(myRosterId)) return false
-    const id = String(t.transaction_id)
-    return !seen.has(id) && !!seen.add(id)
-  })
+  return pendingClaimsIn(await fetchLegTransactions(leagueId, legs, token, fetchFn), myRosterId)
 }
 
 const names = (xs: WaiverMove['adds']) => xs.map(x => x.name).join(', ')

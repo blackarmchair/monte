@@ -10,6 +10,8 @@ export type FoundOffer = {
   from: string
   gets: string[]
   gives: string[]
+  /** when the offer lapses (ms), if its sender set a time */
+  expiresAt?: number | null
 }
 
 /** How many offer ids to remember. Enough that an old one can't come back as new. */
@@ -35,6 +37,8 @@ export function offersInLeague(o: { league: any; rosters: any[]; users: any[]; p
       from: tx.creator != null ? names.get(tx.creator)?.name ?? 'Another team' : 'Another team',
       gets: tx.sides.filter(s => s.rosterId === mine.roster_id).flatMap(label),
       gives: tx.sides.filter(s => s.rosterId !== mine.roster_id).flatMap(label),
+      // Sleeper keeps it in seconds. Source: sleeper-graphql docs (propose_trade expires_at; settings.expires_at).
+      expiresAt: Number(raw.settings?.expires_at) > 0 ? Number(raw.settings.expires_at) * 1000 : null,
     })
   }
   return out

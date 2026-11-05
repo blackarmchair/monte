@@ -1,4 +1,5 @@
-// New-offer alerts on the phone: local notifications from a background check, with no server.
+// Alerts on the phone (new offers, lineup trouble, waiver results, failing claims, trade deadlines):
+// local notifications from a background check, with no server.
 // Android runs the check when it chooses (15 minutes apart at best, with network and battery to
 // spare) and not at all after a force-stop, so it also runs whenever the app comes to the front.
 import * as BackgroundTask from 'expo-background-task'
@@ -12,6 +13,7 @@ import { monte } from './monte'
 const TASK = 'monte-offer-check'
 const CHANNEL = 'offers'
 const UPDATE_CHANNEL = 'updates'
+const ALERT_CHANNEL = 'alerts'
 /** GitHub is asked about new versions at most this often, however often the check runs. */
 const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000
 let updateCheckedAt = 0
@@ -33,11 +35,16 @@ async function notifyUpdate() {
 
 async function checkAndNotify() {
   await notifyUpdate().catch(() => undefined)
-  const { fresh, hideNames } = await monte.newOffers()
+  const { fresh, all, hideNames } = await monte.newOffers()
   for (const o of fresh) {
     const { title, body } = offerMessage(o, hideNames)
     await Notifications.scheduleNotificationAsync({ content: { title, body, data: { leagueId: o.leagueId } }, trigger: { channelId: CHANNEL } })
   }
+  const alerts = await monte.newAlerts(all)
+  if (!alerts.length) return
+  await Notifications.setNotificationChannelAsync(ALERT_CHANNEL, { name: 'Lineup, waivers and deadlines', importance: Notifications.AndroidImportance.HIGH })
+  for (const m of alerts)
+    await Notifications.scheduleNotificationAsync({ content: { title: m.title, body: m.body, data: m.leagueId ? { leagueId: m.leagueId } : {} }, trigger: { channelId: ALERT_CHANNEL } })
 }
 
 // Must be defined at module scope: Android starts the task without any screen.

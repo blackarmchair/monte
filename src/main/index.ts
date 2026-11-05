@@ -8,6 +8,7 @@ import iconIco from '../../resources/icon.ico?asset'
 import iconPng from '../../resources/icon.png?asset'
 import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte/core/deadline'
 import type { EngineJob } from '@monte/core/engine'
+import { alertMessages, diffAlerts, offerExpiryAlerts } from '@monte/core/alerts'
 import { diffOffers, offerMessage } from '@monte/core/offerWatch'
 import { fetchSheet, sameWorkbook, SHEET_CHECK_MS } from '@monte/core/sheetLink'
 import { isSleeperPage, LOGIN_URL, loginMayVisit, READ_TOKEN_JS, TOKEN_POLL_MS, tokenFromStorage } from '@monte/core/sleeperLogin'
@@ -227,38 +228,46 @@ const monte = createMonteService({
   runEngine,
 })
 
-// ---- new-offer notifications -----------------------------------------------------------
-// While Monte is open, look for new offers across every league. Monte quits when its window closes,
-// so nothing arrives after that. A refused token is left for the next real write to deal with:
-// a background check must not disconnect anyone.
+// ---- notifications ---------------------------------------------------------------------
+// While Monte is open, look for new offers and other alerts (lineup trouble, waiver results, failing
+// claims, trade deadlines) across every league. Monte quits when its window closes unless it's kept
+// in the tray, so nothing arrives after that. A refused token is left for the next real write to
+// deal with: a background check must not disconnect anyone.
 const OFFER_CHECK_MS = 5 * 60 * 1000
 const OFFER_FIRST_CHECK_MS = 30 * 1000
 /** Electron drops a notification's click handler if the object is collected. */
 const liveNotifications = new Set<Notification>()
+
+function notify(m: { title: string; body: string }, leagueId: string) {
+  const n = new Notification({ ...m, icon: process.platform === 'win32' ? iconIco : iconPng })
+  liveNotifications.add(n)
+  n.once('close', () => liveNotifications.delete(n))
+  n.once('click', () => {
+    liveNotifications.delete(n)
+    showWindow()
+    if (leagueId) broadcast('offers:open', leagueId)
+  })
+  n.show()
+}
 
 async function checkOffers() {
   const s = await loadSettings()
   if (s.notifyOffers === false || !s.userId || !s.sleeperLink || !Notification.isSupported()) return
   const token = await readSleeperToken()
   if (!token) return
-  const { fresh, seen } = diffOffers(await monte.receivedOffers(s.userId, token), s.seenOffers ?? [])
-  if (!fresh.length) return
-  await saveSettings({ seenOffers: seen })
-  for (const o of fresh) {
-    const n = new Notification({ ...offerMessage(o, !!s.hideNames), icon: process.platform === 'win32' ? iconIco : iconPng })
-    liveNotifications.add(n)
-    n.once('close', () => liveNotifications.delete(n))
-    n.once('click', () => {
-      liveNotifications.delete(n)
-      showWindow()
-      broadcast('offers:open', o.leagueId)
-    })
-    n.show()
-  }
+  const offers = await monte.receivedOffers(s.userId, token)
+  const { fresh, seen } = diffOffers(offers, s.seenOffers ?? [])
+  if (fresh.length) await saveSettings({ seenOffers: seen })
+  for (const o of fresh) notify(offerMessage(o, !!s.hideNames), o.leagueId)
+  const all = [...offerExpiryAlerts(offers, !!s.hideNames), ...(await monte.alerts(s.userId, token, s.sleeperLink.expiresAt))]
+  const found = diffAlerts(all, (await loadSettings()).seenAlerts ?? [])
+  if (!found.fresh.length) return
+  await saveSettings({ seenAlerts: found.seen })
+  for (const m of alertMessages(found.fresh)) notify(m, m.leagueId)
 }
 
 function startOfferChecks() {
-  const run = () => void checkOffers().catch(e => console.warn('offer check failed:', e instanceof Error ? e.message : e))
+  const run = () => void checkOffers().catch(e => console.warn('alert check failed:', e instanceof Error ? e.message : e))
   setTimeout(run, OFFER_FIRST_CHECK_MS)
   setInterval(run, OFFER_CHECK_MS)
 }

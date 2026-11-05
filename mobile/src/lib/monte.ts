@@ -3,6 +3,7 @@
 // screens port across without a second data layer.
 import { ENGINE_DEADLINE_MS, ENGINE_TIMEOUT_MESSAGE, withDeadline } from '@monte/core/deadline'
 import { runEngineJob, type EngineJob } from '@monte/core/engine'
+import { alertMessages, diffAlerts, offerExpiryAlerts, type Message } from '@monte/core/alerts'
 import { diffOffers, type FoundOffer } from '@monte/core/offerWatch'
 import { createMonteService, DEFAULT_SETTINGS, toResult } from '@monte/core/service'
 import { fetchSheet, sameWorkbook, SHEET_CHECK_MS } from '@monte/core/sheetLink'
@@ -196,13 +197,29 @@ export const monte = {
    * are off or Sleeper isn't connected. A refused token throws, and is left for the next real write
    * to deal with: a background check must not disconnect anyone.
    */
-  async newOffers(): Promise<{ fresh: FoundOffer[]; hideNames: boolean }> {
+  async newOffers(): Promise<{ fresh: FoundOffer[]; all: FoundOffer[]; hideNames: boolean }> {
     const s = await loadSettings()
     const token = s.notifyOffers && s.userId && s.sleeperLink ? await storage.readToken() : null
-    if (!token) return { fresh: [], hideNames: !!s.hideNames }
-    const { fresh, seen } = diffOffers(await service.receivedOffers(s.userId!, token), s.seenOffers ?? [])
+    if (!token) return { fresh: [], all: [], hideNames: !!s.hideNames }
+    const all = await service.receivedOffers(s.userId!, token)
+    const { fresh, seen } = diffOffers(all, s.seenOffers ?? [])
     if (fresh.length) await saveSettings({ seenOffers: seen })
-    return { fresh, hideNames: !!s.hideNames }
+    return { fresh, all, hideNames: !!s.hideNames }
+  },
+
+  /**
+   * Other alerts not yet sent (lineup trouble, waiver results, failing claims, trade deadlines), as
+   * messages, marked as sent, plus offers about to lapse among `offers` (from `newOffers`). Same
+   * conditions and same handling of a refused token as `newOffers`.
+   */
+  async newAlerts(offers: FoundOffer[] = []): Promise<Message[]> {
+    const s = await loadSettings()
+    const token = s.notifyOffers && s.userId && s.sleeperLink ? await storage.readToken() : null
+    if (!token) return []
+    const all = [...offerExpiryAlerts(offers, !!s.hideNames), ...(await service.alerts(s.userId!, token, s.sleeperLink!.expiresAt))]
+    const { fresh, seen } = diffAlerts(all, s.seenAlerts ?? [])
+    if (fresh.length) await saveSettings({ seenAlerts: seen })
+    return alertMessages(fresh)
   },
 
   /** Accept or reject an offer made to you. `needsConnect` means connect (again) and retry. */

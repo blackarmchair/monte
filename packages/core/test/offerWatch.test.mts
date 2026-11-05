@@ -24,7 +24,10 @@ const offer = (id: string, o: Partial<FoundOffer> = {}): FoundOffer => ({ id, le
 
 describe('offersInLeague', () => {
   it('finds an offer waiting on you, with who and what', () => {
-    assert.deepEqual(find(), [{ id: 'T1', leagueId: 'L1', leagueName: 'Dynasty', from: 'Sam', gets: ['Got Guy', '2027 round 1'], gives: ['Gave Guy'] }])
+    assert.deepEqual(find(), [{ id: 'T1', leagueId: 'L1', leagueName: 'Dynasty', from: 'Sam', gets: ['Got Guy', '2027 round 1'], gives: ['Gave Guy'], expiresAt: null }])
+  })
+  it('reads when the offer lapses, from seconds', () => {
+    assert.equal(find({ settings: { expires_at: 1788630762 } })[0].expiresAt, 1788630762000)
   })
   it('skips offers you sent', () => assert.deepEqual(find({ creator: 'me', consenter_ids: [1] }), []))
   it('skips offers you already accepted', () => assert.deepEqual(find({ consenter_ids: [1, 2] }), []))
