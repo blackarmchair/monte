@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ActivityIndicator,
   Keyboard,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,6 +20,7 @@ import {
 import SliderBase from '@react-native-community/slider'
 import { Image } from 'expo-image'
 import { useFocusEffect } from 'expo-router'
+import { TEMPLATE_URL } from '@monte/core/appUpdate'
 import { useApp } from '@/lib/store'
 import { edgeFade, font, grad, heat, ON_COLOR, R, rankHeat, ring, teamColor, useTheme, type Palette } from './theme'
 import { Icon } from './icons'
@@ -697,6 +699,7 @@ export function NeedsSheet({ inset = true }: { inset?: boolean }) {
         </T>
         {sheetError && <ErrorBox message={sheetError} />}
         <Btn label={sheetBusy ? 'Reading the sheet…' : 'Pick the .xlsx'} kind="primary" onPress={pickSheet} disabled={sheetBusy} style={{ marginTop: 6 }} />
+        <Btn kind="link" label="No sheet? Get a blank template ↗" onPress={() => void Linking.openURL(TEMPLATE_URL)} style={{ alignSelf: 'center' }} />
       </Hero>
     </View>
   )

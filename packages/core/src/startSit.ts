@@ -120,7 +120,9 @@ function readBoards(wb: Workbook, passTd: number, rec: number) {
   }
   const missing = SKILL.filter(p => !boards.has(p) || boards.get(p)!.ranks.size === 0)
   if (missing.length)
-    throw new Error(`No weekly ${missing.join(' / ')} board found in the workbook. Re-download the sheet as .xlsx.`)
+    throw new Error(
+      `No weekly ${missing.join(' / ')} ranks found in the workbook (a tab with Rank / ${missing[0]} / Matchup). Fill in the weekly tabs, or re-download the sheet as .xlsx.`,
+    )
   return { boards, injured }
 }
 

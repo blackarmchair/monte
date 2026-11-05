@@ -56,7 +56,13 @@ export function findBoards(wb: Workbook): Board[] {
           rows.push({ rank, name, pos: (g[r]?.[col + 2] ?? '').trim().toUpperCase() })
         }
         if (rows.length < 150 || rows[0].rank !== 1) {
-          problems.push(`"${tab}" looks like a rankings table but has ${rows.length} rows`)
+          problems.push(
+            rows.length === 0
+              ? `"${tab}" has no players ranked yet (Monte needs at least 150, starting at 1)`
+              : rows[0].rank !== 1
+              ? `"${tab}" starts at rank ${rows[0].rank}, not 1`
+              : `"${tab}" ranks ${rows.length} players; Monte needs at least 150`,
+          )
           return
         }
         const banner = (g[h - 1]?.[col] ?? '').trim()
@@ -67,7 +73,7 @@ export function findBoards(wb: Workbook): Board[] {
   }
   throw new Error(
     problems.length
-      ? `No usable dynasty board: ${problems.join('; ')}.`
+      ? `No usable dynasty board: ${[...new Set(problems)].join('; ')}.`
       : 'No dynasty overall board found (a tab with Rank / Player / Pos columns). Is this the sheet?',
   )
 }

@@ -71,7 +71,10 @@ cd sleeperStandings && npm install && npm run build && cd ..
 ```
 
 You also need a dynasty rankings sheet, downloaded as Excel (.xlsx). It isn't in
-this repo.
+this repo. No sheet of your own? Each release carries `Monte-Rankings-Template.xlsx`, a blank
+workbook in the layout Monte reads: fill in your dynasty board (at least 150 players) and, for
+Lineup, the weekly QB / RB / WR / TE tabs. `python scripts/make-template.py` builds it (needs
+openpyxl).
 
 ### Desktop
 

@@ -2,6 +2,7 @@
 // or NFL colour, heat-coloured cells, Sleeper headshots over initials, round pill controls and no
 // dividers. Colours are CSS variables, mixed in oklab as the handoff's color-mix() does.
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { TEMPLATE_URL } from '@shared/appUpdate'
 import { useApp } from './store'
 
 // ---- colour -------------------------------------------------------------------------------
@@ -441,8 +442,9 @@ export function NeedsSheet() {
         newer copy.
       </div>
       {sheetError && <div style={{ color: 'var(--neg)', fontSize: 14 }}>{sheetError}</div>}
-      <div style={{ paddingTop: 6 }}>
+      <div className="row" style={{ paddingTop: 6, gap: 18, flexWrap: 'wrap' }}>
         <Btn kind="primary" label="Choose the .xlsx" onClick={chooseSheet} />
+        <Link label="No sheet? Get a blank template ↗" onClick={() => window.open(TEMPLATE_URL, '_blank')} />
       </div>
     </div>
   )

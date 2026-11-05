@@ -2,6 +2,8 @@
 // desktop installer, named Monte-<phone version>.apk: the phone and desktop number their versions
 // separately, and the desktop updater reads the same "latest" release, so it can't get its own.
 export const RELEASES_URL = 'https://api.github.com/repos/blackarmchair/monte/releases/latest'
+/** The blank rankings workbook (scripts/make-template.py), attached to every release. */
+export const TEMPLATE_URL = 'https://github.com/blackarmchair/monte/releases/latest/download/Monte-Rankings-Template.xlsx'
 
 /** Negative when a is older than b. */
 export function compareVersions(a: string, b: string): number {
