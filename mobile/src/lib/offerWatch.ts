@@ -51,7 +51,8 @@ async function checkAndNotify() {
     await Notifications.scheduleNotificationAsync({ content: { title: m.title, body: m.body, data: m.leagueId ? { leagueId: m.leagueId } : {} }, trigger: { channelId: ALERT_CHANNEL } })
 }
 
-// Must be defined at module scope: Android starts the task without any screen.
+// Must be defined at module scope, and this file imported from index.ts (not a route): Android
+// starts the task without any screen, and expo-router loads routes only when it renders them.
 TaskManager.defineTask(TASK, async () => {
   try {
     await checkAndNotify()

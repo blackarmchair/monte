@@ -335,9 +335,16 @@ export function Pills<V extends string>(props: {
         style={{ flexGrow: 0 }}
         contentContainerStyle={{ gap: 6, paddingHorizontal: props.padX ?? 0 }}
         scrollEventThrottle={32}
-        onLayout={e => setView(v => ({ ...v, w: e.nativeEvent.layout.width }))}
+        // Read the event now: the updater runs later, after React Native has nulled nativeEvent.
+        onLayout={e => {
+          const w = e.nativeEvent.layout.width
+          setView(v => ({ ...v, w }))
+        }}
         onContentSizeChange={w => setView(v => ({ ...v, content: w }))}
-        onScroll={e => setView(v => ({ ...v, x: e.nativeEvent.contentOffset.x }))}
+        onScroll={e => {
+          const x = e.nativeEvent.contentOffset.x
+          setView(v => ({ ...v, x }))
+        }}
       >
         {pills}
       </ScrollView>
