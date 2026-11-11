@@ -221,3 +221,43 @@ export function roleValues(r: TeamRow): Record<Role | 'Picks', number> {
   for (const p of r.team.players) out[roles.get(p.id)!] += p.value
   return out
 }
+
+// ---- production: what a roster puts up each week -----------------------------------------------
+
+/** Skill positions each starting slot takes; a slot with none (K, DEF, IDP) is left out. */
+const SLOT_TAKES: Record<string, Pos[]> = {
+  QB: ['QB'],
+  RB: ['RB'],
+  WR: ['WR'],
+  TE: ['TE'],
+  FLEX: ['RB', 'WR', 'TE'],
+  WRRB_FLEX: ['RB', 'WR'],
+  REC_FLEX: ['WR', 'TE'],
+  SUPER_FLEX: ['QB', 'RB', 'WR', 'TE'],
+}
+const DEFAULT_SLOTS = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX']
+/** Out for the foreseeable: not counted as producing. Questionable and Doubtful still are. */
+const SIDELINED = new Set(['IR', 'Out', 'PUP', 'NFI', 'Sus'])
+
+/** Whether the overview carries production (season stats; in season only). */
+export const hasProduction = (rows: TeamRow[]) => rows.some(r => r.team.players.some(p => p.ppg != null))
+
+/**
+ * A team's weekly production by position: its best available lineup by points per game this
+ * season, filled slot by slot (fixed slots first, then the narrowest flex first). Players on IR or
+ * ruled out don't count; a player's PPG is his whole season's, wherever he played it.
+ */
+export function production(team: OvTeam): Record<Pos, number> & { total: number } {
+  const slots = (team.lineup?.map(s => s.slot) ?? DEFAULT_SLOTS).filter(s => SLOT_TAKES[s]).sort((a, b) => SLOT_TAKES[a].length - SLOT_TAKES[b].length)
+  const pool = team.players.filter(p => p.ppg != null && !p.ir && !SIDELINED.has(p.injury)).sort((a, b) => b.ppg! - a.ppg!)
+  const used = new Set<string>()
+  const out = { QB: 0, RB: 0, WR: 0, TE: 0, total: 0 }
+  for (const s of slots) {
+    const p = pool.find(x => !used.has(x.id) && SLOT_TAKES[s].includes(x.pos))
+    if (!p) continue
+    used.add(p.id)
+    out[p.pos] += p.ppg!
+    out.total += p.ppg!
+  }
+  return out
+}

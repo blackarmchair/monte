@@ -2,7 +2,8 @@
 // four heat tiles (value, starters, age, picks), then the roster: all of it or one position. It opens
 // as Sleeper draws it, starters in their slots then the bench, IR and taxi squad; Value / Position /
 // Youngest sort it instead. Tap a player for his page.
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg'
 import { Text, View } from 'react-native'
 import { useLocalSearchParams } from 'expo-router'
 import { useApp } from '@/lib/store'
@@ -10,7 +11,8 @@ import AppHeader from '@/ui/AppHeader'
 import { Btn, ErrorBox, GradCard, Headshot, HeatTiles, Loading, ORD, Pills, Screen, Section, Seg, Stack2, T, Tag, TeamAvatar, num } from '@/ui/kit'
 import { lineupSections, ROSTER_SORT, ROSTER_VIEWS, type LineupRow, type RosterView } from '@monte/core/rosterSort'
 import type { OvPlayer } from '@monte/core/types'
-import { font, grad, nflColor, R, rankHeat, teamColor, useTheme } from '@/ui/theme'
+import { alpha, font, grad, nflColor, R, rankHeat, teamColor, useTheme } from '@/ui/theme'
+import { breakdownOptions, fmtPct, fmtTimes, radarPoint, shareRadar, type Breakdown } from '@monte/core/shareRadar'
 import { TeamSchedule } from './Schedule'
 import { headline, POS, record, statusTag, thinnest, useOverview, verdict, type Pos, type TeamRow } from './overviewLogic'
 
@@ -22,7 +24,7 @@ export default function Team() {
     <View style={{ flex: 1 }}>
       <AppHeader title={row?.team.team_name ?? ''} />
       {row && data ? (
-        <TeamBody key={rid} row={row} n={n} />
+        <TeamBody key={rid} row={row} rows={rows} n={n} />
       ) : res && !res.ok ? (
         <Screen>
           <ErrorBox message={res.error} onRetry={load} />
@@ -34,7 +36,7 @@ export default function Team() {
   )
 }
 
-function TeamBody({ row, n }: { row: TeamRow; n: number }) {
+function TeamBody({ row, rows, n }: { row: TeamRow; rows: TeamRow[]; n: number }) {
   const t = useTheme()
   const { context, findTargets, tradeWith, hide, openPlayer } = useApp()
   const team = row.team
@@ -65,6 +67,7 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
         <T size={17}>
           {headline(row, n)} {verdict(row)}
         </T>
+        <ShareRadarView row={row} rows={rows} n={n} />
         <Btn
           kind="primary"
           label={mine ? `Find ${need} targets` : 'Start a trade'}
@@ -186,5 +189,83 @@ function SlotCard({ row, starter, onOpen }: { row: LineupRow; starter: boolean; 
         </>
       )}
     </GradCard>
+  )
+}
+
+/** The share radar (maths in core's shareRadar): value by position or role, or production. Tap a
+ * spoke for its numbers, tap it again to go back to the mix. */
+let lastBreakdown: Breakdown = 'pos'
+
+function ShareRadarView({ row, rows, n }: { row: TeamRow; rows: TeamRow[]; n: number }) {
+  const t = useTheme()
+  const [want, setWant] = useState<Breakdown>(lastBreakdown)
+  const [picked, setPicked] = useState<string | null>(null)
+  const r = useMemo(() => shareRadar(rows, row, n, want), [rows, row, n, want])
+  const setMode = (m: Breakdown) => {
+    lastBreakdown = m
+    setWant(m)
+    setPicked(null)
+  }
+  const count = r.spokes.length
+  const W = 300
+  const H = 220
+  const cx = W / 2
+  const cy = H / 2 + 2
+  const RAD = 74
+  const pt = (i: number, f: number) => radarPoint(i, count, f, cx, cy, RAD)
+  const poly = (fs: number[]) => fs.map((f, i) => pt(i, f).join(',')).join(' ')
+  const color = teamColor(row.team.roster_id)
+  const grid = alpha(t.ink, 0.12)
+  const tap = (k: string) => setPicked(p => (p === k ? null : k))
+
+  return (
+    <View style={{ gap: 10 }}>
+      <Seg fill value={r.mode} onChange={setMode} options={breakdownOptions(rows)} />
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <T size={13} c="mute">
+            {r.title}
+          </T>
+          <T size={26} v="bold" num>
+            {fmtPct(r.overall)}
+          </T>
+        </View>
+        <T size={12} c="mute" style={{ textAlign: 'right', maxWidth: 150 }}>
+          Dashed ring = even split ({fmtPct(r.even)}); rim = 2×
+        </T>
+      </View>
+      <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} accessibilityLabel={`${r.title}: ${r.spokes.map(s => `${s.key} ${fmtPct(s.share)}`).join(', ')}`}>
+        {[0.25, 0.75, 1].map(f => (
+          <Polygon key={f} points={poly(r.spokes.map(() => f))} fill="none" stroke={grid} strokeWidth={1} />
+        ))}
+        {r.spokes.map((_, i) => {
+          const [x, y] = pt(i, 1)
+          return <Line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={grid} strokeWidth={1} />
+        })}
+        <Polygon points={poly(r.spokes.map(() => 0.5))} fill="none" stroke={t.mute} strokeWidth={1.5} strokeDasharray="4 4" />
+        <Polygon points={poly(r.spokes.map(s => s.rad))} fill={alpha(color, 0.28)} stroke={color} strokeWidth={2} strokeLinejoin="round" />
+        {r.spokes.map((s, i) => {
+          const [x, y] = pt(i, s.rad)
+          const [lx, ly] = pt(i, 1.26)
+          const anchor = Math.abs(lx - cx) < 4 ? 'middle' : lx > cx ? 'start' : 'end'
+          const on = picked === s.key
+          return (
+            <G key={s.key} onPress={() => tap(s.key)}>
+              <Circle cx={x} cy={y} r={18} fill="transparent" />
+              <Circle cx={x} cy={y} r={on ? 6.5 : 5} fill={color} stroke={t.card} strokeWidth={2} />
+              <SvgText x={lx} y={ly - 2} textAnchor={anchor} fontSize={12} fontWeight="700" fill={t.ink}>
+                {s.key}
+              </SvgText>
+              <SvgText x={lx} y={ly + 12} textAnchor={anchor} fontSize={12} fill={t.ink2}>
+                {fmtTimes(s.times)}
+              </SvgText>
+            </G>
+          )
+        })}
+      </Svg>
+      <T size={13} c="ink2" style={{ minHeight: 36 }}>
+        {picked ? r.describe(picked) : `${r.mix}. Tap a spoke for its numbers.`}
+      </T>
+    </View>
   )
 }

@@ -425,8 +425,9 @@ export function createMonteService(host: Host) {
     },
 
     async leagueOverview(leagueId: string): Promise<OverviewData> {
-      const [[league, rosters, users, traded], meta, book, byes] = await Promise.all([
-        league4(leagueId),
+      const l4 = league4(leagueId)
+      const [[league, rosters, users, traded], meta, book, byes, stats] = await Promise.all([
+        l4,
         playersMeta(),
         host.loadBook(),
         // Byes only mean something mid-season; a schedule failure just leaves them unflagged.
@@ -437,8 +438,10 @@ export function createMonteService(host: Host) {
             return week ? { week, games: await nflSchedule(String(state.league_season || state.season)) } : null
           })
           .catch(() => null),
+        // Season-to-date stats for production share; in season only, and a miss just hides it.
+        l4.then(([l]) => (l.status === 'in_season' ? liveStats(Number(l.season)) : undefined)).catch(() => undefined),
       ])
-      return buildOverview({ book, league, rosters, users, traded, meta, byes })
+      return buildOverview({ book, league, rosters, users, traded, meta, byes, stats })
     },
 
     async ranks(leagueId: string, userId: string): Promise<RanksData> {

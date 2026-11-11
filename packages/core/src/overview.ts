@@ -1,6 +1,7 @@
 // League Overview data: every roster valued off the user's rankings workbook, plus pick
 // ownership for the next three drafts and the best free agents. Ranks/tiers are derived in the
 // renderer, where the pick-odds sim result is available to price picks and rate starters.
+import { leagueScore } from './leagueWeek'
 import { fileName } from './paths'
 import type { Book } from './xlsx'
 import { FUTURE_DISCOUNT, findBoard, matchBoard, rookieCurve, UNRANKED, userAvatar, type Meta } from './values'
@@ -18,8 +19,15 @@ export async function buildOverview(opts: {
   meta: Meta
   /** NFL team -> week -> game status, and the current regular-season week, to flag byes; null when unknown */
   byes?: { week: number; games: Record<string, Record<number, string>> } | null
+  /** this season's stats so far (in season only), for each player's points per game */
+  stats?: Record<string, Record<string, number>>
 }): Promise<OverviewData> {
-  const { league, rosters, users, traded, meta, byes } = opts
+  const { league, rosters, users, traded, meta, byes, stats } = opts
+  const scoring: Record<string, number> = league.scoring_settings ?? {}
+  const ppgOf = (id: string) => {
+    const s = stats?.[id]
+    return s && (s.gp ?? 0) > 0 ? leagueScore(s, scoring) / s.gp : null
+  }
   const onBye = (team: string | undefined) => !!byes && !!team && !!byes.games[team] && !byes.games[team][byes.week]
   const { wb, modifiedAt } = opts.book
   const board = findBoard(wb)
@@ -47,6 +55,7 @@ export async function buildOverview(opts: {
       ir: !!r?.reserve?.includes(id),
       injury: p.injury_status ?? '',
       bye: onBye(p.team),
+      ...(stats ? { ppg: ppgOf(id) } : {}),
     }
   }
 

@@ -9,7 +9,8 @@ import type { OvPlayer } from '@shared/types'
 import { TeamSchedule } from './Schedule'
 import { useApp } from './store'
 import { Btn, ErrorBox, GradCard, Headshot, HeatChip, HeatTiles, Loading, nflColor, num, ORD, Pills, Seg, Stack2, Tag, TeamAvatar, grad, teamColor, useHeat } from './ui'
-import { headline, POS, record, ROLE_HELP, ROLES, roleValues, statusTag, thinnest, useOverview, verdict, type Pos, type Role, type TeamRow } from './overviewLogic'
+import { breakdownOptions, fmtPct, fmtTimes, radarPoint, shareRadar, type Breakdown } from '@shared/shareRadar'
+import { headline, POS, record, statusTag, thinnest, useOverview, verdict, type Pos, type TeamRow } from './overviewLogic'
 
 type RosterTab = Pos | 'All' | 'Picks' | 'Schedule'
 
@@ -230,78 +231,50 @@ function SlotCard({ row, starter, onOpen }: { row: LineupRow; starter: boolean; 
   )
 }
 
-/** Value share: what fraction of the league's total value in each bucket this team holds, as a
- * radar. By position (QB, RB, WR, TE, picks) or by role (core, win-now, upside, depth, picks; see
- * rolesOf). Shares cluster near an even split (1/n), so the radius is the share against that split on
- * a log scale: the dashed ring at mid-radius is even, the rim is double (or more, clipped) and the
- * centre half (or less). 13% against a 10% split then reads as the edge it is. */
-type Breakdown = 'pos' | 'role'
+/** The share radar (maths in core's shareRadar): value by position or role, or production. */
 let lastBreakdown: Breakdown = 'pos'
 
 function ValueRadar({ row, rows, n }: { row: TeamRow; rows: TeamRow[]; n: number }) {
-  const [mode, setModeState] = useState<Breakdown>(lastBreakdown)
-  const setMode = (m: Breakdown) => setModeState((lastBreakdown = m))
+  const [want, setWant] = useState<Breakdown>(lastBreakdown)
+  const setMode = (m: Breakdown) => setWant((lastBreakdown = m))
   const [hover, setHover] = useState<string | null>(null)
-
-  const { buckets, val } = useMemo(() => {
-    if (mode === 'pos') {
-      const b = [...POS, 'Picks'] as string[]
-      return { buckets: b, val: (r: TeamRow, k: string) => (k === 'Picks' ? r.pickValue : r.pos[k as Pos].value) }
-    }
-    const by = new Map(rows.map(r => [r, roleValues(r)]))
-    return { buckets: [...ROLES, 'Picks'] as string[], val: (r: TeamRow, k: string) => by.get(r)![k as Role | 'Picks'] }
-  }, [mode, rows])
-
-  const totals = Object.fromEntries(buckets.map(b => [b, rows.reduce((s, r) => s + val(r, b), 0)]))
-  const share = (r: TeamRow, b: string) => (totals[b] > 0 ? val(r, b) / totals[b] : 0)
-  const rankIn = (b: string) => 1 + rows.filter(r => val(r, b) > val(row, b)).length
-  const even = 1 / Math.max(1, n)
-  /** times an even split */
-  const idx = (v: number) => v / even
-  /** radius fraction: ½× or less at the centre, even at the middle, 2× or more at the rim */
-  const rad = (v: number) => Math.min(1, Math.max(0, 0.5 + Math.log2(Math.max(idx(v), 1e-9)) / 2))
-  const leagueTotal = rows.reduce((s, r) => s + r.value, 0)
-  const overall = leagueTotal > 0 ? row.value / leagueTotal : 0
-  const mix = buckets.map(b => [b, row.value > 0 ? val(row, b) / row.value : 0] as const)
+  const r = useMemo(() => shareRadar(rows, row, n, want), [rows, row, n, want])
+  const count = r.spokes.length
 
   const W = 300
   const H = 230
   const cx = W / 2
   const cy = H / 2 + 4
-  const R = 78
-  const ang = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / buckets.length
-  /** a point on spoke i at radius fraction f */
-  const pt = (i: number, f: number) => [cx + Math.cos(ang(i)) * R * f, cy + Math.sin(ang(i)) * R * f] as const
+  const RAD = 78
+  const pt = (i: number, f: number) => radarPoint(i, count, f, cx, cy, RAD)
   const poly = (fs: number[]) => fs.map((f, i) => pt(i, f).join(',')).join(' ')
-  const times = (v: number) => `${idx(v).toFixed(1)}×`
   const color = teamColor(row.team.roster_id)
-  const pct = (v: number) => `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`
   const grid = 'color-mix(in oklab, var(--ink) 12%, transparent)'
 
   return (
     <div className="row" style={{ gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Share of league value: ${buckets.map(b => `${b} ${pct(share(row, b))}`).join(', ')}`} style={{ flex: 'none', overflow: 'visible' }}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${r.title}: ${r.spokes.map(s => `${s.key} ${fmtPct(s.share)}`).join(', ')}`} style={{ flex: 'none', overflow: 'visible' }}>
         {[0.25, 0.75, 1].map(f => (
-          <polygon key={f} points={poly(buckets.map(() => f))} fill="none" stroke={grid} strokeWidth={1} />
+          <polygon key={f} points={poly(r.spokes.map(() => f))} fill="none" stroke={grid} strokeWidth={1} />
         ))}
-        {buckets.map((_, i) => {
+        {r.spokes.map((_, i) => {
           const [x, y] = pt(i, 1)
           return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={grid} strokeWidth={1} />
         })}
-        <polygon points={poly(buckets.map(() => 0.5))} fill="none" stroke="var(--mute)" strokeWidth={1.5} strokeDasharray="4 4" />
-        <polygon points={poly(buckets.map(b => rad(share(row, b))))} fill={`color-mix(in oklab, ${color} 28%, transparent)`} stroke={color} strokeWidth={2} strokeLinejoin="round" />
-        {buckets.map((b, i) => {
-          const [x, y] = pt(i, rad(share(row, b)))
+        <polygon points={poly(r.spokes.map(() => 0.5))} fill="none" stroke="var(--mute)" strokeWidth={1.5} strokeDasharray="4 4" />
+        <polygon points={poly(r.spokes.map(s => s.rad))} fill={`color-mix(in oklab, ${color} 28%, transparent)`} stroke={color} strokeWidth={2} strokeLinejoin="round" />
+        {r.spokes.map((s, i) => {
+          const [x, y] = pt(i, s.rad)
           const [lx, ly] = pt(i, 1.24)
           const anchor = Math.abs(lx - cx) < 4 ? 'middle' : lx > cx ? 'start' : 'end'
           return (
-            <g key={b} onMouseEnter={() => setHover(b)} onMouseLeave={() => setHover(null)}>
-              <circle cx={x} cy={y} r={hover === b ? 6 : 4.5} fill={color} stroke="var(--card)" strokeWidth={2} />
+            <g key={s.key} onMouseEnter={() => setHover(s.key)} onMouseLeave={() => setHover(null)}>
+              <circle cx={x} cy={y} r={hover === s.key ? 6 : 4.5} fill={color} stroke="var(--card)" strokeWidth={2} />
               <text x={lx} y={ly - 2} textAnchor={anchor} fontSize={12} fontWeight={700} fill="var(--ink)">
-                {b}
+                {s.key}
               </text>
               <text x={lx} y={ly + 12} textAnchor={anchor} fontSize={12} fill="var(--ink2)">
-                {times(share(row, b))}
+                {fmtTimes(s.times)}
               </text>
               <rect x={Math.min(lx, x) - 24} y={Math.min(ly, y) - 18} width={Math.abs(lx - x) + 48} height={Math.abs(ly - y) + 36} fill="transparent" />
             </g>
@@ -309,25 +282,16 @@ function ValueRadar({ row, rows, n }: { row: TeamRow; rows: TeamRow[]; n: number
         })}
       </svg>
       <div className="stack" style={{ gap: 8, minWidth: 170, flex: 1 }}>
-        <Seg
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: 'pos' as const, label: 'Position' },
-            { value: 'role' as const, label: 'Role' },
-          ]}
-        />
+        <Seg value={r.mode} onChange={setMode} options={breakdownOptions(rows)} />
         <div className="stack" style={{ gap: 2 }}>
-          <span className="small mute">Share of league value</span>
+          <span className="small mute">{r.title}</span>
           <span className="num" style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.1 }}>
-            {pct(overall)}
+            {fmtPct(r.overall)}
           </span>
-          <span className="small mute">Spokes are × an even split ({pct(even)}, the dashed ring); the rim is 2×.</span>
+          <span className="small mute">Spokes are × an even split ({fmtPct(r.even)}, the dashed ring); the rim is 2×.</span>
         </div>
         <div className="small" style={{ minHeight: 38, color: 'var(--ink2)', textWrap: 'pretty' }}>
-          {hover
-            ? `${hover}${mode === 'role' ? ` (${ROLE_HELP[hover as Role | 'Picks']})` : ''}: ${pct(share(row, hover))} of the league's ${num(totals[hover])} (${times(share(row, hover))} even), #${rankIn(hover)} of ${n}.`
-            : `Mix: ${mix.map(([b, f]) => `${b} ${Math.round(f * 100)}%`).join(' · ')}`}
+          {hover ? r.describe(hover) : r.mix}
         </div>
       </div>
     </div>

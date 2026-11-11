@@ -296,6 +296,8 @@ export type OvPlayer = {
   injury: string
   /** his NFL team has no game this regular-season week; absent on older data */
   bye?: boolean
+  /** points per game this season in the league's scoring; null = no games yet, absent off-season or on older data */
+  ppg?: number | null
 }
 
 export type OvTeam = {
