@@ -6,11 +6,12 @@
 import { useState } from 'react'
 import { lineupSections, ROSTER_SORT, ROSTER_VIEWS, type LineupRow, type RosterView } from '@shared/rosterSort'
 import type { OvPlayer } from '@shared/types'
+import { TeamSchedule } from './Schedule'
 import { useApp } from './store'
 import { Btn, ErrorBox, GradCard, Headshot, HeatChip, HeatTiles, Loading, nflColor, num, ORD, Pills, Seg, Stack2, Tag, TeamAvatar, grad, teamColor, useHeat } from './ui'
 import { headline, POS, record, statusTag, thinnest, useOverview, verdict, type Pos, type TeamRow } from './overviewLogic'
 
-type RosterTab = Pos | 'All' | 'Picks'
+type RosterTab = Pos | 'All' | 'Picks' | 'Schedule'
 
 export default function Team({ rid }: { rid: number }) {
   const { res, data, rows, n, load } = useOverview()
@@ -38,10 +39,11 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
   const need = thinnest(row)
   const [tab, setTab] = useState<RosterTab>('All')
   const [view, setView] = useState<RosterView>('lineup')
-  const lineup = tab !== 'Picks' && view === 'lineup'
+  const notRoster = tab === 'Picks' || tab === 'Schedule'
+  const lineup = !notRoster && view === 'lineup'
   const sections = lineup ? lineupSections(team, tab === 'All' ? undefined : tab) : []
-  const players = tab === 'Picks' || lineup ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[view as Exclude<RosterView, 'lineup'>])
-  const room = tab === 'Picks' || tab === 'All' ? null : row.pos[tab]
+  const players = notRoster || lineup ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[view as Exclude<RosterView, 'lineup'>])
+  const room = notRoster || tab === 'All' ? null : row.pos[tab]
   const starters = (p: Pos) => team.players.filter(x => x.pos === p && x.starter).length
 
   return (
@@ -111,9 +113,10 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
               { value: 'All' as const, label: `All ${team.players.length}` },
               ...POS.map(p => ({ value: p as RosterTab, label: `${p} #${row.pos[p].rank}` })),
               { value: 'Picks' as const, label: `Picks #${row.ranks.picks}` },
+              { value: 'Schedule' as const, label: 'Schedule' },
             ]}
           />
-          {tab !== 'Picks' && (
+          {!notRoster && (
             <div className="row" style={{ gap: 10 }}>
               <span className="small mute">View</span>
               <Seg value={view} onChange={setView} options={ROSTER_VIEWS} />
@@ -157,15 +160,18 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
               </GradCard>
             ))}
         </div>
-        <div className="small mute">
-          {room
-            ? `${tab} room: ${num(room.value)} total value, avg age ${room.age?.toFixed(1) ?? '—'}.`
-            : tab === 'Picks'
-            ? row.picks.length
-              ? `${row.picks.length} pick${row.picks.length === 1 ? '' : 's'}: ${num(row.pickValue)} total value.`
-              : 'No picks owned.'
-            : `${team.players.length} players.`}
-        </div>
+        {tab === 'Schedule' && <TeamSchedule rid={team.roster_id} />}
+        {tab !== 'Schedule' && (
+          <div className="small mute">
+            {room
+              ? `${tab} room: ${num(room.value)} total value, avg age ${room.age?.toFixed(1) ?? '—'}.`
+              : tab === 'Picks'
+              ? row.picks.length
+                ? `${row.picks.length} pick${row.picks.length === 1 ? '' : 's'}: ${num(row.pickValue)} total value.`
+                : 'No picks owned.'
+              : `${team.players.length} players.`}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,16 +1,18 @@
 // Player (pushed from anywhere a player shows): the profile card (NFL-colour hero with his headshot,
 // name, chips and a 3×2 bio) beside Value (sheet against market), with Injury (the override every
 // model uses) and Trade (who has him, the one action and a deal Monte found) as two cards under it.
-// Stats run the full width below: a season's games (this one, or any earlier one from the season
+// His NFL team's season runs the full width below (opponent, bye, points or date each week), then
+// Stats: a season's games (this one, or any earlier one from the season
 // pills), points and finish heat-coloured within each column.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import Claim from './Claim'
 import { gameTable } from '@shared/gameLog'
+import { shortDate } from '@shared/nflSchedule'
 import { injuryLabel, isAvailableOverride, isCurrentInjury } from '@shared/injuries'
 import { tepBoardFor, boardRankFor, boardRankLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
-import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Pills, Stepper, StatTile, useHeat } from './ui'
+import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Pills, RING_SOFT, Stepper, StatTile, useHeat } from './ui'
 
 type Usage = { usagePPG: number | null; sleeperPPG: number | null; delta: number | null }
 const n1 = (x: number | null | undefined) => (x == null ? '—' : x.toFixed(1))
@@ -110,6 +112,7 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
           </div>
         </div>
       </div>
+      {info?.ok && info.value.schedule && <NflSchedule p={info.value} />}
       {info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab key={info.value.id} p={info.value} usage={usage} />}
     </div>
   )
@@ -177,6 +180,49 @@ function UsageCard({ usage }: { usage: Usage }) {
       </span>
       {gap != null && <span className="sub" style={{ fontSize: 14 }}>{gap > 0 ? 'His role earns more than Sleeper projects: room to grow.' : "He's scoring past his role: running hot."}</span>}
     </div>
+  )
+}
+
+/** His team's regular season, a chip a week: played weeks show his PPR points, the rest the date. */
+function NflSchedule({ p }: { p: PlayerInfo }) {
+  const s = p.schedule!
+  const pts = new Map(p.season === s.season ? p.games.map(g => [g.week, g.stats.pts_ppr ?? 0]) : [])
+  const next = s.weeks.find(w => w.state === 'pre' || w.state === 'live')?.week
+  return (
+    <section className="stack" style={{ gap: 12, minWidth: 0 }}>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span className="title-l">
+          {s.season} schedule: {p.team}
+        </span>
+        <span className="small mute">PPR points once played</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', gap: 6 }}>
+        {s.weeks.map(w => {
+          const bye = w.state === 'bye'
+          const played = pts.get(w.week)
+          const sub = bye ? '' : w.state === 'live' ? 'Live' : w.state === 'done' ? (played == null ? 'DNP' : `${played.toFixed(1)} pts`) : shortDate(w.date)
+          return (
+            <div
+              key={w.week}
+              className="stack"
+              style={{
+                gap: 1,
+                padding: '8px 10px',
+                borderRadius: 12,
+                background: bye ? 'transparent' : w.week === next ? 'var(--surf2)' : 'var(--surf)',
+                boxShadow: bye ? 'inset 0 0 0 1px var(--surf2)' : w.week === next ? RING_SOFT : undefined,
+              }}
+            >
+              <span className="label">W{w.week}</span>
+              <span style={{ fontWeight: 700, color: bye ? 'var(--mute)' : 'var(--ink)' }}>{bye ? 'BYE' : `${w.away ? '@' : 'vs'} ${w.opp}`}</span>
+              <span className="small num" style={{ color: w.state === 'live' ? 'var(--pos)' : 'var(--mute)', minHeight: 18 }}>
+                {sub}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 

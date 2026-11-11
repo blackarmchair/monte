@@ -438,6 +438,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('league:trades', wrap(monte.trades))
   ipcMain.handle('league:draft', wrap(monte.draft))
   ipcMain.handle('league:week', wrap(monte.leagueWeek))
+  ipcMain.handle('league:schedule', wrap(monte.leagueSchedule))
   ipcMain.handle('league:leagueTrades', wrap(async (leagueId: string) => monte.leagueTrades(leagueId, await readSleeperToken())))
   ipcMain.handle('draft:picks', wrap(monte.draftPicks))
   ipcMain.handle('players:search', wrap(monte.searchPlayers))

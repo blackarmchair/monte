@@ -7,7 +7,9 @@ import type { LeagueSummary, Settings } from '@shared/types'
 import Onboarding from './Onboarding'
 import { AppProvider, useApp, type Section } from './store'
 import { TradeProvider, useTrade } from './tradeModel'
-import { Check, ErrorBox, GradCard, Icon, LeagueAvatar, Link, Loading, Stack2, type IconName } from './ui'
+import { Check, ErrorBox, GradCard, Icon, LeagueAvatar, Link, Loading, Stack2, useDark, type IconName } from './ui'
+import logoDark from './assets/logo-dark.png'
+import logoLight from './assets/logo-light.png'
 import League from './League'
 import Lineup from './Lineup'
 import Trade from './Trade'
@@ -56,6 +58,7 @@ export default function App() {
 
 function Shell() {
   const app = useApp()
+  const dark = useDark()
   const { count } = useTrade()
   const { leagues, selected, context, contextError, loadContext, section, page, go, playersUi, setPlayersUi, toast, hideToast } = app
   const [leaguesOpen, setLeaguesOpen] = useState(false)
@@ -95,7 +98,10 @@ function Shell() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="wordmark">Monte</div>
+        <div className="wordmark">
+          <img src={dark ? logoDark : logoLight} alt="" width={30} height={30} />
+          Monte
+        </div>
         <button className="lg-switch" onClick={() => setLeaguesOpen(true)} title="Switch league">
           <span className="stack" style={{ flex: 1, minWidth: 0 }}>
             <span className="trunc" style={{ fontWeight: 700, fontSize: 14 }}>

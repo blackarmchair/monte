@@ -1,13 +1,14 @@
 // Player (a full page, pushed from anywhere a player shows): an NFL-colour hero with his headshot
-// and a six-cell bio, then sticky tabs. Value: sheet against market. Stats: a season's games (this
-// one, or an earlier one from the season pills), points and finish heat-coloured within each column. Trade: who has him, the one action, and a deal
+// and a six-cell bio, then sticky tabs. Value: sheet against market. Stats: his NFL team's schedule,
+// then a season's games (this one, or an earlier one from the season pills), points and finish heat-coloured within each column. Trade: who has him, the one action, and a deal
 // Monte found. Injury: the override that every model uses (this replaces the Overrides screen).
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Claim from './Claim'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
 import { gameTable } from '@monte/core/gameLog'
+import { shortDate } from '@monte/core/nflSchedule'
 import { injuryLabel, isAvailableOverride, isCurrentInjury } from '@monte/core/injuries'
 import { tepBoardFor, boardRankFor, boardRankLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
 import { monte } from '@/lib/monte'
@@ -16,7 +17,7 @@ import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from '@/lib/t
 import AppHeader from '@/ui/AppHeader'
 import { Btn, Card, ErrorBox, headshotUrl, kfmt, Loading, Pills, Row, StatTile, Stepper, T, num } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
-import { font, heat, heroGrad, nflColor, R, useTheme } from '@/ui/theme'
+import { font, heat, heroGrad, nflColor, R, ring, useTheme } from '@/ui/theme'
 
 type Tab = 'value' | 'stats' | 'trade' | 'injury'
 const TABS: Array<[Tab, string]> = [
@@ -145,7 +146,12 @@ function PlayerBody({ id, fallbackName, startTab }: { id: string; fallbackName: 
       <View style={{ paddingTop: 18, paddingHorizontal: 16, gap: 14 }}>
         {tab === 'value' && <ValueTab id={id} usage={usage} ranks={d?.ranks[id]} />}
         {tab === 'stats' &&
-          (info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab key={info.value.id} p={info.value} usage={usage?.usagePPG ?? null} proj={usage?.sleeperPPG ?? null} />)}
+          (info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : (
+            <>
+              {info.value.schedule && <NflSchedule p={info.value} />}
+              <StatsTab key={info.value.id} p={info.value} usage={usage?.usagePPG ?? null} proj={usage?.sleeperPPG ?? null} />
+            </>
+          ))}
         {tab === 'trade' && <TradeTab id={id} name={name} owner={owner} />}
         {tab === 'injury' && <InjuryTab id={id} name={name} pos={pos} team={nfl} sleeperTag={p?.injury ?? ''} />}
       </View>
@@ -236,6 +242,58 @@ function UsageCard({ usage }: { usage: { usagePPG: number | null; sleeperPPG: nu
         </T>
       )}
     </Card>
+  )
+}
+
+/** His team's regular season, a chip a week, scrolling sideways from the next game: played weeks
+ *  show his PPR points, the rest the date. */
+function NflSchedule({ p }: { p: PlayerInfo }) {
+  const t = useTheme()
+  const s = p.schedule!
+  const pts = new Map(p.season === s.season ? p.games.map(g => [g.week, g.stats.pts_ppr ?? 0]) : [])
+  const next = s.weeks.find(w => w.state === 'pre' || w.state === 'live')?.week
+  const CW = 84
+  const ref = useRef<ScrollView>(null)
+  return (
+    <View style={{ gap: 8 }}>
+      <T v="bold" size={17}>
+        {s.season} schedule: {p.team}
+      </T>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginHorizontal: -16 }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 6 }}
+        ref={ref}
+        onContentSizeChange={() => ref.current?.scrollTo({ x: Math.max(0, ((next ?? 1) - 2) * (CW + 6)), animated: false })}
+      >
+        {s.weeks.map(w => {
+          const bye = w.state === 'bye'
+          const played = pts.get(w.week)
+          const sub = bye ? '' : w.state === 'live' ? 'Live' : w.state === 'done' ? (played == null ? 'DNP' : `${played.toFixed(1)} pts`) : shortDate(w.date)
+          return (
+            <View
+              key={w.week}
+              style={[
+                { width: CW, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12, gap: 1 },
+                bye ? { borderWidth: 1, borderColor: t.surf2 } : { backgroundColor: w.week === next ? t.surf2 : t.surf },
+                w.week === next ? ring(t, true) : null,
+              ]}
+            >
+              <T v="label" c="mute">
+                W{w.week}
+              </T>
+              <T v="bold" c={bye ? 'mute' : 'ink'}>
+                {bye ? 'BYE' : `${w.away ? '@' : 'vs'} ${w.opp}`}
+              </T>
+              <T v="small" num c={w.state === 'live' ? 'pos' : 'mute'}>
+                {sub || ' '}
+              </T>
+            </View>
+          )
+        })}
+      </ScrollView>
+    </View>
   )
 }
 

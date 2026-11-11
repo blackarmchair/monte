@@ -8,6 +8,7 @@ import { useApp } from '@/lib/store'
 import { Btn, ErrorBox, GradCard, HeatChip, Hero, kfmt, Loading, NeedsSheet, Section, Seg, Stack2, T, TeamAvatar, useTopOnFocus } from '@/ui/kit'
 import { font, R, rankHeat, ring, teamColor, useTheme } from '@/ui/theme'
 import { Matchups, ThisWeek, Trades } from './LeagueTabs'
+import { Schedule } from './Schedule'
 import { record, thinnest, useOverview, type TeamRow } from './overviewLogic'
 
 type Sort = 'overall' | 'starter' | 'record' | 'map'
@@ -24,6 +25,8 @@ export default function League() {
   const { res, data, rows, n, load, simBusy, simError, runBB } = useOverview()
   const [sort, setSort] = useState<Sort>('overall')
   const [tab, setTab] = useState<'week' | 'standings' | 'matchups' | 'trades'>('week')
+  // A fifth League tab doesn't fit a phone, so the season schedule sits under Matchups.
+  const [games, setGames] = useState<'week' | 'season'>('week')
   const scroll = useTopOnFocus<ScrollView>()
   const by = sort === 'map' ? 'overall' : sort
   const ordered = useMemo(() => [...rows].sort((a, b) => (a.ranks[by] ?? 99) - (b.ranks[by] ?? 99)), [rows, by])
@@ -49,7 +52,17 @@ export default function League() {
         ]}
       />
       {tab === 'week' && <ThisWeek onTrades={() => setTab('trades')} />}
-      {tab === 'matchups' && <Matchups />}
+      {tab === 'matchups' && (
+        <Seg
+          value={games}
+          onChange={setGames}
+          options={[
+            { value: 'week', label: 'This week' },
+            { value: 'season', label: 'Season' },
+          ]}
+        />
+      )}
+      {tab === 'matchups' && (games === 'week' ? <Matchups /> : <Schedule onMatchups={() => setGames('week')} />)}
       {tab === 'trades' && <Trades />}
       {tab === 'standings' && myRow && need && (
         <Hero>

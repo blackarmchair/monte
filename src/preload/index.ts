@@ -25,6 +25,7 @@ const api: MonteApi = {
   signInSleeper: () => ipcRenderer.invoke('sleeper:signIn'),
   disconnectSleeper: () => ipcRenderer.invoke('sleeper:disconnect'),
   leagueWeek: leagueId => ipcRenderer.invoke('league:week', leagueId),
+  leagueSchedule: leagueId => ipcRenderer.invoke('league:schedule', leagueId),
   leagueTrades: leagueId => ipcRenderer.invoke('league:leagueTrades', leagueId),
   proposeTrade: p => ipcRenderer.invoke('sleeper:propose', p),
   setLineup: w => ipcRenderer.invoke('sleeper:lineup', w),

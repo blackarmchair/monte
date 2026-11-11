@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { Btn, ErrorBox } from './ui'
+import { Btn, ErrorBox, useDark } from './ui'
+import logoDark from './assets/logo-dark.png'
+import logoLight from './assets/logo-light.png'
 
 /** First run: find the Sleeper account by username. */
 export default function Onboarding({ onDone }: { onDone: (u: { user_id: string; display_name: string }) => void }) {
+  const dark = useDark()
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,7 +23,10 @@ export default function Onboarding({ onDone }: { onDone: (u: { user_id: string; 
   return (
     <div className="onboard">
       <div className="onboard-box hero" style={{ padding: 32, gap: 16 }}>
-        <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-.02em' }}>Monte</div>
+        <div className="row" style={{ gap: 12, fontSize: 30, fontWeight: 700, letterSpacing: '-.02em' }}>
+          <img src={dark ? logoDark : logoLight} alt="" width={44} height={44} style={{ borderRadius: 11 }} />
+          Monte
+        </div>
         <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.2 }}>Enter your Sleeper username to load your leagues.</div>
         <div className="sub" style={{ fontSize: 15 }}>
           Monte only reads public league data; it never asks for a password.

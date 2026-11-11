@@ -18,6 +18,8 @@ import { forecastGames, scoreForecasts, type ScoredGame, type TrackRecord } from
 import { buildStartSit, type SeasonStats } from './startSit'
 import { buildTrades, fromFantasyCalc, type FcRow, type Market } from './trades'
 import { ktcTier, parseKtc, type KtcRow } from './ktc'
+import { buildSchedule, regularWeeks, type LeagueSchedule } from './schedule'
+import { teamWeeks, type NflGame } from './nflSchedule'
 import { buildLeagueWeek, fetchPending, normaliseTrade, type LeagueTrades, type LeagueWeek } from './leagueWeek'
 import { SleeperAuthError } from './sleeperTrade'
 import { FC_SCORING } from './tradeMath'
@@ -196,6 +198,8 @@ export function createMonteService(host: Host) {
   // A player's weeks: a game a week. This season's are kept an hour, since this week's can still
   // change; a finished season's never change, so they're kept for the session.
   const logMem = new Map<string, { at: number; games: GameLog[] }>()
+  // leagueSchedule: league|season|week -> that week's matchups, once its scores can't move.
+  const schedMem = new Map<string, any[]>()
   async function gameLogs(id: string, season: string, current?: string): Promise<GameLog[]> {
     if (!/^\d{4}$/.test(season)) throw new Error(`Not a season: ${season}`)
     const key = `${id}|${season}`
@@ -213,19 +217,21 @@ export function createMonteService(host: Host) {
   }
 
   // Game status moves during a slate (pre_game -> in_game -> complete), so this cache is short.
-  let schedCache: { season: string; at: number; games: Record<string, Record<number, string>> } | null = null
-  async function nflSchedule(season: string) {
-    if (schedCache && schedCache.season === season && Date.now() - schedCache.at < 5 * 60 * 1000) return schedCache.games
+  let schedCache: { season: string; at: number; list: NflGame[]; games: Record<string, Record<number, string>> } | null = null
+  async function nflGames(season: string) {
+    if (schedCache && schedCache.season === season && Date.now() - schedCache.at < 5 * 60 * 1000) return schedCache
     const res = await get(`https://api.sleeper.app/schedule/nfl/regular/${season}`)
     if (!res.ok) throw new Error(`NFL schedule unavailable (${res.status}); byes can't be guessed, so no lineup.`)
+    const list = ((await res.json()) as any[])
+      .filter(g => g && g.status !== 'canceled')
+      .map(g => ({ week: Number(g.week), home: String(g.home), away: String(g.away), date: String(g.date ?? ''), status: String(g.status || 'pre_game') }))
     const games: Record<string, Record<number, string>> = {}
-    for (const g of (await res.json()) as any[]) {
-      if (g.status === 'canceled') continue
-      for (const t of [g.home, g.away]) (games[t] ??= {})[g.week] = g.status || 'pre_game'
-    }
-    schedCache = { season, at: Date.now(), games }
-    return games
+    for (const g of list) for (const t of [g.home, g.away]) (games[t] ??= {})[g.week] = g.status
+    schedCache = { season, at: Date.now(), list, games }
+    return schedCache
   }
+  /** NFL team -> week -> game status (pre_game / in_game / complete); no entry = bye. */
+  const nflSchedule = async (season: string) => (await nflGames(season)).games
 
   /**
    * FantasyCalc dynasty values for one league format, with picks. The market moves daily, so the
@@ -406,7 +412,8 @@ export function createMonteService(host: Host) {
       const key = simCacheKey({ leagueId, sims: opts.sims, strengthCV: opts.strengthCV, seed, model, overrides })
       if (opts.cached && baseline) {
         const saved = await cachedJson<BBResult & { ranAt?: string }>(key)
-        if (saved && simResultFresh(saved.ranAt)) return saved
+        // weekWinPct: a run saved before the schedule's per-game odds existed is re-run once.
+        if (saved && simResultFresh(saved.ranAt) && saved.weekWinPct) return saved
       }
       const result = (await host.runEngine({ kind: 'bb', leagueId, sims: opts.sims, strengthCV: opts.strengthCV, forced, seed, model, playersMeta: meta, overrides })) as BBResult
       if (baseline) await host.cacheWrite(key, JSON.stringify(result)).catch(() => undefined)
@@ -559,6 +566,8 @@ export function createMonteService(host: Host) {
       // Back to his rookie year: Sleeper's rookie_year when it has one, else years of experience.
       const first = num(p.metadata?.rookie_year) ?? Number(season) - (num(p.years_exp) ?? 0)
       const seasons = Array.from({ length: Math.min(20, Math.max(1, Number(season) - first + 1)) }, (_, i) => String(Number(season) - i))
+      const team = p.team ?? ''
+      const schedule = team ? await nflGames(season).then(s => teamWeeks(s.list, team), () => null) : null
       let shown = season
       let games = await gameLogs(id, season, season)
       if (!games.length && seasons[1]) {
@@ -579,6 +588,7 @@ export function createMonteService(host: Host) {
         season: shown,
         games,
         seasons,
+        schedule: schedule?.length ? { season, weeks: schedule } : null,
         board: board ? board.get(id) ?? { plain: null, tep: null } : null,
       }
     },
@@ -586,6 +596,29 @@ export function createMonteService(host: Host) {
     async playerGames(id: string, season: string): Promise<GameLog[]> {
       const state = await sleeper<any>('/state/nfl')
       return gameLogs(id, season, String(state.league_season || state.season))
+    },
+
+    /** The regular season week by week. A finished week's scores are kept for the session; this
+     *  week's and later ones are re-read, since scores (and stat corrections) still move. */
+    async leagueSchedule(leagueId: string): Promise<LeagueSchedule> {
+      const state = await sleeper<any>('/state/nfl')
+      const season = String(state.league_season || state.season)
+      const currentWeek = Number(state.display_week || state.week) || 0
+      const [league, rosters, users] = await league4(leagueId, false)
+      const live = league.status === 'in_season' || league.status === 'post_season'
+      const matchups: Record<number, any[]> = {}
+      await Promise.all(
+        regularWeeks(league).map(async w => {
+          const key = `${leagueId}|${league.season}|${w}`
+          const hit = schedMem.get(key)
+          if (hit) return void (matchups[w] = hit)
+          const ms = (await sleeper<any[]>(`/league/${leagueId}/matchups/${w}`)) ?? []
+          matchups[w] = ms
+          // Settled: two weeks back (past Tuesday's stat corrections), or a finished season.
+          if (league.status === 'complete' || (live && w < currentWeek - 1)) schedMem.set(key, ms)
+        }),
+      )
+      return buildSchedule({ league, rosters, users, season: String(league.season ?? season), currentWeek, matchups })
     },
 
     /** This week's head-to-head pairs: scores so far, starters, and Monte's win chance. */

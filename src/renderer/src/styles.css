@@ -131,10 +131,17 @@ input[type='range'] {
   min-height: 0;
 }
 .wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 0 10px 14px;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+.wordmark img {
+  flex: none;
+  border-radius: 8px;
 }
 .lg-switch {
   display: flex;

@@ -4,6 +4,8 @@
 import type { LineupWrite } from './sleeperLineup'
 import type { TradeProposal } from './sleeperTrade'
 import type { LeagueTrades, LeagueWeek } from './leagueWeek'
+import type { LeagueSchedule } from './schedule'
+import type { NflWeek } from './nflSchedule'
 
 export type Theme = 'light' | 'dark' | 'system'
 
@@ -58,6 +60,9 @@ export type PlayerInfo = {
   games: GameLog[]
   /** every season he could have played, newest first, for the season switcher (playerGames) */
   seasons: string[]
+  /** his NFL team's schedule this season, byes filled in; null for a free agent or when Sleeper's
+   *  schedule couldn't be read */
+  schedule: { season: string; weeks: NflWeek[] } | null
   /** The sheet's rank on each board block (no TE prem / TE prem); null when there's no sheet */
   board: { plain: BoardRank | null; tep: BoardRank | null } | null
 }
@@ -192,6 +197,8 @@ export type BBResult = {
   scheduleLive: boolean
   zeroed: Array<{ team: string; player: string; status: string; weeks: string }>
   teams: BBTeam[]
+  /** week -> roster -> share of sims that roster won that week's game; absent on older runs */
+  weekWinPct?: Record<number, Record<number, number>>
   /** added by Monte: the strength CV the run used */
   strengthCV: number
   /** added by Monte: the RNG seed the run used */
@@ -568,6 +575,8 @@ export type MonteApi = {
   /** Send a trade offer in Sleeper. `needsConnect` means connect (again) and retry. */
   /** this week's matchups with Monte's win chance */
   leagueWeek(leagueId: string): Promise<Result<LeagueWeek>>
+  /** the regular season's pairs, week by week, with final scores for the weeks played */
+  leagueSchedule(leagueId: string): Promise<Result<LeagueSchedule>>
   /** completed trades, and your open offers when Sleeper is connected */
   leagueTrades(leagueId: string): Promise<Result<LeagueTrades>>
   proposeTrade(p: TradeProposal): Promise<Result<{ transactionId: string; mismatch: string | null }> & { needsConnect?: boolean }>

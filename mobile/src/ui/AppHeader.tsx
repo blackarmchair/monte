@@ -1,6 +1,7 @@
-// The 56px header. On a tab: the league name with a chevron (opens the Leagues sheet) and the gear
+// The 56px header. On a tab: the Monte tile, the league name with a chevron (opens the Leagues sheet) and the gear
 // (Settings). On a pushed page (Team, Player, Settings): a round back button and the page title.
 import { Pressable, View } from 'react-native'
+import { Image } from 'expo-image'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useApp } from '@/lib/store'
@@ -9,6 +10,9 @@ import { Icon } from './icons'
 import { T } from './kit'
 import { useOverlay } from './overlay'
 import { useTheme } from './theme'
+
+const LOGO_DARK = require('../../assets/logo-dark.png')
+const LOGO_LIGHT = require('../../assets/logo-light.png')
 
 export const goBack = () => (router.canGoBack() ? router.back() : router.navigate('/'))
 
@@ -47,6 +51,7 @@ export default function AppHeader({ title }: { title?: string }) {
           style={{ flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6 }}
           accessibilityLabel="Switch league"
         >
+          <Image source={t.dark ? LOGO_DARK : LOGO_LIGHT} style={{ width: 28, height: 28, borderRadius: 7, marginRight: 4 }} accessibilityIgnoresInvertColors />
           <T v="bold" size={17} lines={1} style={{ flexShrink: 1 }}>
             {league?.name ?? 'Choose a league'}
           </T>

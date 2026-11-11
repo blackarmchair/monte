@@ -142,6 +142,7 @@ export const monte = {
   trades: (leagueId: string, userId: string) => toResult(() => service.trades(leagueId, userId)),
   draft: (leagueId: string, userId: string, draftId?: string) => toResult(() => service.draft(leagueId, userId, draftId)),
   leagueWeek: (leagueId: string) => toResult(() => service.leagueWeek(leagueId)),
+  leagueSchedule: (leagueId: string) => toResult(() => service.leagueSchedule(leagueId)),
   leagueTrades: (leagueId: string) => toResult(async () => service.leagueTrades(leagueId, await storage.readToken())),
   draftPicks: (draftId: string) => toResult(() => service.draftPicks(draftId)),
   searchPlayers: (query: string) => toResult(() => service.searchPlayers(query)),

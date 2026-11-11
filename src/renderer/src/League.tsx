@@ -4,6 +4,7 @@
 import { sheetName } from '@shared/names'
 import { useMemo, useState } from 'react'
 import { Matchups, ThisWeek, Trades } from './LeagueTabs'
+import { Schedule } from './Schedule'
 import { useApp } from './store'
 import { Btn, ErrorBox, GradCard, HeatChip, kfmt, Loading, NeedsSheet, RING_SOFT, Seg, Stack2, TeamAvatar, teamColor, useHeat } from './ui'
 import { record, thinnest, useOverview } from './overviewLogic'
@@ -15,7 +16,7 @@ const SORTS: Array<{ value: Sort; label: string }> = [
   { value: 'record', label: 'Record' },
 ]
 
-type Tab = 'week' | 'standings' | 'matchups' | 'trades'
+type Tab = 'week' | 'standings' | 'matchups' | 'schedule' | 'trades'
 
 export default function League() {
   const [tab, setTab] = useState<Tab>('week')
@@ -29,10 +30,11 @@ export default function League() {
           { value: 'week', label: 'This week' },
           { value: 'standings', label: 'Standings' },
           { value: 'matchups', label: 'Matchups' },
+          { value: 'schedule', label: 'Schedule' },
           { value: 'trades', label: 'Trades' },
         ]}
       />
-      {tab === 'week' ? <ThisWeek onTrades={() => setTab('trades')} /> : tab === 'standings' ? <Standings /> : tab === 'matchups' ? <Matchups /> : <Trades />}
+      {tab === 'week' ? <ThisWeek onTrades={() => setTab('trades')} /> : tab === 'standings' ? <Standings /> : tab === 'matchups' ? <Matchups /> : tab === 'schedule' ? <Schedule onMatchups={() => setTab('matchups')} /> : <Trades />}
     </div>
   )
 }

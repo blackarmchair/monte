@@ -11,6 +11,7 @@ import { Btn, ErrorBox, GradCard, Headshot, HeatTiles, Loading, ORD, Pills, Scre
 import { lineupSections, ROSTER_SORT, ROSTER_VIEWS, type LineupRow, type RosterView } from '@monte/core/rosterSort'
 import type { OvPlayer } from '@monte/core/types'
 import { font, grad, nflColor, R, rankHeat, teamColor, useTheme } from '@/ui/theme'
+import { TeamSchedule } from './Schedule'
 import { headline, POS, record, statusTag, thinnest, useOverview, verdict, type Pos, type TeamRow } from './overviewLogic'
 
 export default function Team() {
@@ -39,12 +40,13 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
   const team = row.team
   const mine = team.roster_id === context?.myRosterId
   const need = thinnest(row)
-  const [tab, setTab] = useState<Pos | 'All' | 'Picks'>('All')
+  const [tab, setTab] = useState<Pos | 'All' | 'Picks' | 'Schedule'>('All')
   const [view, setView] = useState<RosterView>('lineup')
-  const lineup = tab !== 'Picks' && view === 'lineup'
+  const notRoster = tab === 'Picks' || tab === 'Schedule'
+  const lineup = !notRoster && view === 'lineup'
   const sections = lineup ? lineupSections(team, tab === 'All' ? undefined : tab) : []
-  const players = tab === 'Picks' || lineup ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[view as Exclude<RosterView, 'lineup'>])
-  const room = tab === 'Picks' || tab === 'All' ? null : row.pos[tab]
+  const players = notRoster || lineup ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[view as Exclude<RosterView, 'lineup'>])
+  const room = notRoster || tab === 'All' ? null : row.pos[tab]
 
   return (
     <Screen pad={false} gap={18}>
@@ -87,11 +89,12 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
         onChange={setTab}
         options={[
           { value: 'All' as const, label: `All ${team.players.length}` },
-          ...POS.map(p => ({ value: p as Pos | 'All' | 'Picks', label: `${p} #${row.pos[p].rank}` })),
+          ...POS.map(p => ({ value: p as Pos | 'All' | 'Picks' | 'Schedule', label: `${p} #${row.pos[p].rank}` })),
           { value: 'Picks' as const, label: `Picks #${row.ranks.picks}` },
+          { value: 'Schedule' as const, label: 'Schedule' },
         ]}
       />
-      {tab !== 'Picks' && <Seg fill value={view} onChange={setView} options={ROSTER_VIEWS} style={{ marginHorizontal: 16 }} />}
+      {!notRoster && <Seg fill value={view} onChange={setView} options={ROSTER_VIEWS} style={{ marginHorizontal: 16 }} />}
 
       <View style={{ paddingHorizontal: 16, gap: 8 }}>
         {sections.map(s => [
@@ -130,13 +133,16 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
             No picks owned.
           </T>
         )}
-        <T v="small" c="mute" style={{ paddingTop: 4 }}>
-          {room
-            ? `${tab} room: ${num(room.value)} total value, avg age ${room.age?.toFixed(1) ?? '—'}.`
-            : tab === 'Picks'
-            ? `${row.picks.length} pick${row.picks.length === 1 ? '' : 's'}: ${num(row.pickValue)} total value.`
-            : `${team.players.length} players.`}
-        </T>
+        {tab === 'Schedule' && <TeamSchedule rid={team.roster_id} />}
+        {tab !== 'Schedule' && (
+          <T v="small" c="mute" style={{ paddingTop: 4 }}>
+            {room
+              ? `${tab} room: ${num(room.value)} total value, avg age ${room.age?.toFixed(1) ?? '—'}.`
+              : tab === 'Picks'
+              ? `${row.picks.length} pick${row.picks.length === 1 ? '' : 's'}: ${num(row.pickValue)} total value.`
+              : `${team.players.length} players.`}
+          </T>
+        )}
       </View>
     </Screen>
   )
