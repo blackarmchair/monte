@@ -1,14 +1,16 @@
 // Team (a full page, pushed from League): a team-coloured hero with the verdict and the next move,
-// four heat tiles (value, starters, age, picks), then the roster: all of it or one position, sorted
-// by value, position, age or starters first. Tap a player for his page.
+// four heat tiles (value, starters, age, picks), then the roster: all of it or one position. It opens
+// as Sleeper draws it, starters in their slots then the bench, IR and taxi squad; Value / Position /
+// Youngest sort it instead. Tap a player for his page.
 import { useState } from 'react'
-import { View } from 'react-native'
+import { Text, View } from 'react-native'
 import { useLocalSearchParams } from 'expo-router'
 import { useApp } from '@/lib/store'
 import AppHeader from '@/ui/AppHeader'
-import { Btn, ErrorBox, GradCard, Headshot, HeatTiles, Loading, ORD, Pills, Screen, Seg, Stack2, T, Tag, TeamAvatar, num } from '@/ui/kit'
-import { ROSTER_SORT, ROSTER_SORTS, type RosterSort } from '@monte/core/rosterSort'
-import { grad, nflColor, R, rankHeat, teamColor, useTheme } from '@/ui/theme'
+import { Btn, ErrorBox, GradCard, Headshot, HeatTiles, Loading, ORD, Pills, Screen, Section, Seg, Stack2, T, Tag, TeamAvatar, num } from '@/ui/kit'
+import { lineupSections, ROSTER_SORT, ROSTER_VIEWS, type LineupRow, type RosterView } from '@monte/core/rosterSort'
+import type { OvPlayer } from '@monte/core/types'
+import { font, grad, nflColor, R, rankHeat, teamColor, useTheme } from '@/ui/theme'
 import { headline, POS, record, statusTag, thinnest, useOverview, verdict, type Pos, type TeamRow } from './overviewLogic'
 
 export default function Team() {
@@ -38,8 +40,10 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
   const mine = team.roster_id === context?.myRosterId
   const need = thinnest(row)
   const [tab, setTab] = useState<Pos | 'All' | 'Picks'>('All')
-  const [sort, setSort] = useState<RosterSort>('value')
-  const players = tab === 'Picks' ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[sort])
+  const [view, setView] = useState<RosterView>('lineup')
+  const lineup = tab !== 'Picks' && view === 'lineup'
+  const sections = lineup ? lineupSections(team, tab === 'All' ? undefined : tab) : []
+  const players = tab === 'Picks' || lineup ? [] : team.players.filter(x => tab === 'All' || x.pos === tab).sort(ROSTER_SORT[view as Exclude<RosterView, 'lineup'>])
   const room = tab === 'Picks' || tab === 'All' ? null : row.pos[tab]
 
   return (
@@ -87,15 +91,24 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
           { value: 'Picks' as const, label: `Picks #${row.ranks.picks}` },
         ]}
       />
-      {tab !== 'Picks' && <Seg fill value={sort} onChange={setSort} options={ROSTER_SORTS} style={{ marginHorizontal: 16 }} />}
+      {tab !== 'Picks' && <Seg fill value={view} onChange={setView} options={ROSTER_VIEWS} style={{ marginHorizontal: 16 }} />}
 
       <View style={{ paddingHorizontal: 16, gap: 8 }}>
+        {sections.map(s => [
+          <Section key={s.title} title={`${s.title} ${s.rows.length}`} style={s.title === 'Starters' ? undefined : { paddingTop: 12 }} />,
+          ...s.rows.map(r => <SlotCard key={`${s.title}${r.key}`} row={r} starter={s.title === 'Starters'} onOpen={openPlayer} />),
+        ])}
+        {lineup && !sections.length && (
+          <T c="mute" size={14}>
+            No {tab === 'All' ? '' : `${tab}s `}on this roster.
+          </T>
+        )}
         {players.map(x => {
           const tag = statusTag(x)
           return (
             <GradCard key={x.id} color={nflColor(t, x.team)} onPress={() => openPlayer(x.id, x.name)} accessibilityLabel={x.name}>
               <Headshot id={x.id} name={x.name} />
-              <Stack2 title={x.name} sub={[tab === 'All' ? x.pos : null, x.team, x.age, x.starter ? 'Starter' : null].filter(v => v != null && v !== '').join(' · ')} />
+              <Stack2 title={x.name} sub={playerSub(x, tab === 'All', true)} />
               {tag && <Tag label={tag.label} tone={tag.tone} />}
               <T v="bold" num>
                 {x.rank ? num(x.value) : '–'}
@@ -126,5 +139,46 @@ function TeamBody({ row, n }: { row: TeamRow; n: number }) {
         </T>
       </View>
     </Screen>
+  )
+}
+
+const playerSub = (x: OvPlayer, showPos: boolean, showStarter: boolean) =>
+  [showPos ? x.pos : null, x.team, x.age, showStarter && x.starter ? 'Starter' : null].filter(v => v != null && v !== '').join(' · ')
+
+/** A lineup row: the slot badge (QB, FLEX, SF… or the bench position / IR / TX), then the player.
+ * Starters wear their NFL colour; the bench, IR and taxi sit on plain cards, as in Lineup. */
+function SlotCard({ row, starter, onOpen }: { row: LineupRow; starter: boolean; onOpen: (id: string, name: string) => void }) {
+  const t = useTheme()
+  const x = row.player
+  // The IR and taxi sections already say so; keep the injury tag only.
+  const tag = x && statusTag(x)
+  const shown = tag && !(row.badge === 'IR' && tag.label === 'IR') && !(row.badge === 'TX' && tag.label === 'Taxi') ? tag : null
+  return (
+    <GradCard
+      color={starter && x ? nflColor(t, x.team) : null}
+      minHeight={starter ? 64 : 60}
+      onPress={x ? () => onOpen(x.id, x.name) : undefined}
+      style={{ paddingVertical: 8, paddingLeft: 10 }}
+      accessibilityLabel={x ? x.name : row.name ?? `Empty ${row.badge}`}
+    >
+      <View style={{ width: 44, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surf2 }}>
+        <Text style={{ fontFamily: font.sansBold, fontSize: 12, color: starter ? t.ink : t.mute }}>{row.badge}</Text>
+      </View>
+      {x ? (
+        <>
+          <Headshot id={x.id} name={x.name} size={40} />
+          <Stack2 title={x.name} sub={playerSub(x, starter, false)} />
+          {shown && <Tag label={shown.label} tone={shown.tone} />}
+          <T v="bold" num>
+            {x.rank ? num(x.value) : '–'}
+          </T>
+        </>
+      ) : (
+        <>
+          <View style={{ width: 40 }} />
+          <Stack2 title={row.name ?? 'Empty'} sub={row.name ? row.pos : 'No one in this slot'} titleC={row.name ? undefined : 'mute'} />
+        </>
+      )}
+    </GradCard>
   )
 }

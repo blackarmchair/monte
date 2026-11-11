@@ -1,6 +1,6 @@
 // Player (a full page, pushed from anywhere a player shows): an NFL-colour hero with his headshot
-// and a six-cell bio, then sticky tabs. Value: sheet against market. Stats: this season's games,
-// points and finish heat-coloured within each column. Trade: who has him, the one action, and a deal
+// and a six-cell bio, then sticky tabs. Value: sheet against market. Stats: a season's games (this
+// one, or an earlier one from the season pills), points and finish heat-coloured within each column. Trade: who has him, the one action, and a deal
 // Monte found. Injury: the override that every model uses (this replaces the Overrides screen).
 import { useEffect, useMemo, useState } from 'react'
 import Claim from './Claim'
@@ -9,12 +9,12 @@ import { Image } from 'expo-image'
 import { useLocalSearchParams } from 'expo-router'
 import { gameTable } from '@monte/core/gameLog'
 import { injuryLabel, isAvailableOverride, isCurrentInjury } from '@monte/core/injuries'
-import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
+import { tepBoardFor, boardRankFor, boardRankLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@monte/core/types'
 import { monte } from '@/lib/monte'
 import { useApp } from '@/lib/store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from '@/lib/trade'
 import AppHeader from '@/ui/AppHeader'
-import { Btn, Card, ErrorBox, headshotUrl, kfmt, Loading, Row, StatTile, Stepper, T, num } from '@/ui/kit'
+import { Btn, Card, ErrorBox, headshotUrl, kfmt, Loading, Pills, Row, StatTile, Stepper, T, num } from '@/ui/kit'
 import { useOverlay } from '@/ui/overlay'
 import { font, heat, heroGrad, nflColor, R, useTheme } from '@/ui/theme'
 
@@ -145,7 +145,7 @@ function PlayerBody({ id, fallbackName, startTab }: { id: string; fallbackName: 
       <View style={{ paddingTop: 18, paddingHorizontal: 16, gap: 14 }}>
         {tab === 'value' && <ValueTab id={id} usage={usage} ranks={d?.ranks[id]} />}
         {tab === 'stats' &&
-          (info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab p={info.value} usage={usage?.usagePPG ?? null} proj={usage?.sleeperPPG ?? null} />)}
+          (info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab key={info.value.id} p={info.value} usage={usage?.usagePPG ?? null} proj={usage?.sleeperPPG ?? null} />)}
         {tab === 'trade' && <TradeTab id={id} name={name} owner={owner} />}
         {tab === 'injury' && <InjuryTab id={id} name={name} pos={pos} team={nfl} sleeperTag={p?.injury ?? ''} />}
       </View>
@@ -241,7 +241,19 @@ function UsageCard({ usage }: { usage: { usagePPG: number | null; sleeperPPG: nu
 
 function StatsTab({ p, usage, proj }: { p: PlayerInfo; usage: number | null; proj: number | null }) {
   const t = useTheme()
-  const tb = gameTable(p.pos, p.games)
+  // The season playerInfo sent comes with its games; any other is fetched when its pill is picked.
+  const [season, setSeason] = useState(p.season)
+  const [logs, setLogs] = useState<Record<string, Result<GameLog[]>>>({ [p.season]: { ok: true, value: p.games } })
+  useEffect(() => {
+    if (logs[season]) return
+    let live = true
+    void monte.playerGames(p.id, season).then(r => live && setLogs(m => ({ ...m, [season]: r })))
+    return () => {
+      live = false
+    }
+  }, [p.id, season]) // eslint-disable-line react-hooks/exhaustive-deps
+  const log = logs[season]
+  const tb = gameTable(p.pos, log?.ok ? log.value : [])
   const cell = { height: 36, borderRadius: 8, alignItems: 'center' as const, justifyContent: 'center' as const }
   const CW = 46 // each stat column; the block scrolls sideways past the screen edge
   const gap = 5
@@ -251,15 +263,20 @@ function StatsTab({ p, usage, proj }: { p: PlayerInfo; usage: number | null; pro
     <>
       <Row style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
         <T v="bold" size={17}>
-          {p.season} by week
+          {season} by week
         </T>
         <T v="small" c="mute">
           {p.pos} · PPR
         </T>
       </Row>
-      {tb.rows.length === 0 ? (
+      {p.seasons.length > 1 && <Pills small value={season} onChange={setSeason} options={p.seasons.map(s => ({ value: s, label: s }))} />}
+      {log == null ? (
+        <Loading label={`Reading his ${season} games…`} />
+      ) : !log.ok ? (
+        <ErrorBox message={log.error} onRetry={() => setLogs(({ [season]: _, ...m }) => m)} />
+      ) : tb.rows.length === 0 ? (
         <T c="mute" size={14}>
-          No games yet this season.
+          {season === p.seasons[0] ? 'No games yet this season.' : `No games in ${season}.`}
         </T>
       ) : (
         <View style={{ flexDirection: 'row', gap }}>

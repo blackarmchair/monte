@@ -17,6 +17,7 @@ const api: MonteApi = {
   ranks: (leagueId, userId) => ipcRenderer.invoke('league:ranks', leagueId, userId),
   searchPlayers: query => ipcRenderer.invoke('players:search', query),
   playerInfo: id => ipcRenderer.invoke('players:info', id),
+  playerGames: (id, season) => ipcRenderer.invoke('players:games', id, season),
   bundledInjuries: () => ipcRenderer.invoke('injuries:bundled'),
   chooseRanksFile: () => ipcRenderer.invoke('ranks:choose'),
   ranksFileInfo: () => ipcRenderer.invoke('ranks:info'),

@@ -53,8 +53,11 @@ export type PlayerInfo = {
   yearsExp: number | null
   /** Sleeper injury tag, '' when healthy */
   injury: string
+  /** the season `games` covers: this one, or his last one while this one has no games yet */
   season: string
   games: GameLog[]
+  /** every season he could have played, newest first, for the season switcher (playerGames) */
+  seasons: string[]
   /** The sheet's rank on each board block (no TE prem / TE prem); null when there's no sheet */
   board: { plain: BoardRank | null; tep: BoardRank | null } | null
 }
@@ -296,7 +299,13 @@ export type OvTeam = {
   ties: number
   pf: number
   players: OvPlayer[]
+  /** this week's starting slots in Sleeper's order (roster_positions, BN / IR / TAXI excluded);
+   * id null = an empty slot. A starter who isn't QB/RB/WR/TE (K, DEF) is not in `players` and
+   * carries his own name here. Absent on data built before this field existed. */
+  lineup?: OvSlot[]
 }
+
+export type OvSlot = { slot: string; id: string | null; name?: string; pos?: string }
 
 export type OvPick = { season: string; round: number; originalRosterId: number; ownerRosterId: number }
 
@@ -545,6 +554,8 @@ export type MonteApi = {
   searchPlayers(query: string): Promise<Result<PlayerHit[]>>
   /** Sleeper bio and this season's weekly games, for the player page */
   playerInfo(id: string): Promise<Result<PlayerInfo>>
+  /** one season of a player's weekly games, for the player page's season switcher */
+  playerGames(id: string, season: string): Promise<Result<GameLog[]>>
   /** the return weeks / season-enders hard-coded in sleeperStandings' config, resolved to players */
   bundledInjuries(): Promise<Result<ManualInjury[]>>
   chooseRanksFile(): Promise<Result<RanksFileInfo | null>>

@@ -1,15 +1,16 @@
 // Player (pushed from anywhere a player shows): the profile card (NFL-colour hero with his headshot,
 // name, chips and a 3×2 bio) beside Value (sheet against market), with Injury (the override every
 // model uses) and Trade (who has him, the one action and a deal Monte found) as two cards under it.
-// Stats run the full width below: this season's games, points and finish heat-coloured within each column.
+// Stats run the full width below: a season's games (this one, or any earlier one from the season
+// pills), points and finish heat-coloured within each column.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import Claim from './Claim'
 import { gameTable } from '@shared/gameLog'
 import { injuryLabel, isAvailableOverride, isCurrentInjury } from '@shared/injuries'
-import { tepBoardFor, boardRankFor, boardRankLabel, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
+import { tepBoardFor, boardRankFor, boardRankLabel, type GameLog, type ManualInjury, type PlayerInfo, type Result } from '@shared/types'
 import { useApp } from './store'
 import { marketTag, mineOf, useAddToTrade, useTrade, verdictText } from './tradeModel'
-import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Stepper, StatTile, useHeat } from './ui'
+import { Btn, ErrorBox, headshotUrl, heroGrad, kfmt, Link, Loading, nflColor, num, Pills, Stepper, StatTile, useHeat } from './ui'
 
 type Usage = { usagePPG: number | null; sleeperPPG: number | null; delta: number | null }
 const n1 = (x: number | null | undefined) => (x == null ? '—' : x.toFixed(1))
@@ -109,7 +110,7 @@ export default function Player({ id, fallbackName }: { id: string; fallbackName:
           </div>
         </div>
       </div>
-      {info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab p={info.value} usage={usage} />}
+      {info == null ? <Loading label="Reading his games…" /> : !info.ok ? <ErrorBox message={info.error} /> : <StatsTab key={info.value.id} p={info.value} usage={usage} />}
     </div>
   )
 }
@@ -181,7 +182,19 @@ function UsageCard({ usage }: { usage: Usage }) {
 
 function StatsTab({ p, usage }: { p: PlayerInfo; usage: Usage | undefined }) {
   const { heat } = useHeat()
-  const tb = gameTable(p.pos, p.games)
+  // The season playerInfo sent comes with its games; any other is fetched when its pill is picked.
+  const [season, setSeason] = useState(p.season)
+  const [logs, setLogs] = useState<Record<string, Result<GameLog[]>>>({ [p.season]: { ok: true, value: p.games } })
+  useEffect(() => {
+    if (logs[season]) return
+    let live = true
+    void window.monte.playerGames(p.id, season).then(r => live && setLogs(m => ({ ...m, [season]: r })))
+    return () => {
+      live = false
+    }
+  }, [p.id, season]) // eslint-disable-line react-hooks/exhaustive-deps
+  const log = logs[season]
+  const tb = gameTable(p.pos, log?.ok ? log.value : [])
   const cell = (bg: string, fg: string, fw: number, v: string | number, key: string) => (
     <span key={key} style={{ height: 42, borderRadius: 10, background: bg, color: fg, display: 'grid', placeItems: 'center', fontSize: 15, fontWeight: fw }}>
       {v}
@@ -197,11 +210,16 @@ function StatsTab({ p, usage }: { p: PlayerInfo; usage: Usage | undefined }) {
   return (
     <section className="stack" style={{ gap: 12, minWidth: 0 }}>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span className="title-l">Stats: {p.season} by week</span>
+        <span className="title-l">Stats: {season} by week</span>
         <span className="small mute">{p.pos} · PPR</span>
       </div>
-      {tb.rows.length === 0 ? (
-        <div className="mute">No games yet this season.</div>
+      {p.seasons.length > 1 && <Pills value={season} onChange={setSeason} options={p.seasons.map(s => ({ value: s, label: s }))} />}
+      {log == null ? (
+        <Loading label={`Reading his ${season} games…`} />
+      ) : !log.ok ? (
+        <ErrorBox message={log.error} onRetry={() => setLogs(({ [season]: _, ...m }) => m)} />
+      ) : tb.rows.length === 0 ? (
+        <div className="mute">{season === p.seasons[0] ? 'No games yet this season.' : `No games in ${season}.`}</div>
       ) : (
         <div className="num" style={{ display: 'flex', gap: 6, minWidth: 0 }}>
           <div style={grid('40px 56px')}>

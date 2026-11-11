@@ -442,6 +442,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('draft:picks', wrap(monte.draftPicks))
   ipcMain.handle('players:search', wrap(monte.searchPlayers))
   ipcMain.handle('players:info', wrap(monte.playerInfo))
+  ipcMain.handle('players:games', wrap(monte.playerGames))
   ipcMain.handle('injuries:bundled', wrap(monte.bundledInjuries))
   ipcMain.handle('ranks:choose', wrap(chooseRanksFile))
   ipcMain.handle('ranks:link', wrap(setSheetLink))
@@ -464,8 +465,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('update:download', () => updater.download())
   ipcMain.handle('update:install', () => updater.install())
 
-  // Windows ties notifications to this id; it matches the installer's.
-  if (process.platform === 'win32') app.setAppUserModelId('com.blackarmchair.monte')
+  // Windows ties notifications, the taskbar button and its icon to this id; it matches the
+  // installer's. Dev runs (electron.exe) take their own, or Windows can file the installed app's
+  // identity under Electron's shortcut and icon.
+  if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.blackarmchair.monte' : 'com.blackarmchair.monte.dev')
   createWindow()
   syncTray(!!(await loadSettings().catch(() => DEFAULT_SETTINGS)).keepRunning)
   startOfferChecks()

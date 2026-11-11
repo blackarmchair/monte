@@ -146,6 +146,7 @@ export const monte = {
   draftPicks: (draftId: string) => toResult(() => service.draftPicks(draftId)),
   searchPlayers: (query: string) => toResult(() => service.searchPlayers(query)),
   playerInfo: (id: string) => toResult(() => service.playerInfo(id)),
+  playerGames: (id: string, season: string) => toResult(() => service.playerGames(id, season)),
   bundledInjuries: () => toResult(() => service.bundledInjuries()),
   trackRecord: (userId: string) => toResult(() => service.trackRecord(userId)),
   waiverDesk: (leagueId: string, userId: string) => toResult(async () => service.waiverDesk(leagueId, userId, await storage.readToken())),

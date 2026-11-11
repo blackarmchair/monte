@@ -4,9 +4,10 @@
 import { fileName } from './paths'
 import type { Book } from './xlsx'
 import { FUTURE_DISCOUNT, findBoard, matchBoard, rookieCurve, UNRANKED, userAvatar, type Meta } from './values'
-import type { OverviewData, OvPick, OvPlayer } from './types'
+import type { OverviewData, OvPick, OvPlayer, OvSlot } from './types'
 
 const SKILL = new Set(['QB', 'RB', 'WR', 'TE'])
+const OFF_LINEUP = new Set(['BN', 'IR', 'TAXI'])
 
 export async function buildOverview(opts: {
   book: Book
@@ -45,6 +46,19 @@ export async function buildOverview(opts: {
     }
   }
 
+  // Sleeper's starters array runs in roster_positions order with BN / IR / TAXI left out, "0" for
+  // an empty slot: the lineup exactly as its own team page draws it.
+  const slots = ((league.roster_positions ?? []) as string[]).filter(p => !OFF_LINEUP.has(p))
+  const lineup = (r: any): OvSlot[] =>
+    slots.map((slot, i) => {
+      const id = r.starters?.[i]
+      if (!id || id === '0') return { slot, id: null }
+      const p = meta[id]
+      const pos = p?.position ?? ''
+      if (SKILL.has(pos) || (p?.fantasy_positions ?? []).some((f: string) => SKILL.has(f))) return { slot, id }
+      return { slot, id, name: p ? (pos === 'DEF' ? `${p.team ?? id} D/ST` : p.full_name ?? `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim()) : id, pos }
+    })
+
   const userOf = new Map(users.map(u => [u.user_id, u]))
   const teams = rosters.map(r => {
     const u = userOf.get(r.owner_id)
@@ -61,6 +75,7 @@ export async function buildOverview(opts: {
         .map((id: string) => player(id, r))
         .filter((p: OvPlayer | null): p is OvPlayer => !!p)
         .sort((a: OvPlayer, b: OvPlayer) => b.value - a.value),
+      lineup: lineup(r),
     }
   })
 

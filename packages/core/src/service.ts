@@ -193,12 +193,14 @@ export function createMonteService(host: Host) {
     }
   }
 
-  // A player's weeks so far: a game a week, kept an hour since this week's can still change.
+  // A player's weeks: a game a week. This season's are kept an hour, since this week's can still
+  // change; a finished season's never change, so they're kept for the session.
   const logMem = new Map<string, { at: number; games: GameLog[] }>()
-  async function gameLogs(id: string, season: string): Promise<GameLog[]> {
+  async function gameLogs(id: string, season: string, current?: string): Promise<GameLog[]> {
+    if (!/^\d{4}$/.test(season)) throw new Error(`Not a season: ${season}`)
     const key = `${id}|${season}`
     const hit = logMem.get(key)
-    if (hit && Date.now() - hit.at < 3600 * 1000) return hit.games
+    if (hit && ((current && season < current) || Date.now() - hit.at < 3600 * 1000)) return hit.games
     const res = await get(`https://api.sleeper.com/stats/nfl/player/${id}?season_type=regular&season=${season}&grouping=week`)
     if (!res.ok) throw new Error(`Sleeper's weekly stats returned ${res.status}`)
     const byWeek = ((await res.json()) ?? {}) as Record<string, any>
@@ -546,13 +548,23 @@ export function createMonteService(host: Host) {
     },
 
     /** Bio from the cached player table, and this season's games from Sleeper's per-player weekly
-     *  stats (an undocumented endpoint Sleeper's own player pages use). Games are cached an hour. */
+     *  stats (an undocumented endpoint Sleeper's own player pages use). Before this season's first
+     *  game, his last season's instead. `seasons` lists the rest for playerGames. */
     async playerInfo(id: string): Promise<PlayerInfo> {
       const [meta, state, board] = await Promise.all([playersMeta(), sleeper<any>('/state/nfl'), boardRanks()])
       const p = meta[id]
       if (!p) throw new Error(`Sleeper has no player ${id}.`)
       const season = String(state.league_season || state.season)
       const num = (v: unknown) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v))
+      // Back to his rookie year: Sleeper's rookie_year when it has one, else years of experience.
+      const first = num(p.metadata?.rookie_year) ?? Number(season) - (num(p.years_exp) ?? 0)
+      const seasons = Array.from({ length: Math.min(20, Math.max(1, Number(season) - first + 1)) }, (_, i) => String(Number(season) - i))
+      let shown = season
+      let games = await gameLogs(id, season, season)
+      if (!games.length && seasons[1]) {
+        const last = await gameLogs(id, seasons[1], season).catch(() => [])
+        if (last.length) [shown, games] = [seasons[1], last]
+      }
       return {
         id,
         name: nameOf(p),
@@ -564,10 +576,16 @@ export function createMonteService(host: Host) {
         college: p.college || null,
         yearsExp: num(p.years_exp),
         injury: p.injury_status ?? '',
-        season,
-        games: await gameLogs(id, season),
+        season: shown,
+        games,
+        seasons,
         board: board ? board.get(id) ?? { plain: null, tep: null } : null,
       }
+    },
+
+    async playerGames(id: string, season: string): Promise<GameLog[]> {
+      const state = await sleeper<any>('/state/nfl')
+      return gameLogs(id, season, String(state.league_season || state.season))
     },
 
     /** This week's head-to-head pairs: scores so far, starters, and Monte's win chance. */
