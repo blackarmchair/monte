@@ -425,8 +425,20 @@ export function createMonteService(host: Host) {
     },
 
     async leagueOverview(leagueId: string): Promise<OverviewData> {
-      const [[league, rosters, users, traded], meta, book] = await Promise.all([league4(leagueId), playersMeta(), host.loadBook()])
-      return buildOverview({ book, league, rosters, users, traded, meta })
+      const [[league, rosters, users, traded], meta, book, byes] = await Promise.all([
+        league4(leagueId),
+        playersMeta(),
+        host.loadBook(),
+        // Byes only mean something mid-season; a schedule failure just leaves them unflagged.
+        sleeper<any>('/state/nfl')
+          .then(async state => {
+            if (state.season_type !== 'regular') return null
+            const week = Number(state.display_week || state.week) || 0
+            return week ? { week, games: await nflSchedule(String(state.league_season || state.season)) } : null
+          })
+          .catch(() => null),
+      ])
+      return buildOverview({ book, league, rosters, users, traded, meta, byes })
     },
 
     async ranks(leagueId: string, userId: string): Promise<RanksData> {

@@ -174,3 +174,50 @@ export function verdict(r: TeamRow): string {
   const s2 = parts.length ? `${parts.join(', ')}.` : 'No thin spots.'
   return `${s1} ${s2.charAt(0).toUpperCase()}${s2.slice(1)}`
 }
+
+// ---- value by role: where a team's value sits, not what it's worth ------------------------------
+
+/** The age each position falls off: RBs at 28 (only elite and pass-catching backs hold value past
+ * it), WRs fade from 30, TEs last a year or so longer, QBs into their mid 30s (running QBs sooner;
+ * nothing here tells them apart). */
+export const AGE_CLIFF: Record<Pos, number> = { RB: 28, WR: 30, TE: 31, QB: 34 }
+/** "Aging" = within this many years of the cliff. */
+export const AGING_WINDOW = 2
+
+export const ROLES = ['Core', 'Win-now', 'Upside', 'Depth'] as const
+export type Role = (typeof ROLES)[number]
+export const ROLE_HELP: Record<Role | 'Picks', string> = {
+  Core: 'starting and young',
+  'Win-now': `starting, within ${AGING_WINDOW} years of the age cliff`,
+  Upside: 'not starting, young',
+  Depth: `not starting, within ${AGING_WINDOW} years of the age cliff`,
+  Picks: 'draft picks',
+}
+
+export const isAging = (p: OvPlayer) => p.age != null && p.age >= AGE_CLIFF[p.pos] - AGING_WINDOW
+
+/**
+ * Each player's role on his team. Starting = in Sleeper's lineup this week, or out of it for a reason
+ * that isn't his standing (IR, an injury tag, or his bye) and worth at least the team's cheapest
+ * starter at his position, so a hurt or idle stud still counts as a producer.
+ */
+export function rolesOf(team: OvTeam): Map<string, Role> {
+  const floor = new Map<string, number>()
+  for (const p of team.players) if (p.starter) floor.set(p.pos, Math.min(floor.get(p.pos) ?? Infinity, p.value))
+  return new Map(
+    team.players.map(p => {
+      const excused = p.ir || !!p.injury || !!p.bye
+      const starting = p.starter || (excused && p.value >= (floor.get(p.pos) ?? Infinity))
+      const role: Role = starting ? (isAging(p) ? 'Win-now' : 'Core') : isAging(p) ? 'Depth' : 'Upside'
+      return [p.id, role]
+    }),
+  )
+}
+
+/** A team's value in each role, plus picks. */
+export function roleValues(r: TeamRow): Record<Role | 'Picks', number> {
+  const out = { Core: 0, 'Win-now': 0, Upside: 0, Depth: 0, Picks: r.pickValue }
+  const roles = rolesOf(r.team)
+  for (const p of r.team.players) out[roles.get(p.id)!] += p.value
+  return out
+}

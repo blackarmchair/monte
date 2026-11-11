@@ -16,8 +16,11 @@ export async function buildOverview(opts: {
   users: any[]
   traded: any[]
   meta: Meta
+  /** NFL team -> week -> game status, and the current regular-season week, to flag byes; null when unknown */
+  byes?: { week: number; games: Record<string, Record<number, string>> } | null
 }): Promise<OverviewData> {
-  const { league, rosters, users, traded, meta } = opts
+  const { league, rosters, users, traded, meta, byes } = opts
+  const onBye = (team: string | undefined) => !!byes && !!team && !!byes.games[team] && !byes.games[team][byes.week]
   const { wb, modifiedAt } = opts.book
   const board = findBoard(wb)
 
@@ -43,6 +46,7 @@ export async function buildOverview(opts: {
       taxi: !!r?.taxi?.includes(id),
       ir: !!r?.reserve?.includes(id),
       injury: p.injury_status ?? '',
+      bye: onBye(p.team),
     }
   }
 

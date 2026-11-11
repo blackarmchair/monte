@@ -18,8 +18,12 @@ const SORTS: Array<{ value: Sort; label: string }> = [
 
 type Tab = 'week' | 'standings' | 'matchups' | 'schedule' | 'trades'
 
+// The tab last shown, so Back from a team (or a trip to another section) lands where you left.
+let lastTab: Tab = 'week'
+
 export default function League() {
-  const [tab, setTab] = useState<Tab>('week')
+  const [tab, setTabState] = useState<Tab>(lastTab)
+  const setTab = (t: Tab) => setTabState((lastTab = t))
   return (
     <div className="page stack" style={{ gap: 20 }}>
       <Seg

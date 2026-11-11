@@ -294,6 +294,8 @@ export type OvPlayer = {
   ir: boolean
   /** Sleeper injury tag, '' when healthy */
   injury: string
+  /** his NFL team has no game this regular-season week; absent on older data */
+  bye?: boolean
 }
 
 export type OvTeam = {
