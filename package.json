@@ -1,6 +1,6 @@
 {
   "name": "monte",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "Dynasty fantasy football desk: pick odds, trade gaps, usage boards",
   "private": true,
   "main": "./out/main/index.js",
