@@ -89,7 +89,7 @@ export default function Players() {
       const rows = (board?.rows ?? []).filter(r => r.id)
       const last = Math.max(2, rows[rows.length - 1]?.rank ?? 2)
       return rows
-        .filter(r => (ui.pos === 'All' || r.pos === ui.pos) && (!q || r.name.toLowerCase().includes(q)))
+        .filter(r => (ui.pos === 'All' || r.pos === ui.pos) && (ui.who !== 'fa' || r.owner == null) && (!q || r.name.toLowerCase().includes(q)))
         .map(r => {
           const a = byId.get(r.id!)
           const tag = a ? marketTag(a) : null
@@ -114,7 +114,7 @@ export default function Players() {
     }
     const rows = pw.result?.rows ?? []
     return rows
-      .filter(r => r.delta != null && (ui.pos === 'All' || r.pos === ui.pos) && (!q || r.name.toLowerCase().includes(q)))
+      .filter(r => r.delta != null && (ui.pos === 'All' || r.pos === ui.pos) && (ui.who !== 'fa' || !ownerOf.has(r.player_id)) && (!q || r.name.toLowerCase().includes(q)))
       .sort((a, b) => b.delta! - a.delta!)
       .map(r => {
         const owner = ownerOf.get(r.player_id) ?? null
@@ -192,6 +192,14 @@ export default function Players() {
           />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end', gap: 4 }}>
             <Pills bare small value={ui.pos} onChange={pos => set({ pos })} options={(usage ? ['All', 'WR', 'TE'] : ['All', 'QB', 'RB', 'WR', 'TE']).map(v => ({ value: v, label: v }))} />
+            <Seg
+              value={ui.who ?? 'all'}
+              onChange={who => set({ who })}
+              options={[
+                { value: 'all', label: 'Anyone' },
+                { value: 'fa', label: 'FAs' },
+              ]}
+            />
           </ScrollView>
         </View>
       </View>

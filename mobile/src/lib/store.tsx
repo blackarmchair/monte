@@ -17,8 +17,8 @@ export type TradeState = {
 }
 export const EMPTY_TRADE: TradeState = { give: [], get: [], partner: null }
 /** Players tab filters, settable from other tabs ("Find RB targets"). */
-export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string }
-export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', q: '' }
+export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string; /** 'fa': free agents only */ who: 'all' | 'fa' }
+export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', q: '', who: 'all' }
 export type PicksSeg = 'odds' | 'draft'
 /** Pick odds what-if: NFL week -> roster ids the user picked to win that week. */
 export type Forced = Record<number, number[]>
@@ -264,7 +264,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         )
     },
     findTargets(pos) {
-      setPlayersUiState(u => ({ ...u, mode: 'value', pos, q: '' }))
+      setPlayersUiState(u => ({ ...u, mode: 'value', pos, q: '', who: 'all' }))
       router.navigate('/players')
     },
     tradeWith(owner) {

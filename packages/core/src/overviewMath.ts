@@ -139,13 +139,15 @@ export function buildRows(data: OverviewData, bb: BBResult | undefined): TeamRow
     .sort((a, b) => a.ranks.overall - b.ranks.overall)
 }
 
+/** The Team page's one chip per player. Taxi wins: a taxi player can't play anyway, so his injury
+ * status (IR, Out, Q…) is noise there. */
 export function statusTag(p: OvPlayer): { label: string; tone: 'bad' | 'warn' | 'mid' } | null {
+  if (p.taxi) return { label: 'Taxi', tone: 'mid' }
   if (p.ir || p.injury === 'IR') return { label: 'IR', tone: 'warn' }
   const s = p.injury
   if (s === 'Out' || s === 'Sus' || s === 'PUP' || s === 'NFI') return { label: s, tone: 'bad' }
   if (s === 'Questionable') return { label: 'Q', tone: 'warn' }
   if (s === 'Doubtful') return { label: 'D', tone: 'warn' }
-  if (p.taxi) return { label: 'Taxi', tone: 'mid' }
   return null
 }
 

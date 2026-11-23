@@ -14,8 +14,8 @@ export type TradeState = {
   counter?: { transactionId: string; leg: number; partner: number }
 }
 export const EMPTY_TRADE: TradeState = { give: [], get: [], partner: null }
-export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string }
-export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', q: '' }
+export type PlayersUi = { mode: 'value' | 'usage'; pos: string; q: string; /** 'fa': free agents only */ who: 'all' | 'fa' }
+export const PLAYERS_UI: PlayersUi = { mode: 'value', pos: 'All', q: '', who: 'all' }
 /** Pick odds what-if: NFL week -> roster ids the user picked to win that week. */
 export type Forced = Record<number, number[]>
 
@@ -315,7 +315,7 @@ export function AppProvider({ settings, setSettingsState, children }: { settings
       else setTradeState(t => (t.partner !== owner ? { ...t, partner: owner, get: [assetId] } : t.get.includes(assetId) ? t : { ...t, get: [...t.get, assetId] }))
     },
     findTargets(pos) {
-      setPlayersUiState(u => ({ ...u, mode: 'value', pos, q: '' }))
+      setPlayersUiState(u => ({ ...u, mode: 'value', pos, q: '', who: 'all' }))
       go('players')
     },
     tradeWith(owner) {
